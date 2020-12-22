@@ -1,2 +1,2 @@
 # asynch-rl
-ackage for asynchronous Actor-Critic implementation of RL
+package for asynchronous Actor-Critic implementation of RL
