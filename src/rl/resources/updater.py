@@ -12,6 +12,8 @@ from tqdm import tqdm
 import random
 import numpy as np
 
+from copy import deepcopy
+
 from .memory import unpack_batch
 
 
@@ -19,15 +21,16 @@ from .memory import unpack_batch
 
 class RL_Updater():
     def __init__(self,rl_env, reset_optimizer = False):
-        print('initialization started')
+        #print('initialization started')
         
+        self.PG_update_failed_once = False
         self.beta = 0.001
         
         self.update_attributes(rl_env, init = True)
         
         self.nn_updating = False
         self.load_model(reset_optimizer)
-        print('initialization successful')
+        #print('initialization successful')
         
     ##################################################################################        
     # required to check if model is inherited
@@ -48,8 +51,6 @@ class RL_Updater():
         if not init:
             if self.memory_pool is None:
                 raise("memory pool is None object!!")
-            else:
-                print('memory pool loaded correctly')
         
     #################################################
     def save_model(self, path, model_name):
@@ -116,6 +117,8 @@ class RL_Updater():
             self.model_qv.model_version +=1
 
         elif net == 'policy' and policy_memory is not None :
+            
+            state_dict_0 = deepcopy(self.model_pg.state_dict()) #.copy()
                         
             loss, n_mismatch = self.policy_loss_update(*unpack_batch(policy_memory.memory)[:-1])
             total_loss = loss.cpu().detach().numpy()
@@ -125,6 +128,12 @@ class RL_Updater():
             
             if self.pg_partial_update:
                 self.model_pg.load_conv_params(self.rl_env.storage_path,self.rl_env.net_name, self.device)
+            
+            update_diff = self.model_pg.compare_weights(state_dict_0)
+            print(f'PG. loss = {total_loss}, model update = {round(update_diff,10)}')
+            
+            #print(state_dict_0['fc1.weight'][:5,:])
+            #print(self.model_pg.fc1.weight[:5,:])
             
             self.model_pg.model_version +=1
 
@@ -161,7 +170,9 @@ class RL_Updater():
 
         if (action_batch == action_batch_grad).all().item():
             loss_policy = torch.mean( -torch.log(prob_action_batch)*advantage + self.beta*entropy )
+            #loss_policy = 1000*self.model_pg.criterion_MSE(prob_action_batch, advantage)
             n_invalid = 0
+            self.PG_update_failed_once = False
             
         else:
             print('WARNING: selected action mismatch detected')
@@ -172,12 +183,16 @@ class RL_Updater():
             n_invalid = torch.sum(invalid_rows).item()
             
             n_mismatch = invalid_rows.nonzero().squeeze(1).shape[0]
-            if n_mismatch > 10:
+            if n_mismatch > 5:
                 print(f'{n_mismatch} mismatches occurred!')
-                raise('mismatch problem')
-        
-        loss_policy.backward()
-        self.model_pg.optimizer.step()  
+                if self.PG_update_failed_once:
+                    raise('mismatch problem')
+                else:
+                    self.PG_update_failed_once = True
+
+        if not self.PG_update_failed_once:
+            loss_policy.backward()
+            self.model_pg.optimizer.step()  
         
         return loss_policy, n_invalid
 

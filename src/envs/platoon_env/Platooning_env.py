@@ -7,7 +7,7 @@ Created on Wed Oct 21 16:29:34 2020
 
 #%%
 
-from platooning_energy import Car
+from .platooning_energy import Car
 import gym
 from gym import spaces
 import numpy as np
@@ -246,7 +246,7 @@ class PlatoonEnv(gym.Env):
                 reward =  self.rewards[1] *0.05*((self.state[2] - self.state[1])**3) *np.abs(self.state[0] - self.ref_distance)/self.max_tracking_error
                 reward = np.clip(reward, -2, 0)
             elif self.state[0] < self.ref_distance:
-                reward =  self.rewards[1] **((self.state[1] - self.state[2])**3)*np.abs(self.state[0] - self.ref_distance)/self.max_tracking_error
+                reward =  self.rewards[1]*((self.state[1] - self.state[2])**3)*np.abs(self.state[0] - self.ref_distance)/self.max_tracking_error
                 reward = np.clip(reward, -2, 0)
                 
             reward += 1

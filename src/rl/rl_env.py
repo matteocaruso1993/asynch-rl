@@ -176,7 +176,7 @@ class Multiprocess_RL_Environment:
             self.env_contn = self.generateContnsHybActSpace_GymStyleEnv()
             self.n_actions_contn = self.env_contn.get_actions_structure()
 
-        self.model_pg = self.generate_model(self.lr, pg_model=True, )
+        self.model_pg = self.generate_model(0.1, pg_model=True, )
         self.model_pg.init_weights()
 
         #######################
@@ -296,7 +296,7 @@ class Multiprocess_RL_Environment:
                 self.sim_agents_contn.append(Ray_SimulationAgent.remote(i, self.generateContnsHybActSpace_GymStyleEnv(), rl_mode = self.rl_mode ) )                 
         else:
             self.sim_agents_discr.append(SimulationAgent(0, self.generateDiscrActSpace_GymStyleEnv(), rl_mode = self.rl_mode) )  #, ,self.model
-            self.sim_agents_contn.append(SimulationAgent(0, self.generateContnsHybActSpace_GymStyleEnv(), rl_mode = self.rl_mode) )  #, ,self.model
+            #self.sim_agents_contn.append(SimulationAgent(0, self.generateContnsHybActSpace_GymStyleEnv(), rl_mode = self.rl_mode) )  #, ,self.model
                 #, self.model, self.n_frames, self.move_to_cuda, self.net_name, self.epsilon))            
         self.updateAgentsAttributesExcept('env') #,'model')
 
@@ -324,13 +324,11 @@ class Multiprocess_RL_Environment:
                 self.training_session_number = training_session_number        
             elif training_session_number != 0:             
                 # if no training session number is given, last iteration is taken
-                tsn = int(self.log_df.iloc[-1]['training session'])
-                tsn -= tsn % self.save_frequency
-                self.training_session_number =  tsn
+                self.training_session_number = int(self.log_df.iloc[-1]['training session'])
     
             # load epsilon (never load it manually, same thing for controller percentage)
             if self.resume_epsilon:
-                self.epsilon = self.log_df.iloc[self.training_session_number-1]['epsilon']
+                self.epsilon = self.log_df.iloc[-1]['epsilon']
             try:
                 self.ctrlr_probability = self.log_df.iloc[self.training_session_number-1]['ctrl prob']
             except Exception:
@@ -442,11 +440,15 @@ class Multiprocess_RL_Environment:
         """Upload the correct model on CPU (used to select the action when a simulation is run) """
         device_cpu = torch.device('cpu')
         if self.rl_mode == 'AC': 
-            if os.path.isfile(os.path.join(self.storage_path,self.net_name + '_policy.pt')):
+            #if os.path.isfile(os.path.join(self.storage_path,self.net_name + '_policy.pt')):
+            try:
                 self.model_pg.load_net_params(self.storage_path,self.net_name + '_policy', device_cpu)
                 self.policy_loaded = True
                 return True
-            return False
+            except Exception:
+                print('failed loading of PG model on CPU!')
+                return False
+
         elif self.rl_mode == 'DQL':
             self.model_qv.load_net_params(self.storage_path,self.net_name, device_cpu)   
             return True
@@ -479,7 +481,7 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     def runSerialized(self, memory_fill_only = False):
 
-        average_qval_loss = average_policy_loss = np.nan
+        average_qval_loss = policy_loss = np.nan
         total_log = np.zeros((1,2),dtype = np.float)
         total_runs = 0
         
@@ -560,7 +562,8 @@ class Multiprocess_RL_Environment:
                     
             # if memory is (almost) full and task list empty, inform qv update it can stop
             if self.shared_memory.isPartiallyFull(min_fill_ratio) and all(tsk is None for tsk in task_lst):
-                self.nn_updater.sentinel.remote()
+                if qv_update_launched:
+                    self.nn_updater.sentinel.remote()
                 break
                         
         # log training history
@@ -572,7 +575,13 @@ class Multiprocess_RL_Environment:
             
             # 2) update policy and get policy loss (single batch, no need to average)) 
             if self.rl_mode == 'AC' and self.policy_loaded:
-                policy_loss = ray.get(self.nn_updater.update_DeepRL.remote('policy', self.shared_memory ))
+                model_update = ray.get(self.nn_updater.getAttributeValue.remote('model_pg'))
+                model_diff = self.model_pg.compare_weights(model_update.cpu().state_dict().copy() )
+                if model_diff > 0.001:
+                    print(f'PG models MISMATCH: {model_diff}')
+                    raise('update model different than SIM one')
+                else:
+                    policy_loss = ray.get(self.nn_updater.update_DeepRL.remote('policy', self.shared_memory ))
                 
             #3) store computed losses
             self.get_log(total_runs, total_log, average_qval_loss, policy_loss )
@@ -741,9 +750,13 @@ class Multiprocess_RL_Environment:
         
         self.updateProbabilities(print_out = True)
         
+        
+        
         # update epsilon and model of the Sim agents
         if self.training_session_number == 0:
             self.check_model_version(print_out = True, mode = 'sim', save_v0 = True)
+            
+        
 
         #self.update_model_cpu() returns True if succesful
         if self.update_model_cpu():
@@ -755,6 +768,8 @@ class Multiprocess_RL_Environment:
                 self.updateAgentsAttributesExcept()
             else:
                 raise('Loading error')
+        
+        
                 
         # inidializing model to be updated
         if self.ray_parallelize:
@@ -768,6 +783,7 @@ class Multiprocess_RL_Environment:
                 self.nn_updater = RL_Updater(self, reset_optimizer)
             else:
                 self.nn_updater.update_attributes(self)
+        
         
         
     ##################################################################################
@@ -832,7 +848,9 @@ class Multiprocess_RL_Environment:
         self.training_session_number +=1        
         self.update_net_name()
         
+        
         self.end_training_round_routine()
+        
         
         print('###################################################################')
         print('###################################################################')

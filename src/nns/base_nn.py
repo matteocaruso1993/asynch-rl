@@ -10,12 +10,14 @@ Created on Fri Dec 18 16:12:32 2020
 
 import os
 import time
+import numpy as np
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
-    
 
+from rl.utilities import check_WhileTrue_timeout
+    
 #%%
 
 
@@ -105,6 +107,13 @@ class nnBase(nn.Module):
             'loss': loss,
             },filename_pt)
         
+        while not os.path.isfile(filename_pt):
+            if 'time_in' not in locals():
+                time_in = time.time()
+            if check_WhileTrue_timeout(time_in, t_max = 10):
+                raise('ABORTED: Saving model takes too long!!')
+
+        
         
     ##########################################################################
     # load the network parameters and the training history
@@ -115,7 +124,7 @@ class nnBase(nn.Module):
         # this loop is required in parallelized mode, since it might take some 
         # time to successfully save the model params
         count = 0
-        while count < 30:
+        while count < 10:
             try:
                 checkpoint = torch.load(filename_pt, map_location=device)
                 break
@@ -150,3 +159,26 @@ class nnBase(nn.Module):
     # update net parameters based on state_dict() (which is loaded afterwards)
     def init_layers(self, model_state):
         pass
+    
+
+    ##########################################################################
+    # compare weights before and after the update
+    def compare_weights(self, state_dict_1, state_dict_0 = None):
+                
+        if state_dict_0 is None:
+            state_dict_0 = self.state_dict()
+        
+        if identical_state_dicts(state_dict_0, state_dict_1):
+            average_diff = 0.0
+        else:
+            average_diff = np.average(np.array( [torch.mean(torch.abs(v0[1] - v1[1])).item()  for v0,v1 in zip(state_dict_0.items(), state_dict_1.items())  ]))
+
+        return average_diff
+
+
+
+##########################################################################
+def identical_state_dicts(state_dict_0, state_dict_1):
+    if all([ torch.all(torch.eq(v0[1], v1[1])).item()  for v0,v1 in zip(state_dict_0.items(), state_dict_1.items()) ]):
+        return True
+    return False

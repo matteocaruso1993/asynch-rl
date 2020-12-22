@@ -1,5 +1,13 @@
-import json
-import numpy
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Nov  7 09:24:36 2020
+
+@author: Enrico Regolin
+"""
+
+
+
 import numpy as np
 from scipy.interpolate import griddata, interpolate 
 import matplotlib.pyplot as plt
@@ -74,7 +82,7 @@ class ElMotor():
    
     
     def getMaxTorque(self, speed, return_tensor = True):
-        #max_tq = numpy.interp(np.abs(speed.cpu().detach().numpy()), self.EM_w_list, self.EM_T_max_list)
+        #max_tq = np.interp(np.abs(speed.cpu().detach().numpy()), self.EM_w_list, self.EM_T_max_list)
         if torch.is_tensor(speed):
             max_tq = self.f_max_rq(np.abs(speed.cpu().detach().numpy()))
         else:

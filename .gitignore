@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Data folder
+Data/
+file.log
+__pycache__/
+

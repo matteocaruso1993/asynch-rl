@@ -3,6 +3,7 @@ import os
 import numpy as np
 import numpy.matlib
 import matplotlib as mpl
+import time
 
 import matplotlib.pyplot as plt
 
@@ -38,6 +39,8 @@ from gym.utils import seeding
 #rendering
 from PIL import Image
 import matplotlib.patches as patches
+
+from rl.utilities import check_WhileTrue_timeout
 
 #%%
 
@@ -271,6 +274,11 @@ class RobotEnv(gym.Env):
         low_bound,high_bound = self._getPositionBounds()   
         
         while True:
+            if 'time_in' not in locals():
+                time_in = time.time()
+            if check_WhileTrue_timeout(time_in, t_max = 10):
+                break
+                             
             self.target_coordinates = np.random.uniform(low = np.array(low_bound), high = np.array(high_bound),size=3)
             if np.amin(np.sqrt(np.sum((self.robot.map.obstaclesCoordinates - self.target_coordinates[:2])**2, axis = 1)))>10:
                 break

@@ -104,8 +104,7 @@ def clear_pycache(path):
                    
 ##########################################################################
 #save/load training parameters to txt file (only first time train launch)
-def store_train_params(rl_env):
-    function_inputs = locals().copy()
+def store_train_params(rl_env, function_inputs):
     
     with open(os.path.join(rl_env.storage_path,'train_params.txt'), 'w+') as f:
         
@@ -121,9 +120,9 @@ def store_train_params(rl_env):
                 f.writelines("\n")
     
     
-def load_train_params(env_type, model_type, overwrite_params):
+def load_train_params(env_type, model_type, overwrite_params, net_version):
     my_dict = {}
-    storage_path = os.path.join( os.path.dirname(os.path.abspath(__file__)) ,"Data" , \
+    storage_path = os.path.join( os.path.dirname(os.path.dirname(os.path.abspath(__file__))) ,"Data" , \
                             env_type, model_type+str(net_version) )
     
     with open(os.path.join(storage_path,'train_params.txt'), 'r+') as f:
@@ -135,4 +134,13 @@ def load_train_params(env_type, model_type, overwrite_params):
                 my_dict.__setitem__(var , eval(line[line.find(':')+1 : line.find('\n')])) 
                 
     return my_dict
+
+
+############################################################################
+import time
+
+def check_WhileTrue_timeout(time_in, t_max = 60):
+    if (time.time() - time_in) > t_max:
+        return True
+    return False
     

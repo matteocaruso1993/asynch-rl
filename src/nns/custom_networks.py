@@ -9,6 +9,7 @@ Created on Thu Jul 23 12:22:12 2020
 import os
 
 import time
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -225,6 +226,9 @@ class ConvModel(nnBase):
         self.F3 = F3
         self.kernel_size_in = kernel_size_in
         self.strides = strides
+        
+        # in AC mode, following weights are updated separately
+        self.independent_weights = ['fc1.weight', 'fc1.bias','fc2.weight', 'fc2.bias','fc3.weight', 'fc3.bias','fc_output.weight', 'fc_output.bias']
 
         # this should always be run in the child classes after initialization
         self.complete_initialization(kwargs)
@@ -311,8 +315,7 @@ class ConvModel(nnBase):
         checkpoint = torch.load(filename_pt, map_location=device)
         pretrained_dict = checkpoint['model_state_dict']
 
-        model_dict = self.state_dict(['fc1.weight', 'fc1.bias','fc2.weight', 'fc2.bias',\
-                                       'fc3.weight', 'fc3.bias','fc_output.weight', 'fc_output.bias'])
+        model_dict = self.state_dict(self.independent_weights)
         
         # 1. filter out unnecessary keys
         pretrained_dict = {k : v for k, v in pretrained_dict.items() if k not in model_dict}
@@ -344,7 +347,22 @@ class ConvModel(nnBase):
         if N_linear_in != model_state['fc1.weight'].shape[1]:
             raise("NN consistency error")
 
-    
+
+    ##########################################################################
+    # compare weights before and after the update
+    def compare_weights(self, state_dict_1, state_dict_0 = None):
+        
+        average_diff = super().compare_weights(state_dict_1, state_dict_0)
+        if average_diff > 0 and self.conv_no_grad:
+            
+            if not identical_state_dicts(state_dict_0.pop(self.independent_weights), state_dict_1.pop(self.independent_weights)):
+                raise('constant PG weights differ!')                
+                
+            average_diff = np.average(np.array( [torch.mean(torch.abs(v0[1] - v1[1])).item()  \
+                            for v0,v1 in zip(state_dict_0(self.independent_weights).items(), state_dict_1(self.independent_weights).items())  ]))
+                
+        return average_diff
+
     
 #%%
 #test

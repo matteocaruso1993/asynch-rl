@@ -9,12 +9,13 @@ Created on Fri Nov 13 17:08:05 2020
 #%%
 
 from rl.rl_env import Multiprocess_RL_Environment
-from rl.utilities import clear_pycache, store_train_params
+from rl.utilities import clear_pycache, store_train_params, load_train_params
 
 import sys
 import psutil
 import time
 import os
+import ray
 
 import numpy as np
 
@@ -22,7 +23,8 @@ import numpy as np
 from argparse import ArgumentParser
 
 parser = ArgumentParser()
-parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10, help="number of training iterations")
+
+parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 2, help="number of training iterations")
 
 parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
@@ -38,7 +40,7 @@ parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, d
 parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=100,
                     help="Length of one successful run")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=5000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=500,
                     help="Replay Memory Size")
 
 parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.1,
@@ -50,10 +52,10 @@ parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, def
 parser.add_argument("-lr", "--learning-rate", dest="learning_rate", type=float, default=1e-4,
                     help="NN learning rate")
 
-parser.add_argument("-e", "--epochs-training", dest="n_epochs", type=int, default=500,
+parser.add_argument("-e", "--epochs-training", dest="n_epochs", type=int, default=100,
                     help="Number of epochs per training iteration")
 
-parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size", type=int, default=128,
+parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size", type=int, default=32,
                     help="Size of the minibatches used for training")
 
 parser.add_argument("-y", "--epsilon", dest="epsilon", type=float, default=0.99,
@@ -77,8 +79,14 @@ parser.add_argument("-v", "--net-version", dest="net_version", type=int, default
 parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=bool, default=False,
                     help="reset optimizer")
 
+parser.add_argument("-fr", "--frames-number", dest="n_frames", type=int, default=4,
+                    help="number of frames considered for convolutional network")
+
 parser.add_argument("-pu", "--pg-partial-update", dest="pg_partial_update", type=bool, default=False,
                     help="Flag to update only partially the PG model (non updated layers are shared with QV model)")
+
+parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='DQL',
+                    help="RL mode (AC, DQL)")
 
 parser.add_argument(
   "-rw", "--rewards",  nargs="*",  # 0 or more values expected => creates a list
@@ -97,11 +105,31 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False, record_comp
              n_epochs = 400, replay_memory_size = 5000, epsilon = .9, ctrlr_probability = 0, sim_length_max = 100, \
         epsilon_annealing_factor = 0.95,  ctrlr_prob_annealing_factor = 0.9 , mini_batch_size = 64, \
             memory_turnover_ratio = 0.1, val_frequency = 10, rewards = np.ones(5), reset_optimizer = False,
-            pg_partial_update = False):
+            pg_partial_update = False, n_frames = 4, rl_mode = 'DQL'):
 
+
+    function_inputs = locals().copy()
+    
+    env_type = 'RobotEnv' 
+    model_type = 'ConvModel'
+    overwrite_params = ['rewards', 'pg_partial_update', 'n_frames' ]
+    
+    # trick used to resume epsilon status if not declared explicitly
+    if epsilon == -1:
+        epsilon = 0.9
+        resume_epsilon = True
+    else:
+        resume_epsilon = False
+
+    # initialize required net and model parameters if loading from saved values
+    if load_iteration != 0:
+        my_dict = load_train_params(env_type, model_type, overwrite_params, net_version)
+        for i,par in enumerate(overwrite_params):
+            exec(par + " =  my_dict['"  + par + "']")
+        del( overwrite_params, my_dict)
+
+    # import ray
     if ray_parallelize:
-        import ray
-
         # Start Ray.
         try:
             ray.shutdown()
@@ -109,29 +137,10 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False, record_comp
             print('ray not active')
         ray.init()
 
-    #
-    # to debug compiling time
-    if record_computing_time:
-        #rl_env.plot_training_log()
-        import cProfile
-        import pstats
-        import io
-        pr = cProfile.Profile()
-        pr.enable()
-        
-    # to debug compiling time
-    #
-    #rl_env = Multiprocess_rl_environment('RobotEnv', 'ConvModel', n_agents = num_cpus -2, ray_parallelize=ray_parallelize, move_to_cuda=True)
-    
-    #print(f'c = {ctrlr_probability}')
-    #print(f'y = {epsilon}')
-    
-    # leave only simulation options here
-    
     single_agent_min_iterations = round(memory_turnover_ratio*replay_memory_size / (agents_number * 20) )
     
-    rl_env = Multiprocess_RL_Environment('RobotEnv', 'ConvModel', net_version , n_agents = agents_number, \
-                                         ray_parallelize=ray_parallelize, move_to_cuda=True, n_frames = 4, \
+    rl_env = Multiprocess_RL_Environment(env_type , model_type , net_version , rl_mode = rl_mode, n_agents = agents_number, \
+                                         ray_parallelize=ray_parallelize, move_to_cuda=True, n_frames = n_frames, \
                                          replay_memory_size = replay_memory_size, N_epochs = n_epochs, \
                                          epsilon = epsilon , tot_iterations = single_agent_min_iterations, \
                                          ctrlr_probability = ctrlr_probability, epsilon_annealing_factor=epsilon_annealing_factor,\
@@ -140,6 +149,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False, record_comp
                                          difficulty = difficulty, learning_rate = learning_rate, sim_length_max = sim_length_max, \
                                          memory_turnover_ratio = memory_turnover_ratio, val_frequency = val_frequency )
 
+    rl_env.resume_epsilon = resume_epsilon
 
     rl_env.save_movie = False
     rl_env.live_plot = False
@@ -148,32 +158,20 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False, record_comp
 
     # launch env
     time_init = time.time()
-        
     
     # second run is to test parallel computation fo simulations and NN update
     if load_iteration != 0:
         rl_env.load( load_iteration)
         
     else:
-        store_train_params(rl_env)
-        
-
+        store_train_params(rl_env, function_inputs)
         
     rl_env.runSequence(n_iterations, reset_optimizer=reset_optimizer) 
-    
-    #
-    # to debug compiling time
-    if record_computing_time:
-        pr.disable()
-        s = io.StringIO()
-        ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
-        ps.print_stats()
-        with open('test.txt', 'w+') as f:
-            f.write(s.getvalue())
-    # to debug compiling time
-    #
+
     return rl_env
 
+
+################################################################
 
 if __name__ == "__main__":
     
@@ -185,7 +183,9 @@ if __name__ == "__main__":
                mini_batch_size = args.minibatch_size, learning_rate = args.learning_rate, \
                sim_length_max = args.sim_length_max, difficulty = args.difficulty, \
                val_frequency = args.val_frequency, memory_turnover_ratio = args.memory_turnover_ratio, \
-               rewards = args.rewards, reset_optimizer = args.reset_optimizer, pg_partial_update = args.pg_partial_update)
+               reset_optimizer = args.reset_optimizer, n_frames = args.n_frames, \
+               pg_partial_update = args.pg_partial_update, rewards = args.rewards_list, rl_mode = args.rl_mode)
 
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)
+

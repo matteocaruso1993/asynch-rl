@@ -8,7 +8,7 @@ Created on Fri Dec  4 13:51:07 2020
 
 #%%
 from rl.rl_env import Multiprocess_RL_Environment
-from rl.utilities import clear_pycache, store_train_params
+from rl.utilities import clear_pycache, store_train_params, load_train_params
 
 import sys
 import psutil
@@ -25,15 +25,17 @@ parser = ArgumentParser()
 
 parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 5, help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=True,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
 
 parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default=0, help = "task degree of difficulty")
 
+"""
 parser.add_argument("-r", "--record-time", dest="record_computing_time", type=bool, default=False,
                     help="flag to record computation time of each function")
+"""
 
-parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,#-1,
+parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
 parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=100,
@@ -81,7 +83,7 @@ parser.add_argument("-gc", "--change-gears", dest="change_gears", type=bool, def
 parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=bool, default=False,
                     help="reset optimizer")
 
-parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='DQL',
+parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC',
                     help="RL mode (AC, DQL)")
 
 """
@@ -117,6 +119,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False, record_comp
             memory_turnover_ratio = 0.1, val_frequency = 10, layers_width= (5,5), discr_act_bins = (20, 1) ,\
                 rewards = np.ones(5), change_gears = False, reset_optimizer = False, rl_mode = 'DQL'):
 
+    function_inputs = locals().copy()
     
     env_type = 'Platoon' 
     model_type = 'LinearModel'
@@ -131,14 +134,10 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False, record_comp
 
     # initialize required net and model parameters if loading from saved values
     if load_iteration != 0:
-        my_dict = load_train_params(env_type, model_type, overwrite_params)
-        
-
-    layers_width = my_dict['layers_width']
-    discr_act_bins = my_dict['discr_act_bins']
-    change_gears = my_dict['change_gears']
-
-    del( overwrite_params, my_dict)
+        my_dict = load_train_params(env_type, model_type, overwrite_params, net_version)
+        for i,par in enumerate(overwrite_params):
+            exec(par + " =  my_dict['"  + par + "']")
+        del( overwrite_params, my_dict)
 
     
     # import ray
@@ -149,9 +148,6 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False, record_comp
         except Exception:
             print('ray not active')
         ray.init()
-
-
-
         
 
     env_options = {'change_gears' : change_gears}
@@ -186,7 +182,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False, record_comp
         rl_env.load( load_iteration)
         
     else:
-        store_train_params(rl_env)
+        store_train_params(rl_env, function_inputs)
         
     rl_env.runSequence(n_iterations, reset_optimizer=reset_optimizer) 
     
