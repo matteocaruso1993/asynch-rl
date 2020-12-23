@@ -3,15 +3,15 @@
 """
 Created on Fri Dec  4 19:01:24 2020
 
-@author: rodpod21
+@author: Enrico Regolin
 """
 
 
 # tester robot
 import matplotlib.pyplot as plt
+from rl.utilities import clear_pycache, load_train_params
 
-
-from RL.RL_manager import Multiprocess_RL_Environment
+from rl.rl_env import Multiprocess_RL_Environment
 
 import sys
 import psutil
@@ -23,48 +23,39 @@ import os
 import asyncio
 
 # df loader
-net_version = 1
-iteration = 500
+net_version = 0
+iteration = 31
 
 # generate proper discretized bins structure
 ################
-my_dict = {}
-overwrite_params = ['layers_width','discr_act_bins', 'rewards']
+env_type = 'Platoon' 
+model_type = 'LinearModel'
+overwrite_params = ['layers_width','discr_act_bins', 'change_gears', 'rewards']
 
-storage_path = os.path.join( os.path.dirname(os.path.abspath(__file__)) ,"Data" , \
-                        'Platoon', 'LinearModel'+str(net_version) )
+my_dict = load_train_params(env_type, model_type, overwrite_params, net_version)
+for i,par in enumerate(overwrite_params):
+    exec(par + " =  my_dict['"  + par + "']")
+del( overwrite_params, my_dict)
 
-with open(os.path.join(storage_path,'train_params.txt'), 'r+') as f:
-    Lines = f.readlines() 
-    
-for line in Lines: 
-    for var in overwrite_params:
-        if var in line:
-            my_dict.__setitem__(var , eval(line[line.find(':')+1 : line.find('\n')])) 
- 
-layers_width = my_dict['layers_width']
-discr_act_bins = my_dict['discr_act_bins']
-rewards = my_dict['rewards']
-del( overwrite_params, Lines, storage_path, my_dict)
 ################
 
-dqn_env = Multiprocess_RL_Environment('Platoon', 'LinearModel', net_version, ray_parallelize=False, difficulty=1, rewards = rewards, \
-                                     move_to_cuda=False, n_frames = 0, discr_env_bins=discr_act_bins, save_override= False, test_mode = True ) #, \
+rl_env = Multiprocess_RL_Environment(env_type, model_type, net_version, ray_parallelize=False, difficulty=1, rewards = rewards, \
+                                     move_to_cuda=False, n_frames = 0, discr_env_bins=discr_act_bins, ) #, \
                                       #replay_memory_size = 500, N_epochs = 100)
 
 
-dqn_env.save_movie = False
-dqn_env.live_plot = False
-# always update agents params after dqn_env params are changed
-dqn_env.updateAgentsAttributesExcept('env')
+rl_env.save_movie = False
+rl_env.live_plot = False
+# always update agents params after rl_env params are changed
+rl_env.updateAgentsAttributesExcept('env')
 
-dqn_env.load(iteration, load_memory = False)
-#dqn_env.load(320)
+rl_env.load(iteration, load_memory = False)
+#rl_env.load(320)
 
-dqn_env.plot_training_log(1)
+rl_env.plot_training_log(1)
 
 
-if hasattr(dqn_env, 'val_history'):
+if hasattr(rl_env, 'val_history'):
 
     
     # 0) iteration ---- 1) average duration   ---- 2)average single run reward   ---- 3) average loss
@@ -75,22 +66,22 @@ if hasattr(dqn_env, 'val_history'):
     ax3 = fig_val1.add_subplot(4,1,3)
     ax4 = fig_val1.add_subplot(4,1,4)
 
-    ax1.plot(dqn_env.val_history[:,0], dqn_env.val_history[:,2])
+    ax1.plot(rl_env.val_history[:,0], rl_env.val_history[:,2])
     ax1.legend(['total runs'])
         
-    ax2.plot(dqn_env.val_history[:,0], dqn_env.val_history[:,3])
+    ax2.plot(rl_env.val_history[:,0], rl_env.val_history[:,3])
     ax2.legend(['average duration'])
     
-    ax3.plot(dqn_env.val_history[:,0], dqn_env.val_history[:,4])
+    ax3.plot(rl_env.val_history[:,0], rl_env.val_history[:,4])
     ax3.legend(['average cum reward'])
 
-    ax4.plot(dqn_env.val_history[:,0], dqn_env.val_history[:,1])
+    ax4.plot(rl_env.val_history[:,0], rl_env.val_history[:,1])
     ax4.legend(['successful runs ratio'])
 
 #%%
 
 
-agent = dqn_env.sim_agents[0]
+agent = rl_env.sim_agents_discr[0]
 
 #agent.max_steps_single_run = 5000
 #
@@ -103,3 +94,9 @@ agent.env.env.sim_length_max = 200
 sim_log, single_runs , successful_runs= agent.run_synch(use_NN = True)
 
 agent.env.env.plot_graphs()
+
+
+#%%
+
+current_folder = os.path.abspath(os.path.dirname(__file__))
+clear_pycache(current_folder)

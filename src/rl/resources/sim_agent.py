@@ -37,10 +37,11 @@ class SimulationAgent:
                  net_name = 'no_name' ,epsilon = 0.9, ctrlr_probability = 0, \
                  internal_memory_size = 100, save_movie = True, \
                  max_consecutive_env_fails = 3, max_steps_single_run = 200, show_rendering = True, \
-                 tot_iterations = 100, live_plot = False, verbosity = 0 , \
+                 tot_iterations = 100, live_plot = False, verbosity = 0 , AC_qv_quota = 0.5, \
                  movie_frequency = 10, max_n_single_runs = 1000, save_sequences  = False):
 
         self.rl_mode = rl_mode
+        self.AC_qv_quota = AC_qv_quota
         
         self.save_sequences  = save_sequences
         self.reset_full_sequences()
@@ -66,12 +67,9 @@ class SimulationAgent:
         self.n_actions = self.env.get_actions_structure()
         #(self.env.n_bins_act+1)**(self.env.act_shape[0])  # n_actions depends strictly on the type of environment
         
+        self.model_qv = model_qv
         if self.rl_mode == 'AC':
             self.model_pg = model_pg
-        elif self.rl_mode == 'DQL':
-            self.model_qv = model_qv
-        else:
-            raise('Undefined RL mode')
         
         self.n_frames = n_frames
         
@@ -264,8 +262,8 @@ class SimulationAgent:
                     break
                 state, use_controller = self.reset_agent(pctg_ctrl)
             
-            action = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN)
-            state, reward_np, done , info= self.stepAndRecord(state, action)
+            action, pg_output = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN)
+            state, reward_np, done , info= self.stepAndRecord(state, action, pg_output)
 
             if use_NN and len(info)>0:
                 self.agent_run_variables['successful_runs'] += 1
@@ -312,8 +310,8 @@ class SimulationAgent:
                     break
                 state, use_controller = self.reset_agent()
             
-            action = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN)
-            state, reward_np, done , info = self.stepAndRecord(state, action)
+            action, pg_output = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN)
+            state, reward_np, done , info = self.stepAndRecord(state, action, pg_output)
             
             if use_NN and len(info)>0:
                 successful_runs += 1
@@ -340,7 +338,7 @@ class SimulationAgent:
             return []
         
     ################################################################################
-    def stepAndRecord(self,state, action):
+    def stepAndRecord(self,state, action, pg_output):
             #################
             try:
                 state_obs_1, reward_np, done, info = self.env.action(action.detach().numpy())
@@ -365,7 +363,7 @@ class SimulationAgent:
                 action = action.unsqueeze(0)
                 reward = torch.from_numpy(np.array([reward_np], dtype=np.float32)).unsqueeze(0)
                 # build "new transition" and add it to replay memory
-                new_transition = (state, action, reward, state_1, done)
+                new_transition = (state, action, reward, state_1, done, pg_output)
                 
                 self.internal_memory.addInstance(new_transition)
                 # set state to be state_1 (for next iteration)
@@ -431,12 +429,20 @@ class SimulationAgent:
     ##################################################################################
     def getNextAction(self,state, use_controller = False, use_NN = False):
         # initialize action
+        pg_output = False
         action = torch.zeros([self.n_actions], dtype=torch.float32)
         # PG only uses greedy approach            
         if self.rl_mode == 'AC':
+            if random.random() <= self.epsilon and not use_NN:
+                action_index = torch.randint(self.n_actions, torch.Size([]), dtype=torch.int)
+            else:
+                if random.random() <= self.AC_qv_quota and not use_NN:
+                    output = self.model_qv.cpu()(state.float())
+                else:
+                    output = self.model_pg.cpu()(state.float())
+                    pg_output = True
             
-            output = self.model_pg.cpu()(state.float())
-            action_index = torch.argmax(output)
+                action_index = torch.argmax(output)
 
         elif self.rl_mode == 'DQL':
             if use_controller and not use_NN:
@@ -449,7 +455,7 @@ class SimulationAgent:
                     action_index = torch.argmax(output)
             
         action[action_index] = 1        
-        return action
+        return action, pg_output
             
     ##################################################################################
     def trainVariablesUpdate(self, reward_np = 0, done = False, reset_variables = False):

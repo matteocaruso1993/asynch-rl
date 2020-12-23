@@ -48,7 +48,7 @@ class Ray_RL_Updater(RL_Updater):
         print(f'Asynchronous update started: state_value')
         while not stop_update:
 
-            loss = self.qValue_loss_update(*self.memory_pool.extractMinibatch())
+            loss = self.qValue_loss_update(*self.memory_pool.extractMinibatch()[:-1])
             total_loss.append(loss.cpu().detach().numpy())
             epochs += 1
 

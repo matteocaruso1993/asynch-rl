@@ -48,8 +48,8 @@ class Multiprocess_RL_Environment:
                  move_to_cuda = True, show_rendering = True , n_frames=4, learning_rate = 0.001 , \
                  rl_params = None,movie_frequency = 20, max_steps_single_run = 200, \
                  training_session_number = None, save_movie = True, live_plot = False, \
-                 display_status_frequency = 50, max_consecutive_env_fails = 3, \
-                 epsilon = 1, tot_iterations = 400, epsilon_annealing_factor = 0.95, \
+                 display_status_frequency = 50, max_consecutive_env_fails = 3, tot_iterations = 400,\
+                 epsilon = 1, epsilon_annealing_factor = 0.95, AC_qv_quota = 0.2, \
                  epsilon_min = 0.01 , gamma = 0.99 , discr_env_bins = 10 , N_epochs = 1000, \
                  replay_memory_size = 10000, mini_batch_size = 512, sim_length_max = 100, \
                  ctrlr_prob_annealing_factor = .9,  ctrlr_probability = 0, difficulty = 0, \
@@ -142,6 +142,8 @@ class Multiprocess_RL_Environment:
 
         #######################
         # epsilon/ctrl parameters
+        self.AC_qv_quota = AC_qv_quota
+        
         self.epsilon = epsilon  # works also as initial epsilon in case of annealing
         self.epsilon_annealing_factor = epsilon_annealing_factor #○ epsilon reduction after every epoch [0<fact<=1]
         self.epsilon_min = epsilon_min
@@ -176,7 +178,7 @@ class Multiprocess_RL_Environment:
             self.env_contn = self.generateContnsHybActSpace_GymStyleEnv()
             self.n_actions_contn = self.env_contn.get_actions_structure()
 
-        self.model_pg = self.generate_model(0.1, pg_model=True, )
+        self.model_pg = self.generate_model(10*self.lr, pg_model=True, )
         self.model_pg.init_weights()
 
         #######################
@@ -192,8 +194,10 @@ class Multiprocess_RL_Environment:
 
         self.log_df = pd.DataFrame(columns=['training session','epsilon', 'ctrl prob','total single-run(s)',\
                                     'average single-run duration', 'average single-run reward' , 'av. q-val loss', \
-                                    'av. policy loss','N epochs', 'memory size', 'split random','split conventional','split NN'])
-        self.splits = np.array([np.nan, np.nan, np.nan])
+                                    'av. policy loss','N epochs', 'memory size', 'split random','split conventional',\
+                                        'split NN QV', 'split NN PG'])
+        self.splits = np.array([np.nan, np.nan, np.nan, np.nan])
+        # splits: random, conventional, NN_QV, NN_PG
 
         #######################
         # here we add the simulation agents
@@ -371,7 +375,7 @@ class Multiprocess_RL_Environment:
                         self.runSerialized(memory_fill_only = True)
                     self.memory_stored = self.shared_memory.cloneMemory()
                     self.memory_stored.save(self.storage_path,self.net_name)
-                    
+                                        
 
     ##################################################################################
     def check_model_version(self, print_out = False, mode = 'sim', save_v0 = False):
@@ -404,12 +408,12 @@ class Multiprocess_RL_Environment:
             model_v= model.model_version
                     
             if save_v0:
+                if not os.path.isfile(os.path.join(self.storage_path,self.net_name+ '.pt')):
+                    model.save_net_params(self.storage_path,self.net_name)                
                 if self.rl_mode == 'AC':
                     if not os.path.isfile(os.path.join(self.storage_path,self.net_name+ '_policy.pt')):
                         model.save_net_params(self.storage_path,self.net_name+'_policy')
-                elif self.rl_mode == 'DQL':
-                    if not os.path.isfile(os.path.join(self.storage_path,self.net_name+ '.pt')):
-                        model.save_net_params(self.storage_path,self.net_name)
+
                     
             if print_out:
                 print(f'SYSTEM is SIMULATING with model version: {model_v}')  
@@ -430,7 +434,7 @@ class Multiprocess_RL_Environment:
 
             if print_out:
                 print(f'MODEL UPDATED version: {model_v}')  
-                print(f'fc1.weight (first 5 rows)= {model.fc1.weight[:5,:]}')
+                #print(f'fc1.weight (first 5 rows)= {model.fc1.weight[:5,:]}')
 
         return model_v
 
@@ -439,19 +443,19 @@ class Multiprocess_RL_Environment:
     def update_model_cpu(self):
         """Upload the correct model on CPU (used to select the action when a simulation is run) """
         device_cpu = torch.device('cpu')
+
+        self.model_qv.load_net_params(self.storage_path,self.net_name, device_cpu)
+        
         if self.rl_mode == 'AC': 
             #if os.path.isfile(os.path.join(self.storage_path,self.net_name + '_policy.pt')):
             try:
                 self.model_pg.load_net_params(self.storage_path,self.net_name + '_policy', device_cpu)
                 self.policy_loaded = True
-                return True
             except Exception:
-                print('failed loading of PG model on CPU!')
+                print('No QV model to load on CPU!')
                 return False
-
-        elif self.rl_mode == 'DQL':
-            self.model_qv.load_net_params(self.storage_path,self.net_name, device_cpu)   
-            return True
+               
+        return True
 
     ##################################################################################
     def saveTrainIteration(self):
@@ -505,13 +509,12 @@ class Multiprocess_RL_Environment:
                 self.shared_memory.addMemoryBatch(self.sim_agents_discr[0].emptyLocalMemory() )
                 
         if not memory_fill_only:
-            print(f'policy loaded = {self.policy_loaded}')
             if self.rl_mode == 'AC' and self.policy_loaded:
                 if DEBUG_MODEL_VERSIONS:
-                    model_version_update = self.check_model_version(print_out = True, mode = 'update', save_v0 = False)
+                    model_version_update = self.check_model_version(print_out = False, mode = 'update', save_v0 = False)
                     print(f'model_version_sim = {model_version_sim}')
                     print(f'model_version_update = {model_version_update}')
-                policy_loss =  self.nn_updater.update_DeepRL('policy', self.shared_memory ) 
+                policy_loss =  self.nn_updater.update_DeepRL('policy', self.shared_memory.pg_only() ) 
                 
             self.get_log(total_runs, total_log, average_qval_loss, policy_loss )
     
@@ -526,7 +529,7 @@ class Multiprocess_RL_Environment:
         total_runs = 0        
 
         # to avoid wasting simulations
-        min_fill_ratio = 0.9
+        min_fill_ratio = 0.95
         task_lst = [None for _ in self.sim_agents_discr]
         #min_ratio_to_empty = 0.1
         
@@ -535,9 +538,9 @@ class Multiprocess_RL_Environment:
             if self.memory_stored is not None and not qv_update_launched and not memory_fill_only: 
                 # this check is required to ensure nn_udater has finished loading the memory 
                 #(in asynchronous setting this could take long)
-                if ray.get(self.nn_updater.getAttributeValue.remote('memory_pool')) is None:
+                if not ray.get(self.nn_updater.hasMemoryPool.remote()): 
                     raise('missing internal memory pool')
-                
+                    
                 updating_process = self.nn_updater.update_DQN_asynch.remote()
                 qv_update_launched = True
                
@@ -579,9 +582,9 @@ class Multiprocess_RL_Environment:
                 model_diff = self.model_pg.compare_weights(model_update.cpu().state_dict().copy() )
                 if model_diff > 0.001:
                     print(f'PG models MISMATCH: {model_diff}')
-                    raise('update model different than SIM one')
+                    #raise('update model different than SIM one')
                 else:
-                    policy_loss = ray.get(self.nn_updater.update_DeepRL.remote('policy', self.shared_memory ))
+                    policy_loss = ray.get(self.nn_updater.update_DeepRL.remote('policy', self.shared_memory.pg_only() ))
                 
             #3) store computed losses
             self.get_log(total_runs, total_log, average_qval_loss, policy_loss )
@@ -694,7 +697,7 @@ class Multiprocess_RL_Environment:
             if display_graphs:
                 self.plot_training_log()
                 
-            if i> 1 and not (i+1) % self.val_frequency:
+            if i> 1 and not i % self.val_frequency:
                 print('###################################################################')
                 print('validation cycle start...')
         
@@ -707,11 +710,14 @@ class Multiprocess_RL_Environment:
                 print('end of validation cycle')
                 print('###################################################################')
                 
-            if i >= 50:
-                losses = self.log_df['average loss'].to_numpy()
-                if losses[-1]>= 100*losses[-11] >= 100*losses[-21]:
+            """
+            if i >= 30:
+                
+                losses = self.log_df[['av. q-val loss', 'av. policy loss']].to_numpy()
+                if (losses[-1,:]>= 1e5*losses[-21]).any():
                     print('Algorithm is clearly diverging!')
                     break
+            """
         
         # save memory to reload for next iteration
         self.memory_stored.save(self.storage_path,self.net_name)
@@ -726,8 +732,14 @@ class Multiprocess_RL_Environment:
         split_conventional_ctrl = np.round(100*self.ctrlr_probability,2)
         split_random = np.round(100*self.epsilon*(1-self.ctrlr_probability),2)
         split_NN_ctrl = np.round(100*(1-self.epsilon)*(1-self.ctrlr_probability),2)
+        if self.rl_mode == 'AC':
+            split_NN_ctrl_QV = np.round(split_NN_ctrl*self.AC_qv_quota)
+            split_NN_ctrl_PG = np.round(split_NN_ctrl*(1-self.AC_qv_quota))
+        else:
+            split_NN_ctrl_QV = split_NN_ctrl
+            split_NN_ctrl_PG = 0
         
-        self.splits = np.array([split_random, split_conventional_ctrl, split_NN_ctrl])
+        self.splits = np.array([split_random, split_conventional_ctrl, split_NN_ctrl_QV, split_NN_ctrl_PG])
         
         if print_out:
 
@@ -736,7 +748,8 @@ class Multiprocess_RL_Environment:
 
             print(f'Random share: {split_random}%')
             print(f'Conventional ctl share: {split_conventional_ctrl}%')
-            print(f'NN share: {split_NN_ctrl}%')
+            print(f'NN share QV: {split_NN_ctrl_QV}%')
+            print(f'NN share PG: {split_NN_ctrl_PG}%')
         
 
     ##################################################################################
@@ -747,16 +760,11 @@ class Multiprocess_RL_Environment:
         #it's resetted at every new cycle. 
         #after the first fill, only the portion defined by "memory_turnover_size" is filled
         self.shared_memory.resetMemory(bool(self.memory_stored)*self.memory_turnover_size)
-        
         self.updateProbabilities(print_out = True)
-        
-        
         
         # update epsilon and model of the Sim agents
         if self.training_session_number == 0:
             self.check_model_version(print_out = True, mode = 'sim', save_v0 = True)
-            
-        
 
         #self.update_model_cpu() returns True if succesful
         if self.update_model_cpu():
@@ -768,22 +776,22 @@ class Multiprocess_RL_Environment:
                 self.updateAgentsAttributesExcept()
             else:
                 raise('Loading error')
-        
-        
-                
+
         # inidializing model to be updated
-        if self.ray_parallelize:
-            # instanciate ModelUpdater actor -> everything here happens on GPU
-            if self.nn_updater is None:
-                self.nn_updater = Ray_RL_Updater.remote(self, reset_optimizer)
+        # instanciate ModelUpdater actor -> everything here happens on GPU
+        if self.nn_updater is None:
+            model_pg = None
+            if self.rl_mode == 'AC':
+                model_pg = self.generate_model(pg_model=True)
+            if self.ray_parallelize:
+                self.nn_updater = Ray_RL_Updater.remote(self, self.generate_model(), model_pg, reset_optimizer)
             else:
-                self.nn_updater.update_attributes.remote(self)
+                self.nn_updater = RL_Updater(self, self.generate_model(), model_pg, reset_optimizer)
         else:
-            if self.nn_updater is None:
-                self.nn_updater = RL_Updater(self, reset_optimizer)
-            else:
-                self.nn_updater.update_attributes(self)
-        
+            if self.ray_parallelize:
+                self.nn_updater.setAttribute.remote('net_name',self.net_name)
+            else:                
+                self.nn_updater.setAttribute('net_name',self.net_name)
         
         
     ##################################################################################
@@ -801,19 +809,31 @@ class Multiprocess_RL_Environment:
         # update memory
         if self.memory_stored is None:
             self.memory_stored = self.shared_memory.cloneMemory()
+            if self.ray_parallelize:
+                self.nn_updater.setAttribute.remote('memory_pool', self.memory_stored)
+            else:
+                self.nn_updater.setAttribute('memory_pool', self.memory_stored)
+            
             turnover_pctg_act = np.round(100*self.memory_stored.fill_ratio,2)
         else:
-            turnover_pctg_act = np.round(100*self.memory_stored.addMemoryBatch(self.shared_memory.getMemoryAndEmpty() ),2)
+            new_memory = self.shared_memory.getMemoryAndEmpty()
+            turnover_pctg_act = np.round(100*self.memory_stored.addMemoryBatch(new_memory),2)
+            if self.ray_parallelize:
+                self.nn_updater.update_memory_pool.remote(new_memory)
+            else:
+                self.nn_updater.update_memory_pool(new_memory)
+            
         #print(f'memory size = {self.memory_stored.size*self.memory_stored.fill_ratio}')
         #print(f'effective memory turnover = {turnover_pctg_act}')
             
         # update log and history
         # (log structure: ['training session','epsilon', 'total single-run(s)','average single-run duration',\
-        #    'average single-run reward' , 'average qval loss','average policy loss', 'N epochs', 'memory size']  )
+        #    'average single-run reward' , 'average qval loss','average policy loss', 'N epochs', 'memory size', \
+        #    action gen splits...]  )
         if self.training_session_number > 1:
             new_row = [int(self.training_session_number), self.epsilon, self.ctrlr_probability , self.session_log[0] , self.session_log[1] ,\
                        self.session_log[2], self.session_log[3],self.session_log[4], self.N_epochs, self.replay_memory_size, \
-                       self.splits[0], self.splits[1], self.splits[2]    ]
+                       self.splits[0], self.splits[1], self.splits[2] , self.splits[3]    ]
             self.log_df.loc[len(self.log_df)] = new_row
         
         if self.qval_loss_history is None:
@@ -848,9 +868,7 @@ class Multiprocess_RL_Environment:
         self.training_session_number +=1        
         self.update_net_name()
         
-        
         self.end_training_round_routine()
-        
         
         print('###################################################################')
         print('###################################################################')
@@ -865,8 +883,11 @@ class Multiprocess_RL_Environment:
     def plot_training_log(self, init_epoch=0):
         #log_norm_df=(self.log_df-self.log_df.min())/(self.log_df.max()-self.log_df.min())
         #fig, ax = plt.subplots()
-        # (log structure: ['training session','epsilon', 'total single-run(s)','average single-run duration', \ 
-            #'average single-run reward' , 'average loss']  )        
+        # (log structure: 
+        # 0: 'training session', 1: 'epsilon', 2: 'ctrl prob',3: 'total single-run(s)',
+        # 4: 'average single-run duration', 5: 'average single-run reward' , 6: 'av. q-val loss', 
+        # 7: 'av. policy loss','N epochs', 8: 'memory size', 9: 'split random',
+        # 10:'split conventional', 11: 'split NN'] )        
 
         indicators = self.log_df.columns
 
@@ -877,33 +898,35 @@ class Multiprocess_RL_Environment:
         ax2 = fig.add_subplot(312)
         ax3 = fig.add_subplot(313)
         
-        ax1.plot(self.log_df.iloc[init_epoch:][indicators[2]])
-        ax1.legend([indicators[2]])
+        # 'total single-run(s)'
+        ax1.plot(self.log_df.iloc[init_epoch:][indicators[3]])
+        ax1.legend([indicators[3]])
         
-        ax2.plot(self.log_df.iloc[init_epoch:][indicators[3]])
-        ax2.legend([indicators[3]])
+        # 'average single-run duration'
+        ax2.plot(self.log_df.iloc[init_epoch:][indicators[4]])
+        ax2.legend([indicators[4]])
         
-        ax3.plot(self.log_df.iloc[init_epoch:][indicators[4]])
-        ax3.legend([indicators[4]])
+        # train splits
+        self.log_df.iloc[init_epoch:][['split random','split conventional','split NN QV','split NN PG']].plot.area(stacked=True, ax = ax3)
         
         ######################################
         fig_1 = plt.figure()
-        ax1_1 = fig_1.add_subplot(411)
+        
+        # 'av. q-val loss'
+        ax1_1 = fig_1.add_subplot(311)
         ax1_1.plot(self.log_df.iloc[init_epoch:][indicators[6]])
         ax1_1.set_yscale('log')
         ax1_1.legend([indicators[6]])
-        
-        ax1_1 = fig_1.add_subplot(412)
-        ax1_1.plot(self.log_df.iloc[init_epoch:][indicators[7]])
-        ax1_1.set_yscale('log')
-        ax1_1.legend([indicators[7]])
 
-        ax3_1 = fig_1.add_subplot(413)
+        # 'av. policy loss'
+        ax2_1 = fig_1.add_subplot(312)
+        ax2_1.plot(self.log_df.iloc[init_epoch:][indicators[7]])
+        ax2_1.legend([indicators[7]])
+
+        # 'average single-run reward'
+        ax3_1 = fig_1.add_subplot(313)
         ax3_1.plot(self.log_df.iloc[init_epoch:][indicators[5]])
         ax3_1.legend([indicators[5]])
-
-        ax4_1 = fig_1.add_subplot(414)
-        self.log_df.iloc[init_epoch:][['split random','split conventional','split NN']].plot.area(stacked=True, ax = ax3_1)
    
         return fig, fig_1 
 

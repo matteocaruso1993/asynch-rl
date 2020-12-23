@@ -16,41 +16,56 @@ from copy import deepcopy
 
 from .memory import unpack_batch
 
+from rl.utilities import lineno
+
 
 #%%
 
 class RL_Updater():
-    def __init__(self,rl_env, reset_optimizer = False):
+    def __init__(self,rl_env,model_qv, model_pg=None, reset_optimizer = False):
         #print('initialization started')
         
         self.PG_update_failed_once = False
-        self.beta = 0.001
+        self.beta = 0.01
+        self.n_epochs_PG = 100
+        self.PG_batch_size = 32
+        self.memory_pool = None
         
-        self.update_attributes(rl_env, init = True)
-        
+        self.copy_attributes(rl_env, init = True)
+
+        if self.move_to_cuda:
+            self.device = torch.device("cuda")
+        else:
+            self.device = torch.device("cpu")
+       
         self.nn_updating = False
-        self.load_model(reset_optimizer)
+        self.load_model(model_qv, model_pg, reset_optimizer)
+
         #print('initialization successful')
         
     ##################################################################################        
     # required to check if model is inherited
-    def update_attributes(self,rl_env, init = False):
-        self.rl_env = rl_env
-        self.memory_pool = rl_env.memory_stored 
+    def copy_attributes(self,rl_env, init = False):
+        #self.rl_env = rl_env
         self.n_epochs = rl_env.N_epochs 
         self.move_to_cuda = rl_env.move_to_cuda 
         self.gamma = rl_env.gamma
         self.rl_mode = rl_env.rl_mode
         self.pg_partial_update = rl_env.pg_partial_update
-        
-        if self.move_to_cuda:
-            self.device = torch.device("cuda")
-        else:
-            self.device = torch.device("cpu")
-        
+        self.storage_path = rl_env.storage_path
+        self.initial_training_session = rl_env.training_session_number
+
+        self.net_name = rl_env.net_name
+        """
         if not init:
             if self.memory_pool is None:
                 raise("memory pool is None object!!")
+        """
+        
+    ##################################################################################        
+    # required to check if model is inherited
+    def update_memory_pool(self,new_batch):    
+        self.memory_pool.addMemoryBatch(new_batch)         
         
     #################################################
     def save_model(self, path, model_name):
@@ -75,25 +90,29 @@ class RL_Updater():
         if attribute in self.__dict__.keys():
             self.__dict__[attribute] = value
         
-        
+    ##################################################################################        
+    # required since ray wrapper doesn't allow accessing attributes
+    def hasMemoryPool(self):
+        return self.memory_pool is not None
+       
     #################################################
     # loading occurs based on current iteration loaded in the RL environment
-    def load_model(self, reset_optimizer = False):
-        self.model_qv = self.rl_env.generate_model()
+    def load_model(self, model_qv, model_pg=None, reset_optimizer = False):
+        self.model_qv = model_qv #self.rl_env.generate_model()
         if self.move_to_cuda:
             self.model_qv = self.model_qv.cuda()
 
-        if self.rl_env.training_session_number >= 1:
-            self.model_qv.load_net_params(self.rl_env.storage_path,self.rl_env.net_name, self.device, reset_optimizer = reset_optimizer)
+        if self.initial_training_session >= 1:
+            self.model_qv.load_net_params(self.storage_path,self.net_name, self.device, reset_optimizer = reset_optimizer)
         else:
             self.model_qv.init_weights()
 
         if self.rl_mode == 'AC':
-            self.model_pg = self.rl_env.generate_model(pg_model=True)
+            self.model_pg = model_pg #self.rl_env.generate_model(pg_model=True)
             if self.move_to_cuda:
                 self.model_pg = self.model_pg.cuda()
             try:
-                self.model_pg.load_net_params(self.rl_env.storage_path,self.rl_env.net_name+'_policy', self.device, reset_optimizer = reset_optimizer)
+                self.model_pg.load_net_params(self.storage_path,self.net_name+'_policy', self.device, reset_optimizer = reset_optimizer)
             except Exception:
                 raise('Existing PG model not found!')
     
@@ -111,7 +130,7 @@ class RL_Updater():
 
             for epoch in tqdm(range(self.n_epochs)):
 
-                loss = self.qValue_loss_update(*self.memory_pool.extractMinibatch())
+                loss = self.qValue_loss_update(*self.memory_pool.extractMinibatch()[:-1])
                 total_loss.append(loss.cpu().detach().numpy())
                 
             self.model_qv.model_version +=1
@@ -120,14 +139,14 @@ class RL_Updater():
             
             state_dict_0 = deepcopy(self.model_pg.state_dict()) #.copy()
                         
-            loss, n_mismatch = self.policy_loss_update(*unpack_batch(policy_memory.memory)[:-1])
+            loss, n_mismatch = self.policy_loss_update(*unpack_batch(policy_memory)[:-2])
             total_loss = loss.cpu().detach().numpy()
     
-            invalid_samples_pctg =  np.round(100*n_mismatch/ policy_memory.getActualSize(), 2)
+            invalid_samples_pctg =  np.round(100*n_mismatch/ len(policy_memory), 2)
             print(f'Update finished. mismatch % =  {invalid_samples_pctg}%') 
             
             if self.pg_partial_update:
-                self.model_pg.load_conv_params(self.rl_env.storage_path,self.rl_env.net_name, self.device)
+                self.model_pg.load_conv_params(self.storage_path,self.net_name, self.device)
             
             update_diff = self.model_pg.compare_weights(state_dict_0)
             print(f'PG. loss = {total_loss}, model update = {round(update_diff,10)}')
@@ -143,6 +162,7 @@ class RL_Updater():
         self.nn_updating = False
         return total_loss
     
+
     
     #################################################
     def policy_loss_update(self, state_batch, action_batch, reward_batch, state_1_batch):
@@ -165,11 +185,11 @@ class RL_Updater():
         entropy = -torch.sum(prob_distribs_batch*torch.log(prob_distribs_batch),dim = 1).unsqueeze(1)
         
         with torch.no_grad():
-            advantage = reward_batch + self.gamma *torch.max(self.model_qv(state_1_batch.float()))\
-                - torch.max(self.model_qv(state_batch.float()))
+            advantage = reward_batch + (self.gamma *torch.max(self.model_qv(state_1_batch.float()), dim = 1, keepdim = True)[0]\
+                - torch.max(self.model_qv(state_batch.float()), dim = 1, keepdim = True)[0])
 
         if (action_batch == action_batch_grad).all().item():
-            loss_policy = torch.mean( -torch.log(prob_action_batch)*advantage + self.beta*entropy )
+            loss_vector =  -torch.log(prob_action_batch)*advantage + self.beta*entropy 
             #loss_policy = 1000*self.model_pg.criterion_MSE(prob_action_batch, advantage)
             n_invalid = 0
             self.PG_update_failed_once = False
@@ -178,25 +198,47 @@ class RL_Updater():
             print('WARNING: selected action mismatch detected')
             valid_rows   = (action_batch == action_batch_grad).all(dim = 1)
             invalid_rows = (action_batch != action_batch_grad).any(dim = 1)
-                    
-            loss_policy = torch.mean( -torch.log(prob_action_batch[valid_rows])*advantage[valid_rows] + self.beta*entropy[valid_rows] )
+            
+            loss_vector =  -torch.log(prob_action_batch[valid_rows])*advantage[valid_rows] + self.beta*entropy[valid_rows]
             n_invalid = torch.sum(invalid_rows).item()
             
-            n_mismatch = invalid_rows.nonzero().squeeze(1).shape[0]
-            if n_mismatch > 5:
-                print(f'{n_mismatch} mismatches occurred!')
+            pctg_mismatch = round( 100*invalid_rows.nonzero().squeeze(1).shape[0] / loss_vector.shape[0], 2 )
+            print(f'Mismatch pctg : {pctg_mismatch}!')
+            
+            if pctg_mismatch > 10:
+                
                 if self.PG_update_failed_once:
                     raise('mismatch problem')
                 else:
                     self.PG_update_failed_once = True
-
-        if not self.PG_update_failed_once:
-            loss_policy.backward()
-            self.model_pg.optimizer.step()  
+ 
+        if self.PG_update_failed_once:
+            loss_policy = torch.tensor(float('nan'))
+        else:
+            if self.n_epochs_PG < 10:
+                loss_policy = torch.mean(loss_vector)
+                loss_policy.backward()
+                self.model_pg.optimizer.step()  
+            else:
+                losses = []
+                batch_size = min(self.PG_batch_size, round(0.5*loss_vector.shape[0]))
+                for _ in tqdm(range(self.n_epochs_PG)):
+                    #self.model_pg.optimizer.zero_grad()
+                    loss = torch.mean(extract_tensor_batch(loss_vector, batch_size))
+                    loss.backward(retain_graph = True)
+                    losses.append(loss.unsqueeze(0))
+                    #self.model_pg.optimizer.step() 
+                # last run erases the gradient
+                #self.model_pg.optimizer.zero_grad()
+                loss = torch.mean(extract_tensor_batch(loss_vector, batch_size))
+                loss.backward()
+                losses.append(loss.unsqueeze(0))
+                self.model_pg.optimizer.step()  
+                
+                loss_policy = torch.mean(torch.cat(losses))
         
         return loss_policy, n_invalid
-
-
+    
     
     #################################################
     def qValue_loss_update(self, state_batch, action_batch, reward_batch, state_1_batch, done_batch):
@@ -226,3 +268,8 @@ class RL_Updater():
         
         return loss_qval
 
+
+def extract_tensor_batch(t, batch_size):
+    # extracs batch from first dimension (only works for 2D tensors)
+    idx = torch.randperm(t.nelement())
+    return t.view(-1)[idx][:batch_size].view(batch_size,1)

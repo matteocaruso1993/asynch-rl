@@ -6,13 +6,19 @@ Created on Wed Oct 21 11:24:29 2020
 """
 
 #%%
+import os
+
+from envs.wrappers import DiscretizedActionWrapper,DiscretizedObservationWrapper, ContinuousHybridActionWrapper
+
 
 from envs.cartpole_env.CartPole_env import CartPoleEnv
 from envs.platoon_env.Platooning_env import PlatoonEnv
-#from envs.robot_env.Robot_env import RobotEnv
-from envs.robot_env.Robot_env_dummy import RobotEnv
+# conditional import of RobotEnv
+if os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'envs.robot_env.Robot_env.py') ):
+    from envs.robot_env.Robot_env import RobotEnv
+else:
+    from envs.robot_env.Robot_env_dummy import RobotEnv
 
-from envs.wrappers import DiscretizedActionWrapper,DiscretizedObservationWrapper, ContinuousHybridActionWrapper
 
 
 #env = RobotEnv(self.normalize_obs_state = True)

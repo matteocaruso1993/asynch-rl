@@ -5,6 +5,12 @@ Created on Fri Dec  4 13:51:07 2020
 
 @author: Enrico Regolin
 """
+#%%
+# compiling time debug
+import cProfile
+import pstats
+import io
+
 
 #%%
 from rl.rl_env import Multiprocess_RL_Environment
@@ -23,9 +29,9 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 
-parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 5, help="number of training iterations")
+parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10, help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=True,
                     help="ray_parallelize bool")
 
 parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default=0, help = "task degree of difficulty")
@@ -44,7 +50,7 @@ parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int,
 parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=1000,
                     help="Replay Memory Size")
 
-parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.1,
+parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.5,
                     help="Ratio of Memory renewed at each iteration")
 
 parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=2,
@@ -183,11 +189,25 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False, record_comp
         
     else:
         store_train_params(rl_env, function_inputs)
-        
+
+
+    pr = cProfile.Profile()
+    pr.enable()
+
     rl_env.runSequence(n_iterations, reset_optimizer=reset_optimizer) 
-    
+
+    pr.disable()
+    s = io.StringIO()
+    ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
+    ps.print_stats()
+    with open('duration_test.txt', 'w+') as f:
+        f.write(s.getvalue())
+
     
     return rl_env
+
+
+############################################################################
 
 
 if __name__ == "__main__":

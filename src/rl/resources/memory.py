@@ -72,6 +72,10 @@ class ReplayMemory():
         self.memory = torch.load(filename)
         self.update_memory_status()
 
+    def pg_only(self):
+        """returns the memory with only samples calculated with PG model (no random or QV model)"""
+        pg_gen_bool = unpack_batch(self.memory)[-1]
+        return [i for (i, v) in zip(self.memory, pg_gen_bool) if v]
 
     
     def resetMemory(self, new_size = 0):
@@ -131,5 +135,6 @@ def unpack_batch(batch):
     reward_batch  = torch.cat(tuple(event[2] for event in batch))
     state_1_batch = torch.cat(tuple(event[3] for event in batch))
     done_batch = (tuple(event[4] for event in batch) )
+    pg_output_batch = (tuple(event[5] for event in batch) )
 
-    return state_batch, action_batch, reward_batch, state_1_batch, done_batch
+    return state_batch, action_batch, reward_batch, state_1_batch, done_batch, pg_output_batch
