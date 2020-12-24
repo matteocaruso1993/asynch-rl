@@ -48,7 +48,7 @@ class nnBase(nn.Module):
         default_weights_dict = {new_list: .1 for new_list in range(1,11)} 
         """
         
-        allowed_keys = {'softmax':True, 'conv_no_grad':False} #,'BATCH_SIZE':200,'device': torch.device("cpu"), \
+        allowed_keys = {'softmax':False, 'conv_no_grad':False} #,'BATCH_SIZE':200,'device': torch.device("cpu"), \
                         #'optimizer' : default_optimizer , 'loss_function' : default_loss_function, \
                         #'weights_dict' : default_weights_dict }#, 'VAL_PCT':0.25 , \
                         

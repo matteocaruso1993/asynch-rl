@@ -22,45 +22,29 @@ from rl.utilities import lineno
 #%%
 
 class RL_Updater():
-    def __init__(self,rl_env,model_qv, model_pg=None, reset_optimizer = False):
-        #print('initialization started')
+    def __init__(self):
         
+        # internal initializations
         self.PG_update_failed_once = False
+        self.memory_pool = None
+        #self.nn_updating = False
+
+        # these will have to be initialized from RL_env
         self.beta = 0.01
         self.n_epochs_PG = 100
         self.PG_batch_size = 32
-        self.memory_pool = None
-        
-        self.copy_attributes(rl_env, init = True)
 
-        if self.move_to_cuda:
-            self.device = torch.device("cuda")
-        else:
-            self.device = torch.device("cpu")
-       
-        self.nn_updating = False
-        self.load_model(model_qv, model_pg, reset_optimizer)
+        # following attributes are in common with rl_env and will be updated externally
+        self.net_name = None
+        self.n_epochs = None
+        self.move_to_cuda = None
+        self.gamma = None
+        self.rl_mode = None
+        self.pg_partial_update = None
+        self.storage_path = None
+        # only "initial" training session number is actually used inside RL_Updater
+        self.training_session_number = None
 
-        #print('initialization successful')
-        
-    ##################################################################################        
-    # required to check if model is inherited
-    def copy_attributes(self,rl_env, init = False):
-        #self.rl_env = rl_env
-        self.n_epochs = rl_env.N_epochs 
-        self.move_to_cuda = rl_env.move_to_cuda 
-        self.gamma = rl_env.gamma
-        self.rl_mode = rl_env.rl_mode
-        self.pg_partial_update = rl_env.pg_partial_update
-        self.storage_path = rl_env.storage_path
-        self.initial_training_session = rl_env.training_session_number
-
-        self.net_name = rl_env.net_name
-        """
-        if not init:
-            if self.memory_pool is None:
-                raise("memory pool is None object!!")
-        """
         
     ##################################################################################        
     # required to check if model is inherited
@@ -98,15 +82,23 @@ class RL_Updater():
     #################################################
     # loading occurs based on current iteration loaded in the RL environment
     def load_model(self, model_qv, model_pg=None, reset_optimizer = False):
+        # first initialize device
+        if self.move_to_cuda:
+            self.device = torch.device("cuda")
+        else:
+            self.device = torch.device("cpu")
+        
+        # load qv model
         self.model_qv = model_qv #self.rl_env.generate_model()
         if self.move_to_cuda:
             self.model_qv = self.model_qv.cuda()
 
-        if self.initial_training_session >= 1:
+        if self.training_session_number >= 1:
             self.model_qv.load_net_params(self.storage_path,self.net_name, self.device, reset_optimizer = reset_optimizer)
         else:
             self.model_qv.init_weights()
 
+        # load pg model
         if self.rl_mode == 'AC':
             self.model_pg = model_pg #self.rl_env.generate_model(pg_model=True)
             if self.move_to_cuda:
@@ -121,7 +113,7 @@ class RL_Updater():
     def update_DeepRL(self, net = 'state_value', policy_memory = None):
         """synchronous update of Reinforcement Learning Deep Network"""
         
-        self.nn_updating = True
+        #self.nn_updating = True
         print(f'Synchronous update started: {net}')
         total_loss = []
         total_mismatch = 0
@@ -159,7 +151,7 @@ class RL_Updater():
         else:
             raise('Undefined Net-type')
         
-        self.nn_updating = False
+        #self.nn_updating = False
         return total_loss
     
 

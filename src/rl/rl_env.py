@@ -94,7 +94,7 @@ class Multiprocess_RL_Environment:
         #######################
         # training parameters
         self.gamma = gamma
-        self.N_epochs = N_epochs
+        self.n_epochs = N_epochs
         self.mini_batch_size = mini_batch_size
         self.memory_turnover_ratio = memory_turnover_ratio
         two_power = [2**i for i in range(10)]
@@ -215,22 +215,19 @@ class Multiprocess_RL_Environment:
         if lr is None:
             lr = self.lr
         
+        if self.use_continuous_act_env:
+            n_actions = self.n_actions_contn
+        else:
+            n_actions = self.n_actions_discr
+        
         if self.net_type == 'ConvModel':
-            if self.use_continuous_act_env and pg_model:
                 model = ConvModel(model_version = 0, net_type = self.net_type+str(self.net_version), lr= lr, \
-                                  n_actions = self.n_actions_contn, channels_in = self.n_frames, N_in = self.N_in_model,
-                                  conv_no_grad = self.pg_partial_update)
+                                  n_actions = n_actions, channels_in = self.n_frames, N_in = self.N_in_model,
+                                  conv_no_grad = (pg_model and self.pg_partial_update), softmax = pg_model)
                 # only for ConvModel in the PG case, it is allowed to "partially" update the model (convolutional layers are evaluated with "no_grad()")
-            else :
-                model = ConvModel(model_version = 0, net_type = self.net_type+str(self.net_version), lr= lr, \
-                                  n_actions = self.n_actions_discr, channels_in = self.n_frames, N_in = self.N_in_model)
-                
         elif self.net_type == 'LinearModel': 
-            if self.use_continuous_act_env and pg_model:
-                model = LinearModel(0, self.net_type+str(self.net_version), lr, self.n_actions_contn, self.N_in_model, *(self.layers_width)) 
-            else:
-                model = LinearModel(0, self.net_type+str(self.net_version), lr, self.n_actions_discr, self.N_in_model, *(self.layers_width))
-                
+                model = LinearModel(0, self.net_type+str(self.net_version), lr, n_actions, \
+                                    self.N_in_model, *(self.layers_width), softmax = pg_model) 
         return model
     
     
@@ -251,6 +248,21 @@ class Multiprocess_RL_Environment:
             return contn_hyb_GymStyle_Platoon(action_structure = [0,0,1], sim_length_max = self.sim_length_max, \
                                     difficulty=self.difficulty, rewards = self.rewards, options = self.env_options)
 
+
+    ##################################################################################
+    #agents attributes are updated when they have the same name as the rl environment
+    # except for attributes explicited in arguments
+    def updateRLUpdaterAttributesExcept(self, *args):
+  
+        for rl_env_attr, value_out in self.__dict__.items():
+            if self.ray_parallelize:
+                for updater_attr in ray.get(self.nn_updater.getAttributes.remote() ):
+                    if rl_env_attr == updater_attr and rl_env_attr not in args:
+                            self.nn_updater.setAttribute.remote(updater_attr,value_out)
+            else:
+                for updater_attr in self.nn_updater.getAttributes() :
+                    if rl_env_attr == updater_attr and rl_env_attr not in args:
+                            self.nn_updater.setAttribute(updater_attr,value_out)
 
     ##################################################################################
     #agents attributes are updated when they have the same name as the rl environment
@@ -531,16 +543,17 @@ class Multiprocess_RL_Environment:
         # to avoid wasting simulations
         min_fill_ratio = 0.95
         task_lst = [None for _ in self.sim_agents_discr]
-        #min_ratio_to_empty = 0.1
         
         while True:
+            # previous implementation (to be removed)
+            #if self.memory_stored is not None and not qv_update_launched and not memory_fill_only:
+            #    if not ray.get(self.nn_updater.hasMemoryPool.remote()): 
+            #        raise('missing internal memory pool')
+            
             # 1) start qv update based on existing memory stored
-            if self.memory_stored is not None and not qv_update_launched and not memory_fill_only: 
+            if ray.get(self.nn_updater.hasMemoryPool.remote()) and not qv_update_launched and not memory_fill_only:
                 # this check is required to ensure nn_udater has finished loading the memory 
                 #(in asynchronous setting this could take long)
-                if not ray.get(self.nn_updater.hasMemoryPool.remote()): 
-                    raise('missing internal memory pool')
-                    
                 updating_process = self.nn_updater.update_DQN_asynch.remote()
                 qv_update_launched = True
                
@@ -548,7 +561,7 @@ class Multiprocess_RL_Environment:
             for i, agent in enumerate(self.sim_agents_discr):
                 
                 # 2.1) get info from complete processes
-                if not ray.get(agent.isRunning.remote()): # and ray.get(agent.hasInternalMemoryInfo.remote(min_ratio_to_empty)):
+                if not ray.get(agent.isRunning.remote()): 
                     if task_lst[i] is not None:
                         partial_log, single_runs, successful_runs = ray.get(task_lst[i])
                         
@@ -568,7 +581,9 @@ class Multiprocess_RL_Environment:
                 if qv_update_launched:
                     self.nn_updater.sentinel.remote()
                 break
-                        
+            
+        print('')
+            
         # log training history
         if qv_update_launched:
             
@@ -589,7 +604,7 @@ class Multiprocess_RL_Environment:
             #3) store computed losses
             self.get_log(total_runs, total_log, average_qval_loss, policy_loss )
         
-        print('')
+        
 
 
     ##################################################################################
@@ -753,7 +768,7 @@ class Multiprocess_RL_Environment:
         
 
     ##################################################################################
-    def pre_training_routine(self, reset_optimizer = False):
+    def pre_training_routine(self, reset_optimizer = False, first_pg_training = False):
         # it only depends on the memory size
         
         # shared memory is the one filled by the agents, to be poured later in "stored memory".
@@ -763,35 +778,52 @@ class Multiprocess_RL_Environment:
         self.updateProbabilities(print_out = True)
         
         # update epsilon and model of the Sim agents
-        if self.training_session_number == 0:
+        if self.training_session_number == 0 or first_pg_training:
             self.check_model_version(print_out = True, mode = 'sim', save_v0 = True)
 
         #self.update_model_cpu() returns True if succesful
         if self.update_model_cpu():
             self.updateAgentsAttributesExcept()
         else:
+            raise('Loading error')
+            
+            """
             print('loading problem! did not find correct policy file!')
             self.check_model_version(print_out = True, mode = 'sim', save_v0 = True)
             if self.update_model_cpu():
                 self.updateAgentsAttributesExcept()
             else:
                 raise('Loading error')
+            """
 
-        # inidializing model to be updated
-        # instanciate ModelUpdater actor -> everything here happens on GPU
+        
         if self.nn_updater is None:
-            model_pg = None
-            if self.rl_mode == 'AC':
-                model_pg = self.generate_model(pg_model=True)
-            if self.ray_parallelize:
-                self.nn_updater = Ray_RL_Updater.remote(self, self.generate_model(), model_pg, reset_optimizer)
-            else:
-                self.nn_updater = RL_Updater(self, self.generate_model(), model_pg, reset_optimizer)
+            # if needed, initialize the model for the updating
+            self.initialize_updater(reset_optimizer)
         else:
+            # only update the net name (required to save/load net params)
             if self.ray_parallelize:
                 self.nn_updater.setAttribute.remote('net_name',self.net_name)
             else:                
                 self.nn_updater.setAttribute('net_name',self.net_name)
+        
+        
+    ##################################################################################
+    def initialize_updater(self, reset_optimizer = False):        
+        # instanciate ModelUpdater actor -> everything here happens on GPU
+        # initialize models (will be transferred to NN updater)
+        model_pg = None
+        model_qv = self.generate_model()
+        if self.rl_mode == 'AC':
+            model_pg = self.generate_model(pg_model=True)
+        if self.ray_parallelize:
+            self.nn_updater = Ray_RL_Updater.remote()
+            self.updateRLUpdaterAttributesExcept()
+            self.nn_updater.load_model.remote(model_qv, model_pg, reset_optimizer)
+        else:
+            self.nn_updater = RL_Updater()
+            self.updateRLUpdaterAttributesExcept()
+            self.nn_updater.load_model(model_qv, model_pg, reset_optimizer)
         
         
     ##################################################################################
@@ -832,7 +864,7 @@ class Multiprocess_RL_Environment:
         #    action gen splits...]  )
         if self.training_session_number > 1:
             new_row = [int(self.training_session_number), self.epsilon, self.ctrlr_probability , self.session_log[0] , self.session_log[1] ,\
-                       self.session_log[2], self.session_log[3],self.session_log[4], self.N_epochs, self.replay_memory_size, \
+                       self.session_log[2], self.session_log[3],self.session_log[4], self.n_epochs, self.replay_memory_size, \
                        self.splits[0], self.splits[1], self.splits[2] , self.splits[3]    ]
             self.log_df.loc[len(self.log_df)] = new_row
         

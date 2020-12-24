@@ -31,7 +31,7 @@ parser = ArgumentParser()
 
 parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10, help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=True,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
 
 parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default=0, help = "task degree of difficulty")
@@ -47,7 +47,7 @@ parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, d
 parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=100,
                     help="Length of one successful run in seconds")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=1000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=2000,
                     help="Replay Memory Size")
 
 parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.5,
