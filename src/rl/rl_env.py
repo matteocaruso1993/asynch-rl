@@ -54,7 +54,8 @@ class Multiprocess_RL_Environment:
                  replay_memory_size = 10000, mini_batch_size = 512, sim_length_max = 100, \
                  ctrlr_prob_annealing_factor = .9,  ctrlr_probability = 0, difficulty = 0, \
                  memory_turnover_ratio = 0.2, val_frequency = 10, bashplot = False, layers_width= (5,5), \
-                 rewards = np.ones(5), validation_set_ratio = 4, env_options = {}, pg_partial_update = False):
+                 rewards = np.ones(5), validation_set_ratio = 4, env_options = {}, pg_partial_update = False, 
+                 beta_PG = 0.01, n_epochs_PG = 100, batch_size_PG = 32):
         
         ####################### net/environment initialization
         # check if env/net types make sense
@@ -102,6 +103,10 @@ class Multiprocess_RL_Environment:
         self.replay_memory_size = replay_memory_size
         self.validation_set_ratio = validation_set_ratio # relative dimension of validation set to test_set (n times smaller)
         self.memory_sizes_updater()
+        
+        self.beta_PG       = beta_PG
+        self.n_epochs_PG   = n_epochs_PG
+        self.batch_size_PG = batch_size_PG
         
         ####################### required to set up sim_agents agents created at the end)
         # NN options
@@ -318,8 +323,10 @@ class Multiprocess_RL_Environment:
 
     
     ##################################################################################            
-    def update_net_name(self):  
+    def update_net_name(self, printout = False):  
         self.net_name = self.net_type + str(self.net_version) + '_' + str(self.training_session_number)
+        if printout:
+            print(f'NetName : {self.net_name}')
 
             
     ##################################################################################
@@ -350,7 +357,7 @@ class Multiprocess_RL_Environment:
             except Exception:
                 pass
                 
-            self.update_net_name()
+            self.update_net_name(printout = True)
             
             # this loads models' params (both qv and pg)
             #self.model_qv.cpu()
@@ -361,8 +368,7 @@ class Multiprocess_RL_Environment:
             if os.path.isfile(loss_history_file):
                 self.qval_loss_history = np.load(loss_history_file)
                 self.qval_loss_history = self.qval_loss_history[:self.training_session_number]
-                
-                
+               
             val_history_file = os.path.join(self.storage_path, 'val_history.npy')
             if os.path.isfile(val_history_file):
                 self.val_history = np.load(val_history_file)
@@ -464,13 +470,13 @@ class Multiprocess_RL_Environment:
                 self.model_pg.load_net_params(self.storage_path,self.net_name + '_policy', device_cpu)
                 self.policy_loaded = True
             except Exception:
-                print('No QV model to load on CPU!')
+                print('No PG model to load on CPU!')
                 return False
                
         return True
 
     ##################################################################################
-    def saveTrainIteration(self):
+    def saveTrainIteration(self, last_iter = False):
         # we save the model at every iterations, memory only at the end (not inside this function)
         
         if self.ray_parallelize:
@@ -481,6 +487,10 @@ class Multiprocess_RL_Environment:
 
         filename_log = os.path.join(self.storage_path, 'TrainingLog'+ '.pkl')
         self.log_df.to_pickle(filename_log)
+        
+        if last_iter:
+            filename_log_fin = os.path.join(self.storage_path, 'TrainingLog_tsn_'+str(int(training_session_number)) + '.pkl')
+            self.log_df.to_pickle(filename_log_fin)
         
         if self.qval_loss_history is not None:
             loss_history_file = os.path.join(self.storage_path, 'loss_history_'+ str(self.training_session_number) + '.npy')
@@ -551,11 +561,12 @@ class Multiprocess_RL_Environment:
             #        raise('missing internal memory pool')
             
             # 1) start qv update based on existing memory stored
-            if ray.get(self.nn_updater.hasMemoryPool.remote()) and not qv_update_launched and not memory_fill_only:
-                # this check is required to ensure nn_udater has finished loading the memory 
-                #(in asynchronous setting this could take long)
-                updating_process = self.nn_updater.update_DQN_asynch.remote()
-                qv_update_launched = True
+            if not memory_fill_only:
+                if ray.get(self.nn_updater.hasMemoryPool.remote()) and not qv_update_launched:
+                    # this check is required to ensure nn_udater has finished loading the memory 
+                    #(in asynchronous setting this could take long)
+                    updating_process = self.nn_updater.update_DQN_asynch.remote()
+                    qv_update_launched = True
                
             # 2) start parallel simulations
             for i, agent in enumerate(self.sim_agents_discr):
@@ -597,21 +608,22 @@ class Multiprocess_RL_Environment:
                 model_diff = self.model_pg.compare_weights(model_update.cpu().state_dict().copy() )
                 if model_diff > 0.001:
                     print(f'PG models MISMATCH: {model_diff}')
-                    #raise('update model different than SIM one')
+                    raise('update model different than SIM one')
                 else:
                     policy_loss = ray.get(self.nn_updater.update_DeepRL.remote('policy', self.shared_memory.pg_only() ))
                 
             #3) store computed losses
             self.get_log(total_runs, total_log, average_qval_loss, policy_loss )
-        
-        
 
 
     ##################################################################################
     def get_log(self, total_runs, total_log, *args):
+        
         entry = np.zeros(2)
+        
         for i,arg in enumerate(args):
             entry[i] = np.round(arg, 2)
+        
         # total runs, steps since start, cumulative reward, average loss / total_successful_runs
         self.session_log = np.append( np.append( int(total_runs), np.round(np.average(total_log[1:,:], axis = 0),2)), entry)  
 
@@ -705,7 +717,7 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     def runSequence(self, n_runs = 5, display_graphs = False, reset_optimizer = False):
         
-        for i in np.arange(self.training_session_number,self.training_session_number+ n_runs):
+        for i in np.arange(self.training_session_number,self.training_session_number+ n_runs+1):
             self.runEnvIterationOnce(reset_optimizer)
             if reset_optimizer:
                 reset_optimizer = False
@@ -800,6 +812,10 @@ class Multiprocess_RL_Environment:
         if self.nn_updater is None:
             # if needed, initialize the model for the updating
             self.initialize_updater(reset_optimizer)
+            if bool(self.memory_stored):
+                # if memory stored is present, it means memory has been loaded
+                self.load_memorystored_to_updater()
+
         else:
             # only update the net name (required to save/load net params)
             if self.ray_parallelize:
@@ -836,16 +852,20 @@ class Multiprocess_RL_Environment:
         
         
     ##################################################################################
+    def load_memorystored_to_updater(self):            
+        if self.ray_parallelize:
+            self.nn_updater.setAttribute.remote('memory_pool', self.memory_stored)
+        else:
+            self.nn_updater.setAttribute('memory_pool', self.memory_stored)
+
+        
+    ##################################################################################
     def end_training_round_routine(self):
         
         # update memory
         if self.memory_stored is None:
             self.memory_stored = self.shared_memory.cloneMemory()
-            if self.ray_parallelize:
-                self.nn_updater.setAttribute.remote('memory_pool', self.memory_stored)
-            else:
-                self.nn_updater.setAttribute('memory_pool', self.memory_stored)
-            
+            self.load_memorystored_to_updater()
             turnover_pctg_act = np.round(100*self.memory_stored.fill_ratio,2)
         else:
             new_memory = self.shared_memory.getMemoryAndEmpty()

@@ -11,6 +11,7 @@ import torch
 from tqdm import tqdm
 import random
 import numpy as np
+#import time
 
 from copy import deepcopy
 
@@ -30,18 +31,18 @@ class RL_Updater():
         #self.nn_updating = False
 
         # these will have to be initialized from RL_env
-        self.beta = 0.01
-        self.n_epochs_PG = 100
-        self.PG_batch_size = 32
+        self.beta_PG       = None # 0.01
+        self.n_epochs_PG   = None # 100
+        self.batch_size_PG = None # 32
 
         # following attributes are in common with rl_env and will be updated externally
         self.net_name = None
         self.n_epochs = None
         self.move_to_cuda = None
-        self.gamma = None
+        self.gamma   = None
         self.rl_mode = None
         self.pg_partial_update = None
-        self.storage_path = None
+        self.storage_path      = None
         # only "initial" training session number is actually used inside RL_Updater
         self.training_session_number = None
 
@@ -181,7 +182,7 @@ class RL_Updater():
                 - torch.max(self.model_qv(state_batch.float()), dim = 1, keepdim = True)[0])
 
         if (action_batch == action_batch_grad).all().item():
-            loss_vector =  -torch.log(prob_action_batch)*advantage + self.beta*entropy 
+            loss_vector =  -torch.log(prob_action_batch)*advantage + self.beta_PG*entropy 
             #loss_policy = 1000*self.model_pg.criterion_MSE(prob_action_batch, advantage)
             n_invalid = 0
             self.PG_update_failed_once = False
@@ -190,8 +191,16 @@ class RL_Updater():
             print('WARNING: selected action mismatch detected')
             valid_rows   = (action_batch == action_batch_grad).all(dim = 1)
             invalid_rows = (action_batch != action_batch_grad).any(dim = 1)
+
+            """ # this was a test to "verify" that mismatch is compatible with a numerical error
+            # max prob index            
+            print(prob_distribs_batch[invalid_rows]) #  , torch.arange(prob_distribs_batch.size(1)) ]
+            print( torch.argmax(prob_distribs_batch[invalid_rows], dim = 1) )
+            # actual action index
+            print( torch.argmax(action_batch[invalid_rows], dim = 1) )
+            """
             
-            loss_vector =  -torch.log(prob_action_batch[valid_rows])*advantage[valid_rows] + self.beta*entropy[valid_rows]
+            loss_vector =  -torch.log(prob_action_batch[valid_rows])*advantage[valid_rows] + self.beta_PG*entropy[valid_rows]
             n_invalid = torch.sum(invalid_rows).item()
             
             pctg_mismatch = round( 100*invalid_rows.nonzero().squeeze(1).shape[0] / loss_vector.shape[0], 2 )
@@ -213,7 +222,7 @@ class RL_Updater():
                 self.model_pg.optimizer.step()  
             else:
                 losses = []
-                batch_size = min(self.PG_batch_size, round(0.5*loss_vector.shape[0]))
+                batch_size = min(self.batch_size_PG, round(0.5*loss_vector.shape[0]))
                 for _ in tqdm(range(self.n_epochs_PG)):
                     #self.model_pg.optimizer.zero_grad()
                     loss = torch.mean(extract_tensor_batch(loss_vector, batch_size))
