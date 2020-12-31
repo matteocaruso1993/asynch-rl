@@ -28,7 +28,7 @@ from pathlib import Path as createPath
 
 #%%
 # My Libraries
-from envs.gymstyle_envs import discr_GymStyle_Robot, discr_GymStyle_CartPole, discr_GymStyle_Platoon, contn_hyb_GymStyle_Platoon
+from envs.gymstyle_envs import discr_GymStyle_Robot, discr_GymStyle_CartPole, discr_GymStyle_Platoon, contn_hyb_GymStyle_Platoon, Gymstyle_Chess
 from nns.custom_networks import ConvModel, LinearModel
 from .resources.memory import ReplayMemory
 from .resources.sim_agent import SimulationAgent
@@ -45,7 +45,7 @@ DEBUG_MODEL_VERSIONS = True
 #%%
 class Multiprocess_RL_Environment:
     def __init__(self, env_type , net_type , net_version ,rl_mode = 'DQL', n_agents = 1, ray_parallelize = False , \
-                 move_to_cuda = True, show_rendering = True , n_frames=4, learning_rate = 0.001 , \
+                 move_to_cuda = True, show_rendering = False , n_frames=4, learning_rate = 0.001 , \
                  rl_params = None,movie_frequency = 20, max_steps_single_run = 200, \
                  training_session_number = None, save_movie = True, live_plot = False, \
                  display_status_frequency = 50, max_consecutive_env_fails = 3, tot_iterations = 400,\
@@ -57,9 +57,11 @@ class Multiprocess_RL_Environment:
                  rewards = np.ones(5), validation_set_ratio = 4, env_options = {}, pg_partial_update = False, 
                  beta_PG = 0.01, n_epochs_PG = 100, batch_size_PG = 32):
         
+        self.one_vs_one = False
+        
         ####################### net/environment initialization
         # check if env/net types make sense
-        allowed_envs = ['RobotEnv', 'CartPole', 'Platoon']
+        allowed_envs = ['RobotEnv', 'CartPole', 'Platoon', 'Chess']
         allowed_nets = ['ConvModel', 'LinearModel'] #, 'LinearModel0', 'LinearModel1', 'LinearModel2', 'LinearModel3', 'LinearModel4']
         allowed_rl_modes = ['DQL', 'AC']
         
@@ -185,6 +187,16 @@ class Multiprocess_RL_Environment:
 
         self.model_pg = self.generate_model(10*self.lr, pg_model=True, )
         self.model_pg.init_weights()
+        
+        # in one vs. one the environment requires the (latest) model to work
+        if self.one_vs_one:
+            self.env_discr.update_model(self.model_qv)
+        
+        # this part is basically only needed for 1vs1 (environment has to be updated within sim-agents)
+        if self.use_continuous_act_env:
+            self.env = self.env_contn
+        else:
+            self.env = self.env_discr
 
         #######################
         # Replay Memory init
@@ -245,8 +257,10 @@ class Multiprocess_RL_Environment:
         elif self.env_type  == 'Platoon':
             return discr_GymStyle_Platoon(n_bins_act= self.discr_env_bins, sim_length_max = self.sim_length_max, \
                                     difficulty=self.difficulty, rewards = self.rewards, options = self.env_options)
-                
-                
+        elif self.env_type == 'Chess':
+            self.one_vs_one = True
+            return Gymstyle_Chess(use_NN = True,  max_n_moves = self.sim_length_max  , rewards = self.rewards, print_out = self.show_rendering)
+        
     ##################################################################################
     def generateContnsHybActSpace_GymStyleEnv(self):
         if self.env_type  == 'Platoon':
@@ -272,7 +286,10 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     #agents attributes are updated when they have the same name as the rl environment
     # except for attributes explicited in arguments
-    def updateAgentsAttributesExcept(self, *args):
+    def updateAgentsAttributesExcept(self, *args, print_attribute = None):
+
+        if self.ray_parallelize and print_attribute is not None and self.one_vs_one:
+            print('update STARTED of agents with NN env')        
 
         # self.model_pg and self.model_qv are updated here as well        
         for rl_env_attr, value_out in self.__dict__.items():
@@ -286,6 +303,15 @@ class Multiprocess_RL_Environment:
                     if rl_env_attr == sim_ag_attr and rl_env_attr not in args:
                         for agent in self.sim_agents_discr:
                             agent.setAttribute(sim_ag_attr,value_out)
+
+
+        if self.ray_parallelize and print_attribute is not None and self.one_vs_one:
+            attr = ray.get(self.sim_agents_discr[0].getAttributeValue.remote(print_attribute[0]))
+            if len(print_attribute)>1:
+                for i in range(1,len(print_attribute)):
+                    attr = attr.__dict__[print_attribute[i]]
+            print('Agents (with envs) attributes update COMPLETED!')
+            print(f'SIM opponent model version: {attr}')
         
         
     ##################################################################################
@@ -319,7 +345,7 @@ class Multiprocess_RL_Environment:
             self.sim_agents_discr.append(SimulationAgent(0, self.generateDiscrActSpace_GymStyleEnv(), rl_mode = self.rl_mode) )  #, ,self.model
             #self.sim_agents_contn.append(SimulationAgent(0, self.generateContnsHybActSpace_GymStyleEnv(), rl_mode = self.rl_mode) )  #, ,self.model
                 #, self.model, self.n_frames, self.move_to_cuda, self.net_name, self.epsilon))            
-        self.updateAgentsAttributesExcept('env') #,'model')
+        self.updateAgentsAttributesExcept() #,'model')
 
     
     ##################################################################################            
@@ -463,6 +489,10 @@ class Multiprocess_RL_Environment:
         device_cpu = torch.device('cpu')
 
         self.model_qv.load_net_params(self.storage_path,self.net_name, device_cpu)
+        
+        if self.one_vs_one:
+            self.env_discr.update_model(self.model_qv)
+
         
         if self.rl_mode == 'AC': 
             #if os.path.isfile(os.path.join(self.storage_path,self.net_name + '_policy.pt')):
@@ -717,8 +747,20 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     def runSequence(self, n_runs = 5, display_graphs = False, reset_optimizer = False):
         
-        for i in np.arange(self.training_session_number,self.training_session_number+ n_runs+1):
+        final_run = self.training_session_number+ n_runs
+        
+        for i in np.arange(self.training_session_number,final_run+1):
+            
             self.runEnvIterationOnce(reset_optimizer)
+            
+            print('###################################################################')
+            print('###################################################################')
+            print(f'Model Saved in {self.storage_path}')
+            print(f'end of iteration: {self.training_session_number -1} of {final_run}')
+            print('###################################################################')
+            print('###################################################################')
+            
+            
             if reset_optimizer:
                 reset_optimizer = False
             if display_graphs:
@@ -795,7 +837,7 @@ class Multiprocess_RL_Environment:
 
         #self.update_model_cpu() returns True if succesful
         if self.update_model_cpu():
-            self.updateAgentsAttributesExcept()
+            self.updateAgentsAttributesExcept(print_attribute=['env','env','model','model_version'])
         else:
             raise('Loading error')
             
@@ -900,34 +942,23 @@ class Multiprocess_RL_Environment:
 
 
     ##################################################################################
-    def run_training(self):
+    def runEnvIterationOnce(self, reset_optimizer = False):
+        
+        # loading/saving of models, verifying correct model is used at all stages
+        self.pre_training_routine(reset_optimizer)
+        
         # core functionality
         if self.ray_parallelize:
             # run simulations/training in parallel
             self.runParallelized()
         else:
             self.runSerialized()
-
-
-    ##################################################################################
-    def runEnvIterationOnce(self, reset_optimizer = False):
-        
-        # loading/saving of models, verifying correct model is used at all stages
-        self.pre_training_routine(reset_optimizer)
-        self.run_training()
-        
+            
         # we update the name in order to save it
         self.training_session_number +=1        
         self.update_net_name()
         
         self.end_training_round_routine()
-        
-        print('###################################################################')
-        print('###################################################################')
-        print(f'Model Saved in {self.storage_path}')
-        print(f'end of iteration: {self.training_session_number -1}')
-        print('###################################################################')
-        print('###################################################################')
        
         
     ##################################################################################

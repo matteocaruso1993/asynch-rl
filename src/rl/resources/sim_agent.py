@@ -39,6 +39,9 @@ class SimulationAgent:
                  max_consecutive_env_fails = 3, max_steps_single_run = 200, show_rendering = True, \
                  tot_iterations = 100, live_plot = False, verbosity = 0 , AC_qv_quota = 0.5, \
                  movie_frequency = 10, max_n_single_runs = 1000, save_sequences  = False):
+        
+        
+        self.prob_correction = 0.6 # probability of "correction" of "non sense random inputs" generated
 
         self.rl_mode = rl_mode
         self.AC_qv_quota = AC_qv_quota
@@ -310,8 +313,8 @@ class SimulationAgent:
                     break
                 state, use_controller = self.reset_agent()
             
-            action, pg_output = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN)
-            state, reward_np, done , info = self.stepAndRecord(state, action, pg_output)
+            action, source = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN)
+            state, reward_np, done , info = self.stepAndRecord(state, action, source)
             
             if use_NN and len(info)>0:
                 successful_runs += 1
@@ -338,38 +341,44 @@ class SimulationAgent:
             return []
         
     ################################################################################
-    def stepAndRecord(self,state, action, pg_output):
-            #################
-            try:
-                state_obs_1, reward_np, done, info = self.env.action(action.detach().numpy())
-            except Exception:
-                self.agent_run_variables['failed_iteration'] = True
-                reward_np = np.nan
-                state = None
-                state_1 = None
-                done = None
-                info = {}
-            ################# 
-            if not self.agent_run_variables['failed_iteration']:
-                self.renderAnimation(action)
-                ## restructure new data
-                state_obs_1_tensor = torch.from_numpy(state_obs_1)
-                
-                if self.n_frames > 1:
-                    state_1 = torch.cat((state.squeeze(0)[1:, :], state_obs_1_tensor.unsqueeze(0))).unsqueeze(0)
-                else:
-                    state_1 = state_obs_1_tensor.unsqueeze(0)
+    def stepAndRecord(self,state, action, source):
+        
+        #################
+        try:
+            state_obs_1, reward_np, done, info = self.env.action(action.detach().numpy(), random_gen = (np.random.random() < self.prob_correction and source == 'random') )
+        except Exception:
+            self.agent_run_variables['failed_iteration'] = True
+            reward_np = np.nan
+            state = None
+            state_1 = None
+            done = None
+            info = {}
+        ################# 
+        if not self.agent_run_variables['failed_iteration']:
+            
+            if 'move changed' in info:
+                action = 0*action
+                action[self.env.get_action_idx(info['move changed'])] = 1
+            
+            self.renderAnimation(action)
+            ## restructure new data
+            state_obs_1_tensor = torch.from_numpy(state_obs_1)
+            
+            if self.n_frames > 1:
+                state_1 = torch.cat((state.squeeze(0)[1:, :], state_obs_1_tensor.unsqueeze(0))).unsqueeze(0)
+            else:
+                state_1 = state_obs_1_tensor.unsqueeze(0)
 
-                action = action.unsqueeze(0)
-                reward = torch.from_numpy(np.array([reward_np], dtype=np.float32)).unsqueeze(0)
-                # build "new transition" and add it to replay memory
-                new_transition = (state, action, reward, state_1, done, pg_output)
-                
-                self.internal_memory.addInstance(new_transition)
-                # set state to be state_1 (for next iteration)
-                #state = state_1
-                
-            return state_1, reward_np, done, info
+            action = action.unsqueeze(0)
+            reward = torch.from_numpy(np.array([reward_np], dtype=np.float32)).unsqueeze(0)
+            # build "new transition" and add it to replay memory
+            new_transition = (state, action, reward, state_1, done, source == 'pg')
+            
+            self.internal_memory.addInstance(new_transition)
+            # set state to be state_1 (for next iteration)
+            #state = state_1
+            
+        return state_1, reward_np, done, info
     
     ##################################################################################
     def endOfRunRoutine(self, fig_film):
@@ -429,33 +438,38 @@ class SimulationAgent:
     ##################################################################################
     def getNextAction(self,state, use_controller = False, use_NN = False):
         # initialize action
-        pg_output = False
+        source = None
         action = torch.zeros([self.n_actions], dtype=torch.float32)
         # PG only uses greedy approach            
         if self.rl_mode == 'AC':
             if random.random() <= self.epsilon and not use_NN:
                 action_index = torch.randint(self.n_actions, torch.Size([]), dtype=torch.int)
+                source = 'random'
             else:
                 if random.random() <= self.AC_qv_quota and not use_NN:
                     output = self.model_qv.cpu()(state.float())
+                    source = 'qv'
                 else:
                     output = self.model_pg.cpu()(state.float())
-                    pg_output = True
+                    source = 'pg'
             
                 action_index = torch.argmax(output)
 
         elif self.rl_mode == 'DQL':
             if use_controller and not use_NN:
                 action_index = torch.tensor(self.env.get_control_idx(discretized = True), dtype = torch.int)
+                source = 'ctrl'
             else:
                 if random.random() <= self.epsilon and not use_NN:
                     action_index = torch.randint(self.n_actions, torch.Size([]), dtype=torch.int)
+                    source = 'random'
                 else:
                     output = self.model_qv.cpu()(state.float())
                     action_index = torch.argmax(output)
+                    source = 'qv'
             
         action[action_index] = 1        
-        return action, pg_output
+        return action, source
             
     ##################################################################################
     def trainVariablesUpdate(self, reward_np = 0, done = False, reset_variables = False):

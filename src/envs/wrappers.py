@@ -79,24 +79,34 @@ class DiscretizedActionWrapper(gym.ActionWrapper):
         elif self.act_space_dim==2:
             xv, yv = np.meshgrid(self.val_bins_act[0], self.val_bins_act[1])
             self.act_2D_flattened = np.stack((xv.flatten(),yv.flatten()  ))
+            
+        elif self.act_space_dim>2:
+            arg = [self.val_bins_act[i] for i in range(self.act_space_dim)]
+            xx_out = np.meshgrid(*arg)
+            self.act_nD_flattened = np.stack(([xx.flatten() for xx in xx_out ]))
 
     ###################################################    
     def get_actions_structure(self):
         return np.prod(np.array(self.n_bins_act)+1)   # n_actions depends strictly on the type of environment
     
     ###################################################
-    def step(self, action):
-        return self.env.step(action)
+    def step(self, action, random_gen = False):
+        return self.env.step(action, random_gen)
     
     def action_2D(self,action_bool_array):
         return self.step(self.act_2D_flattened[:,np.where(action_bool_array)].reshape(2,))            
 
-    def action(self, action_bool_array):
+    def action_nD(self,action_bool_array, random_gen = False):
+        return self.step(self.act_nD_flattened[:,np.where(action_bool_array)].reshape(self.act_space_dim,), random_gen)            
+
+    def action(self, action_bool_array, random_gen = False):
         #if self.act_2D_flattened is not None:
-        if self.act_space_dim  == 2 : 
-            return self.action_2D(action_bool_array)
-        elif self.act_space_dim  == 1 :
+        if self.act_space_dim  == 1 :
             return self.step(self.act_1D[np.where(action_bool_array)[0]])
+        elif self.act_space_dim  == 2 : 
+            return self.action_2D(action_bool_array)
+        elif self.act_space_dim > 2 : 
+            return self.action_nD(action_bool_array, random_gen)
         
         raise NotImplementedError
         
@@ -104,11 +114,15 @@ class DiscretizedActionWrapper(gym.ActionWrapper):
     # this function returns a traditional control input to be used instead of the ML one
     def get_control_idx(self, discretized = True):
         u_ctrl = self.env.get_controller_input(discretized = discretized, bins = self.n_bins_act)
+        return self.get_action_idx(u_ctrl)
+        
+    def get_action_idx(self, action):
         if self.act_space_dim  == 1:
-            action_i = np.abs(self.val_bins_act - u_ctrl).argmin()
+            action_i = np.abs(self.val_bins_act - action).argmin()
         elif self.act_space_dim  == 2:
-            action_i = np.linalg.norm((self.act_2D_flattened.T - u_ctrl), axis = 1).argmin()
-                
+            action_i = np.linalg.norm((self.act_2D_flattened.T - action), axis = 1).argmin()
+        elif self.act_space_dim  > 2:
+            action_i = np.linalg.norm((self.act_nD_flattened.T - action), axis = 1).argmin()
         return action_i
     
     
@@ -145,7 +159,7 @@ class ContinuousHybridActionWrapper(gym.ActionWrapper):
     def step(self, action):
         return self.env.step(self.action(action))
 
-    def action(self, action):
+    def action(self, action, source = None):
         # here I have to convert the action requested by the net to the one received by the enviroment
         if len(action)>1:
             action_out = [ self.low_act[i] + act*self.delta_act[i] if self.action_structure[i]==0 \

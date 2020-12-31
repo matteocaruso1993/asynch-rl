@@ -11,6 +11,8 @@ import numpy as np
 import random
 import os
 
+from rl.utilities import check_saved
+
 #%%
 
 class ReplayMemory():
@@ -65,6 +67,7 @@ class ReplayMemory():
     def save(self, path, net_name):
         filename = os.path.join(path, net_name + '_memory.pt')
         torch.save(self.memory,filename)
+        check_saved(filename)
 
 
     def load(self, path, net_name):

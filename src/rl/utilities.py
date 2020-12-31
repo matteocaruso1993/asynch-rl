@@ -144,3 +144,14 @@ def check_WhileTrue_timeout(time_in, t_max = 60):
         return True
     return False
     
+
+def check_saved(filename):
+    counter = 0
+    while not os.path.isfile(filename):
+        time.sleep(1)
+        counter += 1
+        if not counter % 5:
+            print(f'saving {filename}, {counter} seconds')
+        if counter >= 60:
+            print(f'file not saved: {filename}')
+            raise('fatal error!')

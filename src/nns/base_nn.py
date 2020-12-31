@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from rl.utilities import check_WhileTrue_timeout
+from rl.utilities import check_WhileTrue_timeout, check_saved
     
 #%%
 
@@ -107,12 +107,15 @@ class nnBase(nn.Module):
             'loss': loss,
             },filename_pt)
         
+        check_saved(filename_pt)
+
+        """
         while not os.path.isfile(filename_pt):
             if 'time_in' not in locals():
                 time_in = time.time()
             if check_WhileTrue_timeout(time_in, t_max = 10):
                 raise('ABORTED: Saving model takes too long!!')
-
+        """
         
         
     ##########################################################################
@@ -123,15 +126,9 @@ class nnBase(nn.Module):
 
         # this loop is required in parallelized mode, since it might take some 
         # time to successfully save the model params
-        count = 0
-        while count < 10:
-            try:
-                checkpoint = torch.load(filename_pt, map_location=device)
-                break
-            except Exception:
-                time.sleep(1)
-                count +=1
-                print(f'tentative : {count}')
+
+        check_saved(filename_pt)
+        checkpoint = torch.load(filename_pt, map_location=device)
         
         self.model_version = checkpoint['model_version']
         epoch = checkpoint['epoch']
