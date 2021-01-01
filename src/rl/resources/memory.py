@@ -75,13 +75,14 @@ class ReplayMemory():
         self.memory = torch.load(filename)
         self.update_memory_status()
 
+    """ obsolete. in AC now ALL samples are calculate with PG, only noise is added
     def pg_only(self):
-        """returns the memory with only samples calculated with PG model (no random or QV model)"""
+        # returns the memory with only samples calculated with PG model (no random or QV model)
         pg_gen_bool = unpack_batch(self.memory)[-1]
         pctg_print = round(100*sum(pg_gen_bool)/len(pg_gen_bool), 2)
         print(f'pctg PG generated = {pctg_print}%')
         return [i for (i, v) in zip(self.memory, pg_gen_bool) if v]
-
+    """
     
     def resetMemory(self, new_size = 0):
         if new_size > 0:
@@ -140,6 +141,6 @@ def unpack_batch(batch):
     reward_batch  = torch.cat(tuple(element[2] for element in batch))
     state_1_batch = torch.cat(tuple(element[3] for element in batch))
     done_batch = (tuple(element[4] for element in batch) )
-    pg_output_batch = (tuple(element[5] for element in batch) )
+    action_idx_batch = (tuple(element[5] for element in batch) )
 
-    return state_batch, action_batch, reward_batch, state_1_batch, done_batch, pg_output_batch
+    return state_batch, action_batch, reward_batch, state_1_batch, done_batch, action_idx_batch

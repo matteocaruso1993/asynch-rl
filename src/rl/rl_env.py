@@ -49,14 +49,15 @@ class Multiprocess_RL_Environment:
                  rl_params = None,movie_frequency = 20, max_steps_single_run = 200, \
                  training_session_number = None, save_movie = True, live_plot = False, \
                  display_status_frequency = 50, max_consecutive_env_fails = 3, tot_iterations = 400,\
-                 epsilon = 1, epsilon_annealing_factor = 0.95, AC_qv_quota = 0.2, \
+                 epsilon = 1, epsilon_annealing_factor = 0.95,  \
                  epsilon_min = 0.01 , gamma = 0.99 , discr_env_bins = 10 , N_epochs = 1000, \
                  replay_memory_size = 10000, mini_batch_size = 512, sim_length_max = 100, \
                  ctrlr_prob_annealing_factor = .9,  ctrlr_probability = 0, difficulty = 0, \
                  memory_turnover_ratio = 0.2, val_frequency = 10, bashplot = False, layers_width= (5,5), \
                  rewards = np.ones(5), validation_set_ratio = 4, env_options = {}, pg_partial_update = False, 
-                 beta_PG = 0.01, n_epochs_PG = 100, batch_size_PG = 32):
+                 beta_PG = 0.01, n_epochs_PG = 100, batch_size_PG = 32, noise_sd = 0.05):
         
+        self.noise_sd = noise_sd
         self.one_vs_one = False
         
         ####################### net/environment initialization
@@ -149,8 +150,6 @@ class Multiprocess_RL_Environment:
 
         #######################
         # epsilon/ctrl parameters
-        self.AC_qv_quota = AC_qv_quota
-        
         self.epsilon = epsilon  # works also as initial epsilon in case of annealing
         self.epsilon_annealing_factor = epsilon_annealing_factor #○ epsilon reduction after every epoch [0<fact<=1]
         self.epsilon_min = epsilon_min
@@ -178,14 +177,14 @@ class Multiprocess_RL_Environment:
         self.n_actions_discr = self.env_discr.get_actions_structure()
         self.N_in_model = self.env_discr.get_observations_structure()
 
-        self.model_qv = self.generate_model(self.lr)
+        self.model_qv = self.generate_model()
         self.model_qv.init_weights()
         
         if self.use_continuous_act_env:
             self.env_contn = self.generateContnsHybActSpace_GymStyleEnv()
             self.n_actions_contn = self.env_contn.get_actions_structure()
 
-        self.model_pg = self.generate_model(10*self.lr, pg_model=True, )
+        self.model_pg = self.generate_model(pg_model=True, )
         self.model_pg.init_weights()
         
         # in one vs. one the environment requires the (latest) model to work
@@ -211,10 +210,10 @@ class Multiprocess_RL_Environment:
 
         self.log_df = pd.DataFrame(columns=['training session','epsilon', 'ctrl prob','total single-run(s)',\
                                     'average single-run duration', 'average single-run reward' , 'av. q-val loss', \
-                                    'av. policy loss','N epochs', 'memory size', 'split random','split conventional',\
-                                        'split NN QV', 'split NN PG'])
-        self.splits = np.array([np.nan, np.nan, np.nan, np.nan])
-        # splits: random, conventional, NN_QV, NN_PG
+                                    'av. policy loss','N epochs', 'memory size', 'split random/noisy','split conventional',\
+                                        'split NN'])
+        self.splits = np.array([np.nan, np.nan, np.nan])
+        # splits: random/noisy, conventional, NN
 
         #######################
         # here we add the simulation agents
@@ -228,9 +227,7 @@ class Multiprocess_RL_Environment:
         
 
     ##################################################################################
-    def generate_model(self, lr = None, pg_model = False):
-        if lr is None:
-            lr = self.lr
+    def generate_model(self, pg_model = False):
         
         if self.use_continuous_act_env:
             n_actions = self.n_actions_contn
@@ -238,12 +235,12 @@ class Multiprocess_RL_Environment:
             n_actions = self.n_actions_discr
         
         if self.net_type == 'ConvModel':
-                model = ConvModel(model_version = 0, net_type = self.net_type+str(self.net_version), lr= lr, \
+                model = ConvModel(model_version = 0, net_type = self.net_type+str(self.net_version), lr= self.lr, \
                                   n_actions = n_actions, channels_in = self.n_frames, N_in = self.N_in_model,
                                   conv_no_grad = (pg_model and self.pg_partial_update), softmax = pg_model)
                 # only for ConvModel in the PG case, it is allowed to "partially" update the model (convolutional layers are evaluated with "no_grad()")
         elif self.net_type == 'LinearModel': 
-                model = LinearModel(0, self.net_type+str(self.net_version), lr, n_actions, \
+                model = LinearModel(0, self.net_type+str(self.net_version), self.lr, n_actions, \
                                     self.N_in_model, *(self.layers_width), softmax = pg_model) 
         return model
     
@@ -566,7 +563,7 @@ class Multiprocess_RL_Environment:
                     model_version_update = self.check_model_version(print_out = False, mode = 'update', save_v0 = False)
                     print(f'model_version_sim = {model_version_sim}')
                     print(f'model_version_update = {model_version_update}')
-                policy_loss =  self.nn_updater.update_DeepRL('policy', self.shared_memory.pg_only() ) 
+                policy_loss =  self.nn_updater.update_DeepRL('policy', self.shared_memory.memory ) 
                 
             self.get_log(total_runs, total_log, average_qval_loss, policy_loss )
     
@@ -640,7 +637,7 @@ class Multiprocess_RL_Environment:
                     print(f'PG models MISMATCH: {model_diff}')
                     raise('update model different than SIM one')
                 else:
-                    policy_loss = ray.get(self.nn_updater.update_DeepRL.remote('policy', self.shared_memory.pg_only() ))
+                    policy_loss = ray.get(self.nn_updater.update_DeepRL.remote('policy', self.shared_memory.memory ))
                 
             #3) store computed losses
             self.get_log(total_runs, total_log, average_qval_loss, policy_loss )
@@ -801,14 +798,8 @@ class Multiprocess_RL_Environment:
         split_conventional_ctrl = np.round(100*self.ctrlr_probability,2)
         split_random = np.round(100*self.epsilon*(1-self.ctrlr_probability),2)
         split_NN_ctrl = np.round(100*(1-self.epsilon)*(1-self.ctrlr_probability),2)
-        if self.rl_mode == 'AC':
-            split_NN_ctrl_QV = np.round(split_NN_ctrl*self.AC_qv_quota)
-            split_NN_ctrl_PG = np.round(split_NN_ctrl*(1-self.AC_qv_quota))
-        else:
-            split_NN_ctrl_QV = split_NN_ctrl
-            split_NN_ctrl_PG = 0
         
-        self.splits = np.array([split_random, split_conventional_ctrl, split_NN_ctrl_QV, split_NN_ctrl_PG])
+        self.splits = np.array([split_random, split_conventional_ctrl, split_NN_ctrl])
         
         if print_out:
 
@@ -817,8 +808,7 @@ class Multiprocess_RL_Environment:
 
             print(f'Random share: {split_random}%')
             print(f'Conventional ctl share: {split_conventional_ctrl}%')
-            print(f'NN share QV: {split_NN_ctrl_QV}%')
-            print(f'NN share PG: {split_NN_ctrl_PG}%')
+            print(f'NN share: {split_NN_ctrl}%')
         
 
     ##################################################################################
@@ -927,7 +917,7 @@ class Multiprocess_RL_Environment:
         if self.training_session_number > 1:
             new_row = [int(self.training_session_number), self.epsilon, self.ctrlr_probability , self.session_log[0] , self.session_log[1] ,\
                        self.session_log[2], self.session_log[3],self.session_log[4], self.n_epochs, self.replay_memory_size, \
-                       self.splits[0], self.splits[1], self.splits[2] , self.splits[3]    ]
+                       self.splits[0], self.splits[1], self.splits[2]     ]
             self.log_df.loc[len(self.log_df)] = new_row
         
         if self.qval_loss_history is None:
@@ -969,7 +959,7 @@ class Multiprocess_RL_Environment:
         # (log structure: 
         # 0: 'training session', 1: 'epsilon', 2: 'ctrl prob',3: 'total single-run(s)',
         # 4: 'average single-run duration', 5: 'average single-run reward' , 6: 'av. q-val loss', 
-        # 7: 'av. policy loss','N epochs', 8: 'memory size', 9: 'split random',
+        # 7: 'av. policy loss','N epochs', 8: 'memory size', 9: 'split random/noisy',
         # 10:'split conventional', 11: 'split NN'] )        
 
         indicators = self.log_df.columns
@@ -990,7 +980,7 @@ class Multiprocess_RL_Environment:
         ax2.legend([indicators[4]])
         
         # train splits
-        self.log_df.iloc[init_epoch:][['split random','split conventional','split NN QV','split NN PG']].plot.area(stacked=True, ax = ax3)
+        self.log_df.iloc[init_epoch:][['split random/noisy','split conventional','split NN']].plot.area(stacked=True, ax = ax3)
         
         ######################################
         fig_1 = plt.figure()

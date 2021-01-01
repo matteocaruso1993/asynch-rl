@@ -132,7 +132,7 @@ class RL_Updater():
             
             state_dict_0 = deepcopy(self.model_pg.state_dict()) #.copy()
                         
-            loss, n_mismatch = self.policy_loss_update(*unpack_batch(policy_memory)[:-2])
+            loss, n_mismatch = self.policy_loss_update(*tuple([batch for i, batch in enumerate(unpack_batch(policy_memory)) if i in [0,1,2,3,5]]))
             total_loss = loss.cpu().detach().numpy()
     
             invalid_samples_pctg =  np.round(100*n_mismatch/ len(policy_memory), 2)
@@ -158,7 +158,7 @@ class RL_Updater():
 
     
     #################################################
-    def policy_loss_update(self, state_batch, action_batch, reward_batch, state_1_batch):
+    def policy_loss_update(self, state_batch, action_batch, reward_batch, state_1_batch, actual_idxs_batch):
         
         if self.move_to_cuda:  # put on GPU if CUDA is available
             state_batch = state_batch.cuda()
@@ -168,7 +168,9 @@ class RL_Updater():
         
         # we re-compute the probabilities, this time in batch (they have to match with the outputs obtained during the simulation)
         prob_distribs_batch = self.model_pg(state_batch.float())   
-        action_idx_batch = torch.argmax(prob_distribs_batch, dim = 1)
+        #action_idx_batch = torch.argmax(prob_distribs_batch, dim = 1)
+        action_idx_batch = actual_idxs_batch
+        
         action_batch_grad = torch.zeros(action_batch.shape).cuda()
         action_batch_grad[torch.arange(action_batch_grad.size(0)),action_idx_batch] = 1
         
