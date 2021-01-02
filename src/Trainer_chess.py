@@ -31,7 +31,7 @@ from argparse import ArgumentParser
 parser = ArgumentParser()
 
 #following params always to be declared
-parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=1000,
+parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=2000,
                     help="net version used")
 
 parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10, help="number of training iterations")

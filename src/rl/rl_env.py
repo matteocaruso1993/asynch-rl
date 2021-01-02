@@ -55,7 +55,7 @@ class Multiprocess_RL_Environment:
                  ctrlr_prob_annealing_factor = .9,  ctrlr_probability = 0, difficulty = 0, \
                  memory_turnover_ratio = 0.2, val_frequency = 10, bashplot = False, layers_width= (5,5), \
                  rewards = np.ones(5), validation_set_ratio = 4, env_options = {}, pg_partial_update = False, 
-                 beta_PG = 0.01, n_epochs_PG = 100, batch_size_PG = 32, noise_sd = 0.05):
+                 beta_PG = 0.01, n_epochs_PG = 100, batch_size_PG = 32, noise_sd = 0.1):
         
         self.noise_sd = noise_sd
         self.one_vs_one = False
@@ -757,7 +757,6 @@ class Multiprocess_RL_Environment:
             print('###################################################################')
             print('###################################################################')
             
-            
             if reset_optimizer:
                 reset_optimizer = False
             if display_graphs:
@@ -766,25 +765,19 @@ class Multiprocess_RL_Environment:
             if i> 1 and not i % self.val_frequency:
                 print('###################################################################')
                 print('validation cycle start...')
-        
                 self.shared_memory.resetMemory(self.validation_set_size)
                 if self.ray_parallelize:
                     self.validation_parallelized()
                 else:
                     self.validation_serialized()
-                
                 print('end of validation cycle')
                 print('###################################################################')
-                
             """
             if i >= 30:
-                
                 losses = self.log_df[['av. q-val loss', 'av. policy loss']].to_numpy()
                 if (losses[-1,:]>= 1e5*losses[-21]).any():
-                    print('Algorithm is clearly diverging!')
                     break
             """
-        
         # save memory to reload for next iteration
         self.memory_stored.save(self.storage_path,self.net_name)
 

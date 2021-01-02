@@ -11,6 +11,9 @@ import time
 import gym
 from gym import spaces
 import torch
+import csv
+import random
+import os
 
 
 import colorama
@@ -19,13 +22,14 @@ colorama.init()
 
 
 class Chess(gym.Env):
-
     
-    def __init__(self, use_NN = False, max_n_moves = 100, pause = 3, rewards = [100,50, 1, 1e6], print_out = True, act_nD_flattened = None):
+    def __init__(self, use_NN = False, max_n_moves = 20, pause = 2, rewards = [100,50, 1, 1e6], \
+                 update_boards_bank = True, random_init = True, print_out = True, \
+                     pure_resets_pctg = 0 , act_nD_flattened = None):
         
         self.env_type = 'Chess'
+        self.chessboard = np.zeros((8,8),dtype = np.int)
         self.chessboard_backup  = self.next_mover = self.model = None
-        self.initialize_board()
 
         # externally editable params
         self.print_out = print_out
@@ -35,11 +39,18 @@ class Chess(gym.Env):
         self.use_NN = use_NN
         self.max_n_moves = max_n_moves
         self.rewards = rewards
+        self.update_boards_bank = update_boards_bank
+        self.random_init = random_init
+        self.pure_resets_pctg = pure_resets_pctg  
         
         if self.use_NN:
             self.act_nD_flattened = act_nD_flattened
         
-        self.action_space = spaces.Box(low=np.array([0,0,0,0]), high=np.array([7,7,7,7])) #, shape=(size__,))
+        self.action_space = spaces.Box(low=np.array([0,0,0]), high=np.array([15,7,7])) #, shape=(size__,))
+        
+        if self.random_init:
+            self.load_board_bank()
+
         
     ###################################
     """ these three methods are needed in sim env / rl env"""
@@ -60,13 +71,15 @@ class Chess(gym.Env):
 
     def initialize_board(self):
         """ board initialization """
-        self.chessboard = np.zeros((8,8),dtype = np.int)
-        # pawns own
-        self.chessboard[1,:] = np.ones((1,8))
-        self.chessboard[0,:] = np.array([5,4,3,9,10,3,4,5])
-        # pawns other
-        self.chessboard[6,:] = -np.ones((1,8))
-        self.chessboard[7,:] = -np.array([5,4,3,9,10,3,4,5])
+        if self.random_init and np.random.random() > self.pure_resets_pctg :
+            self.chessboard = np.reshape(np.array(random.choice(self.board_bank )), (8,8) )
+        else:
+            # pawns own
+            self.chessboard[1,:] = np.ones((1,8))
+            self.chessboard[0,:] = np.array([5,4,3,9,10,3,4,5])
+            # pawns other
+            self.chessboard[6,:] = -np.ones((1,8))
+            self.chessboard[7,:] = -np.array([5,4,3,9,10,3,4,5])
 
 
     def check_board(self, l, n):
@@ -76,6 +89,26 @@ class Chess(gym.Env):
         else:
             return 0
         
+    def action_to_move(self, act_raw, own = True):
+        """ convert from NN generated action (16*8*8) to move (8*8*8*8) """
+        sign = 2*int(own)-1
+        idx_pieces = np.where(sign*self.chessboard>0)
+        if act_raw[0] > len(idx_pieces[0])-1:
+            return None
+        return idx_pieces[1][int(act_raw[0])] , idx_pieces[0][int(act_raw[0])], int(act_raw[1]), int(act_raw[2])
+        
+    
+    def move_to_action(self, action, own = True):
+        """ convert from move (8*8*8*8) to NN generated action (16*8*8) """
+        sign = 2*int(own)-1
+        idx_pieces = np.where(sign*self.chessboard>0)
+        l,n,L,N = action
+        if not np.isscalar(l):
+            l = l[0]
+            n = n[0]
+        piece_idx = np.where((np.concatenate((idx_pieces[1][:,np.newaxis], idx_pieces[0][:,np.newaxis]), axis = 1) == (l,n) ).all(axis = 1))[0][0]
+        return piece_idx, action[2], action[3]
+    
 
     def render(self, action = None, own = True):
         """ render chessboard in terminal"""
@@ -164,13 +197,13 @@ class Chess(gym.Env):
             if  piece_type == 1:
                 valid_move = self.evaluate_pawn(action, own, hypoth_opp)
             elif piece_type == 3:
-                valid_move = self.evaluate_bishop(action, hypoth_opp)
+                valid_move = self.evaluate_bishop(action,own, hypoth_opp)
             elif piece_type == 5:
-                valid_move = self.evaluate_tower(action, hypoth_opp)
+                valid_move = self.evaluate_tower(action,own, hypoth_opp)
             elif piece_type == 9:
-                valid_move = self.evaluate_tower(action, hypoth_opp) or self.evaluate_bishop(action, hypoth_opp)
+                valid_move = self.evaluate_tower(action,own, hypoth_opp) or self.evaluate_bishop(action,own, hypoth_opp)
             elif piece_type == 4:
-                valid_move = self.evaluate_horse(action, hypoth_opp)
+                valid_move = self.evaluate_horse(action,own, hypoth_opp)
             elif piece_type == 10:
                 valid_move = self.evaluate_king(action,own, hypoth_opp )
             else:
@@ -178,8 +211,29 @@ class Chess(gym.Env):
         return valid_move
 
 
+    def save_board_bank(self):
+        """ save extended list of possible initial conditions"""
+        filename = os.path.join(os.path.dirname(__file__), 'board_bank.csv')
+        new_bank = [list(i) for i in set(tuple(i) for i in self.board_bank)]
+        with open(filename, 'w') as f: 
+            # using csv.writer method from CSV package 
+            write = csv.writer(f) 
+            write.writerows(new_bank) 
+
+            
+    def load_board_bank(self):
+        """ load list of possible initial conditions"""
+        filename = os.path.join(os.path.dirname(__file__), 'board_bank.csv')
+        with open(filename, 'r') as f: 
+            # using csv.reader method from CSV package 
+            csv_reader = csv.reader(f)
+            # Pass reader object to list() to get a list of lists
+            self.board_bank = [list(map(int, row)) for row in csv_reader ]
+            
+
     def reset(self, **kwargs):
         """ resets board to initial condition """
+        self.recorded_boards = []
         self.initialize_board()
         self.next_mover = None
         self.previous_chessboard_out = None
@@ -190,12 +244,12 @@ class Chess(gym.Env):
         
         self.lost_pieces = {'player': {'pawns' : [], 'others' : []}, 'opponent': {'pawns' : [], 'others' : []}}
                             
-        if np.random.random()>0.5:
+        if np.random.random()>0.5 or self.random_init:
             self.next_mover = 'player'
         else:
             self.next_mover = 'opponent'
             opp_action = self.get_opponent_action()
-            self.apply_move(opp_action)
+            self.apply_move(opp_action, own = False)
             self.next_mover = 'player'
             if self.print_out:
                 self.render(opp_action, own = False)
@@ -207,10 +261,12 @@ class Chess(gym.Env):
         self.chessboard_backup  = None
 
 
-    def apply_move(self, action, tentative = False):
+    def apply_move(self, action, tentative = False, own = True):
         """ applies move. if tentative it s done only for evaluation purposes"""
         l,n,L,N = action        
-        own = (self.chessboard[n,l]>0)
+        if (2*int(own)-1) != np.sign(self.chessboard[n,l]):
+            stophere=1
+            raise('mismatch problem')
 
         self.chessboard_backup = self.chessboard.copy()
         if not tentative and self.print_out: 
@@ -243,6 +299,8 @@ class Chess(gym.Env):
                 if tentative:
                     return False
                 else:
+                    self.chessboard = self.chessboard_backup
+                    self.is_valid_move(action, own = own, mirror = False)
                     raise('Going to checked position!')
             return True
         elif tentative:
@@ -251,9 +309,15 @@ class Chess(gym.Env):
             raise('King disappeared')
         
         
-    def is_valid_move(self, action, own = True):
+    def is_valid_move(self, action, own = True, mirror = False):
         """ returns True if move is valid"""
         sign = 2*int(own)-1
+        if len(action)==3:
+            action = self.action_to_move(action, own = own)
+            if action is None:
+                return False
+        if mirror:
+            action = tuple([7-act for act in action])
         l,n,L,N = action
         if sign*self.chessboard[n,l] > 0 and self.evaluate_move(action, own = own):
             if self.validate_action(action, own = own) is not None:
@@ -269,10 +333,12 @@ class Chess(gym.Env):
             self.chessboard[pawn_rep[0][0], pawn_rep[0][1]] *= 9
             
 
-    def step(self,action, random_gen = False):
+    def step(self,act_raw, random_gen = False):
         """ single step, comprises application of """
         info = {}
         done = False
+        
+        action = self.action_to_move(act_raw, own = True)
         
         if isinstance(action, np.ndarray):
             action = tuple( action.astype(np.int) )
@@ -299,7 +365,7 @@ class Chess(gym.Env):
                     info['winner'] = 'draw'
             else:
                 opp_action = self.get_opponent_action()
-                self.apply_move(opp_action)
+                self.apply_move(opp_action, own = False)
                 self.next_mover = 'player'
                 if self.print_out:
                     self.render(opp_action, own = False)
@@ -314,9 +380,17 @@ class Chess(gym.Env):
                         done = True
                         winner = 'draw'
                         info['winner'] = 'draw'
+                elif self.update_boards_bank:
+                    self.recorded_boards.append(self.get_state().tolist())
         else:
             reward = -self.rewards[3]
             done = True
+            
+        if done and self.update_boards_bank:
+            self.save_board_bank()
+            [self.board_bank.append(new_board) for new_board in self.recorded_boards]
+            self.save_board_bank()
+            
         return self.get_state(), reward, done, info 
 
 
@@ -335,23 +409,30 @@ class Chess(gym.Env):
         """  """
         net_output = self.model(self.get_state(own = False, torch_output = True))
         
-        action_bool_array = torch.zeros([8**4], dtype=torch.float32)
+        action_bool_array = torch.zeros([16*8*8], dtype=torch.float32)
         action_index = torch.argmax(net_output)
         action_bool_array[action_index] = 1        
         
-        return tuple(self.act_nD_flattened[:,np.where(action_bool_array)].reshape(4,).astype(np.int))
-        
+        return tuple(self.act_nD_flattened[:,np.where(action_bool_array)].reshape(3,).astype(np.int))
     
+
+    def mirror_action(action):
+        return 7 - action
+
 
     def get_opponent_action(self):
         """ picks opponent action (random or NN based). If NN one is invalid, returns random"""
         if self.use_NN:
-            action = self.get_NN_action()
-            if self.is_valid_move(action, own = False):
-                return action
+            action_raw = self.get_NN_action()
+            try:
+                self.is_valid_move(action_raw, own = False, mirror = True)
+            except Exception:
+                self.is_valid_move(action_raw, own = False, mirror = True)
+            if self.is_valid_move(action_raw, own = False, mirror = True):
+                return 7- self.action_to_move(action_raw, own = False)
         if self.use_NN and self.print_out:
             print('NN returned invalid move. Random one is generated!')
-        return self.random_move(own = False)
+        return self.action_to_move(self.random_move(own = False), own = False)
 
 
     def check_if_kings_exist(self):
@@ -370,7 +451,7 @@ class Chess(gym.Env):
                     action = self.extract_move(*act, own = own )
                     value = self.validate_action(action, own)
                     if value is not None:
-                        return action
+                        return self.move_to_action(action, own = own)
 
         # try to check the opponent's king or grab pieces
         if self.moves_counter > 3:
@@ -390,7 +471,7 @@ class Chess(gym.Env):
                         best_action = action
     
             if best_action is not None:
-                return best_action
+                return self.move_to_action(best_action, own = own)
 
         # take first available random move                                      
         for i in range(1000):
@@ -398,7 +479,7 @@ class Chess(gym.Env):
             action = self.extract_move(*piece, own = own )
             value = self.validate_action(action, own)
             if value is not None:
-                return action
+                return self.move_to_action(action, own = own)
         
         raise('Solution not found!')
     
@@ -411,8 +492,8 @@ class Chess(gym.Env):
     
     def validate_action(self,action, own):
         """ decide if action is valid (respects rules and doesn't put own king in check')"""
-        if type(action) is tuple and len(action) == 4:
-            if self.evaluate_move(action, own = own) and valid_action_space(action):
+        if type(action) is tuple and len(action) == 4 and valid_action_space(action):
+            if self.evaluate_move(action, own = own):
                 valid, value = self.check_proof_action(action, own = own)
                 if valid:
                     return value
@@ -441,10 +522,10 @@ class Chess(gym.Env):
 
     
     def check_mate(self, own = True):
-        """checkmate proof. if 1 checkmate, 2 stalemate, else 0"""
-        # checks if we lost the game
-        if not self.systematic_check(own):
-            if self.check_check(own = own):
+        """own indicates potential winner. checkmate proof. if 1 checkmate, 2 stalemate, else 0"""
+        # checks if own has won the game: systemic_check and check_check have to be performed on NOT OWN
+        if not self.systematic_check(own = not own):
+            if self.check_check(own = not own):
                 return 1
             else:
                 return 2
@@ -462,7 +543,7 @@ class Chess(gym.Env):
             for moves in possible_moves(piece_idx, l, n, own=own ):
                 action = (l,n,moves[0], moves[1])
                 if self.evaluate_move(action, own = own, hypoth_opp = False):
-                    if self.check_proof_action(action)[0]:
+                    if self.check_proof_action(action, own)[0]:
                         return True
         return False
 
@@ -479,7 +560,7 @@ class Chess(gym.Env):
         """ checks that move doesn't lead to check. if own is False checks an opponent move"""
         sign = 2*int(own)-1
         move_value = None
-        if self.apply_move(action, tentative = True):        
+        if self.apply_move(action, tentative = True, own = own):        
             check_free = not self.check_check(own = own)
             move_value = sign*(self.chessboard.sum()-self.chessboard_backup.sum())
             self.revert_move()
@@ -521,13 +602,13 @@ class Chess(gym.Env):
         return False
         
 
-    def evaluate_horse(self, action, hypoth_opp = False):
+    def evaluate_horse(self, action, own, hypoth_opp = False):
         """ evaluate if proposed horse move is possible"""
         l,n,L,N = action
         
         if ((np.abs(L-l) == 2 and np.abs(N-n) == 1) or (np.abs(L-l) == 1 and np.abs(N-n) == 2)):
             if not hypoth_opp:
-                if self.check_proof_action(action)[0]:
+                if self.check_proof_action(action, own)[0]:
                     return True
             else:
                 return True
@@ -553,14 +634,14 @@ class Chess(gym.Env):
                       
         if condition1 or condition2 or condition3:
             if not hypoth_opp:
-                if self.check_proof_action(action)[0]:
+                if self.check_proof_action(action, own)[0]:
                     return True
             else:
                 return True
         return False
     
     
-    def evaluate_bishop(self, action, hypoth_opp = False):
+    def evaluate_bishop(self, action, own, hypoth_opp = False):
         """ evaluate if proposed bishop move is possible"""
         l,n,L,N = action
         
@@ -572,14 +653,14 @@ class Chess(gym.Env):
             
         if all([self.check_board(l+l_sign*i, n+n_sign*i)== 0 for i in range(1,np.abs(L-l))  ] ):
             if not hypoth_opp:
-                if self.check_proof_action(action)[0]:
+                if self.check_proof_action(action, own)[0]:
                     return True
             else:
                 return True
         return False
                         
     
-    def evaluate_tower(self, action, hypoth_opp = False):
+    def evaluate_tower(self, action, own, hypoth_opp = False):
         """ evaluate if proposed tower move is possible"""
         l,n,L,N = action
         valid = False
@@ -594,7 +675,7 @@ class Chess(gym.Env):
                     valid = True
         if valid:
             if not hypoth_opp:
-                if self.check_proof_action(action):
+                if self.check_proof_action(action, own):
                     return True
             else:
                 return True
@@ -712,6 +793,7 @@ def possible_moves(piece_idx, l, n, own = True):
         raise('l,n couple not a piece!')
 
 
+
 #%%
 if __name__ == "__main__":
 
@@ -724,7 +806,7 @@ if __name__ == "__main__":
     pr.enable()
     """
 
-    game = Chess(print_out = False)
+    game = Chess(print_out = True, pause = 0)
     game.reset()
     done = False
     
@@ -739,6 +821,8 @@ if __name__ == "__main__":
         print('wrong move selected!')
     else:
         print(f'the winner is: {info["winner"]}')
+        
+        
         
     """
     pr.disable()

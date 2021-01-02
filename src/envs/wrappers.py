@@ -72,15 +72,10 @@ class DiscretizedActionWrapper(gym.ActionWrapper):
         print("New act space:", Discrete( self.get_actions_structure() ) )
         self.action_space = Discrete( self.get_actions_structure() )
         
-        self.act_2D_flattened = None
+        #self.act_2D_flattened = None
         if self.act_space_dim==1:
             self.act_1D = self.val_bins_act
-            
-        elif self.act_space_dim==2:
-            xv, yv = np.meshgrid(self.val_bins_act[0], self.val_bins_act[1])
-            self.act_2D_flattened = np.stack((xv.flatten(),yv.flatten()  ))
-            
-        elif self.act_space_dim>2:
+        elif self.act_space_dim>=2:
             arg = [self.val_bins_act[i] for i in range(self.act_space_dim)]
             xx_out = np.meshgrid(*arg)
             self.act_nD_flattened = np.stack(([xx.flatten() for xx in xx_out ]))
@@ -93,22 +88,16 @@ class DiscretizedActionWrapper(gym.ActionWrapper):
     def step(self, action, random_gen = False):
         return self.env.step(action, random_gen)
     
-    def action_2D(self,action_bool_array):
-        return self.step(self.act_2D_flattened[:,np.where(action_bool_array)].reshape(2,))            
-
-    def action_nD(self,action_bool_array, random_gen = False):
-        return self.step(self.act_nD_flattened[:,np.where(action_bool_array)].reshape(self.act_space_dim,), random_gen)            
+    def boolarray_to_action(self, action_bool_array):
+        if self.act_space_dim  == 1 :
+            return self.act_1D[np.where(action_bool_array)[0]]
+        elif self.act_space_dim >= 2 : 
+            return self.act_nD_flattened[:,np.where(action_bool_array)].reshape(self.act_space_dim,)
 
     def action(self, action_bool_array, random_gen = False):
-        #if self.act_2D_flattened is not None:
-        if self.act_space_dim  == 1 :
-            return self.step(self.act_1D[np.where(action_bool_array)[0]])
-        elif self.act_space_dim  == 2 : 
-            return self.action_2D(action_bool_array)
-        elif self.act_space_dim > 2 : 
-            return self.action_nD(action_bool_array, random_gen)
-        
-        raise NotImplementedError
+        action = self.boolarray_to_action(action_bool_array)        
+        return self.step(action, random_gen)
+
         
     ###############################################
     # this function returns a traditional control input to be used instead of the ML one

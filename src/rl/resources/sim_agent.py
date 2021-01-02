@@ -30,6 +30,8 @@ from .memory import ReplayMemory
 
 #%%
 
+DEBUG = False
+
 class SimulationAgent:
     
     ##################################################################################
@@ -208,7 +210,7 @@ class SimulationAgent:
         self.env.reset(save_history = (not self.agent_run_variables['single_run'] % self.movie_frequency) )
         
         # initial action is do nothing
-        action = torch.zeros([self.n_actions], dtype=torch.float32)
+        action = torch.zeros([self.n_actions], dtype=torch.bool)
         action[round((self.n_actions-1)/2)] = 1
         
         state_obs, reward, done, info = self.env.action(action)
@@ -345,11 +347,16 @@ class SimulationAgent:
         #################
         try:
             # in case of infeasibility issues, random_gen allows a feasible input to be re-generated inside the environment, to accelerate the learning process
-            state_obs_1, reward_np, done, info = self.env.action(action.detach().numpy(), random_gen = (np.random.random() < self.prob_correction and noise_added ) )
+            action_bool_array = action.detach().numpy()
+            random_gen = (np.random.random() < self.prob_correction and noise_added )
+            state_obs_1, reward_np, done, info = self.env.action(action_bool_array, random_gen = random_gen )
             if 'move changed' in info:
                 action = 0*action
                 action_index = self.env.get_action_idx(info['move changed'])
                 action[ action_index ] = 1
+            elif self.show_rendering or DEBUG:
+                # we show the selected action of the not corrected ones
+                print(f'selected action = {self.env.boolarray_to_action(action_bool_array)}')
 
         except Exception:
             self.agent_run_variables['failed_iteration'] = True
@@ -440,7 +447,7 @@ class SimulationAgent:
     def getNextAction(self,state, use_controller = False, use_NN = False):
         # initialize action
         noise_added = False
-        action = torch.zeros([self.n_actions], dtype=torch.float32)
+        action = torch.zeros([self.n_actions], dtype=torch.bool)
         # PG only uses greedy approach            
         if self.rl_mode == 'AC':
             output = self.model_pg.cpu()(state.float())
@@ -453,18 +460,19 @@ class SimulationAgent:
 
         elif self.rl_mode == 'DQL':
             if use_controller and not use_NN:
-                action_index = torch.tensor(self.env.get_control_idx(discretized = True), dtype = torch.int)
+                action_index = torch.tensor(self.env.get_control_idx(discretized = True), dtype = torch.int8)
                 #source = 'ctrl'
             else:
                 if random.random() <= self.epsilon and not use_NN:
-                    action_index = torch.randint(self.n_actions, torch.Size([]), dtype=torch.int)
+                    action_index = torch.randint(self.n_actions, torch.Size([]), dtype=torch.int8)
                     #source = 'random'
                 else:
                     output = self.model_qv.cpu()(state.float())
                     action_index = torch.argmax(output)
                     #source = 'qv'
             
-        action[action_index] = 1        
+        action[action_index] = 1
+        
         return action, action_index, noise_added
             
     ##################################################################################

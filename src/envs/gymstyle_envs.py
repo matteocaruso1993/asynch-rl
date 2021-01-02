@@ -51,7 +51,7 @@ class contn_hyb_GymStyle_Platoon(ContinuousHybridActionWrapper):
         super().__init__(env, action_structure[:env.n_actions], low_act, high_act)
         
 class Gymstyle_Chess(DiscretizedActionWrapper):
-    def __init__(self, n_bins_act=7, **kwargs):
+    def __init__(self, n_bins_act=[15,7,7], **kwargs):
         
         env = Chess(**kwargs)
         super().__init__(env, n_bins_act)
