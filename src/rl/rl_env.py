@@ -454,7 +454,11 @@ class Multiprocess_RL_Environment:
                 if self.rl_mode == 'AC':
                     if not os.path.isfile(os.path.join(self.storage_path,self.net_name+ '_policy.pt')):
                         model.save_net_params(self.storage_path,self.net_name+'_policy')
-
+                        
+                with open(os.path.join(self.storage_path,'train_log.txt'), 'a+') as f:
+                    f.writelines(self.net_name + "\n")
+                    if self.rl_mode == 'AC':
+                        f.writelines(self.net_name+'_policy'+ "\n")
                     
             if print_out:
                 print(f'SYSTEM is SIMULATING with model version: {model_v}')  
@@ -484,22 +488,16 @@ class Multiprocess_RL_Environment:
     def update_model_cpu(self):
         """Upload the correct model on CPU (used to select the action when a simulation is run) """
         device_cpu = torch.device('cpu')
-
+ 
         self.model_qv.load_net_params(self.storage_path,self.net_name, device_cpu)
         
         if self.one_vs_one:
             self.env_discr.update_model(self.model_qv)
-
-        
+       
         if self.rl_mode == 'AC': 
             #if os.path.isfile(os.path.join(self.storage_path,self.net_name + '_policy.pt')):
-            try:
-                self.model_pg.load_net_params(self.storage_path,self.net_name + '_policy', device_cpu)
-                self.policy_loaded = True
-            except Exception:
-                print('No PG model to load on CPU!')
-                return False
-               
+            self.model_pg.load_net_params(self.storage_path,self.net_name + '_policy', device_cpu)
+            self.policy_loaded = True
         return True
 
     ##################################################################################

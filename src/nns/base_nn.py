@@ -128,9 +128,31 @@ class nnBase(nn.Module):
         # time to successfully save the model params
 
         check_saved(filename_pt)
-        checkpoint = torch.load(filename_pt, map_location=device)
         
-        self.model_version = checkpoint['model_version']
+        try:
+            checkpoint = torch.load(filename_pt, map_location=device)
+            self.model_version = checkpoint['model_version']
+            
+        except Exception:
+            
+            print(f'Problems with net name {filename_pt}')
+            
+            with open(os.path.join(path_log,'train_log.txt'), 'r+') as f:
+                logLines = f.readlines()
+                if net_name +'\n' not in logLines:
+                    print(f'model {net_name} not in list!!')
+            
+            print("*****************************************************")
+            print("Can not load model parameters! Using previous version")
+            print("*****************************************************")
+            
+            parts = filename_pt.rsplit('_')
+            parts[1] = str(int(parts[1])-1)
+            filename_pt_1 = "_".join(parts)
+               
+            checkpoint = torch.load(filename_pt_1, map_location=device)
+            self.model_version = checkpoint['model_version']+1
+        
         epoch = checkpoint['epoch']
         model_state = checkpoint['model_state_dict']
         opt_state = checkpoint['optimizer_state_dict']

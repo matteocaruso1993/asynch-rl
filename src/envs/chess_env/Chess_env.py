@@ -23,12 +23,14 @@ colorama.init()
 
 class Chess(gym.Env):
     
-    def __init__(self, use_NN = False, max_n_moves = 20, pause = 2, rewards = [100,50, 1, 1e6], \
-                 update_boards_bank = True, random_init = True, print_out = True, \
-                     pure_resets_pctg = 0 , act_nD_flattened = None):
+    def __init__(self, use_NN = False, max_n_moves = 60, pause = 2, rewards = [100,50, 1, 1e6], \
+                 update_boards_bank = False, random_init = True, print_out = False, \
+                     pure_resets_pctg = 0.1 , act_nD_flattened = None, evaluate_critical = False):
         
         self.env_type = 'Chess'
         self.chessboard = np.zeros((8,8),dtype = np.int)
+        self.chessboard.setflags(write=1)
+        
         self.chessboard_backup  = self.next_mover = self.model = None
 
         # externally editable params
@@ -42,14 +44,16 @@ class Chess(gym.Env):
         self.update_boards_bank = update_boards_bank
         self.random_init = random_init
         self.pure_resets_pctg = pure_resets_pctg  
+        self.evaluate_critical = evaluate_critical
         
         if self.use_NN:
             self.act_nD_flattened = act_nD_flattened
         
         self.action_space = spaces.Box(low=np.array([0,0,0]), high=np.array([15,7,7])) #, shape=(size__,))
         
+        self.board_bank = []
         if self.random_init:
-            self.load_board_bank()
+            self.load_board_bank(self.evaluate_critical)
 
         
     ###################################
@@ -75,11 +79,20 @@ class Chess(gym.Env):
             self.chessboard = np.reshape(np.array(random.choice(self.board_bank )), (8,8) )
         else:
             # pawns own
+            self.chessboard.setflags(write=1)
             self.chessboard[1,:] = np.ones((1,8))
             self.chessboard[0,:] = np.array([5,4,3,9,10,3,4,5])
             # pawns other
             self.chessboard[6,:] = -np.ones((1,8))
             self.chessboard[7,:] = -np.array([5,4,3,9,10,3,4,5])
+            
+        if self.evaluate_critical:
+            board = []
+            tentative = 0
+            while board == [] and tentative <= 5:
+                tentative += 1
+                board = random.choice(self.critical_boards )
+            self.chessboard = np.reshape(np.array(board), (8,8) )
 
 
     def check_board(self, l, n):
@@ -175,12 +188,13 @@ class Chess(gym.Env):
             print(' '.join(self.lost_pieces['opponent']['others']))
 
 
-    def king_position(self, own = True):
+    def king_position(self, own = True, tentative = False):
         """ returns king position """
         sign = 2*int(own)-1
         n,l = np.where(self.chessboard == 10*sign)
         if len(n)== 0:
-            print('no king!')
+            if not tentative:
+                raise('no king error')
             return False
         else:       
             return l,n 
@@ -190,7 +204,7 @@ class Chess(gym.Env):
         """ evaluates feasibility of proposed piece move"""
         l,n,L,N = action
         
-        if not valid_action_space(action) or (self.check_board(L,N)*self.check_board(l,n))>0 :
+        if (self.check_board(L,N)*self.check_board(l,n))>0 :
             valid_move = False
         else:
             piece_type = np.abs(self.chessboard[n,l])
@@ -211,7 +225,7 @@ class Chess(gym.Env):
         return valid_move
 
 
-    def save_board_bank(self):
+    def save_board_bank(self, critical = False):
         """ save extended list of possible initial conditions"""
         filename = os.path.join(os.path.dirname(__file__), 'board_bank.csv')
         new_bank = [list(i) for i in set(tuple(i) for i in self.board_bank)]
@@ -220,8 +234,16 @@ class Chess(gym.Env):
             write = csv.writer(f) 
             write.writerows(new_bank) 
 
+        if critical:
+            filename_crit = os.path.join(os.path.dirname(__file__), 'board_bank_crit.csv')
+            critical_boards = [list(i) for i in set(tuple(i) for i in self.critical_boards)]
+            with open(filename_crit, 'w') as f: 
+                # using csv.writer method from CSV package 
+                write = csv.writer(f) 
+                write.writerows(critical_boards) 
+
             
-    def load_board_bank(self):
+    def load_board_bank(self, critical = False):
         """ load list of possible initial conditions"""
         filename = os.path.join(os.path.dirname(__file__), 'board_bank.csv')
         with open(filename, 'r') as f: 
@@ -229,6 +251,15 @@ class Chess(gym.Env):
             csv_reader = csv.reader(f)
             # Pass reader object to list() to get a list of lists
             self.board_bank = [list(map(int, row)) for row in csv_reader ]
+            
+        if critical:
+            filename_crit = os.path.join(os.path.dirname(__file__), 'board_bank_crit.csv')
+            with open(filename_crit, 'r') as f: 
+                # using csv.reader method from CSV package 
+                csv_reader = csv.reader(f)
+                # Pass reader object to list() to get a list of lists
+                self.critical_boards = [list(map(int, row)) for row in csv_reader ]
+            
             
 
     def reset(self, **kwargs):
@@ -294,7 +325,7 @@ class Chess(gym.Env):
                 print(f'Previous board --- Move N. {self.moves_counter}')
         
         # following check might be removed in the future
-        if self.king_position(own = not own):
+        if self.king_position(own = not own, tentative = True):
             if self.check_check(own = own):
                 if tentative:
                     return False
@@ -319,7 +350,7 @@ class Chess(gym.Env):
         if mirror:
             action = tuple([7-act for act in action])
         l,n,L,N = action
-        if sign*self.chessboard[n,l] > 0 and self.evaluate_move(action, own = own):
+        if sign*self.chessboard[n,l] > 0 and self.evaluate_move(action, own = own) and valid_action_space(action):
             if self.validate_action(action, own = own) is not None:
                 return True
         return False
@@ -387,7 +418,6 @@ class Chess(gym.Env):
             done = True
             
         if done and self.update_boards_bank:
-            self.save_board_bank()
             [self.board_bank.append(new_board) for new_board in self.recorded_boards]
             self.save_board_bank()
             
@@ -429,7 +459,7 @@ class Chess(gym.Env):
             except Exception:
                 self.is_valid_move(action_raw, own = False, mirror = True)
             if self.is_valid_move(action_raw, own = False, mirror = True):
-                return 7- self.action_to_move(action_raw, own = False)
+                return tuple([7-i for i in self.action_to_move(action_raw, own = False)])
         if self.use_NN and self.print_out:
             print('NN returned invalid move. Random one is generated!')
         return self.action_to_move(self.random_move(own = False), own = False)
@@ -457,7 +487,7 @@ class Chess(gym.Env):
         if self.moves_counter > 3:
             max_value = -0.5
             best_action = None
-            for i in range(200):
+            for i in range(100):
                 piece = self.extract_piece(own = own)
                 action = self.extract_move(*piece, own = own)
                 value = self.validate_action(action, own)
@@ -474,14 +504,32 @@ class Chess(gym.Env):
                 return self.move_to_action(best_action, own = own)
 
         # take first available random move                                      
-        for i in range(1000):
+        for i in range(500):
             piece = self.extract_piece(own = own)
             action = self.extract_move(*piece, own = own )
             value = self.validate_action(action, own)
             if value is not None:
                 return self.move_to_action(action, own = own)
-        
-        raise('Solution not found!')
+            
+            
+        self.load_critical_boards()
+        self.critical_boards.append(self.get_state(own = own).tolist())
+        self.save_board_bank(critical=True)
+        raise('Solution not found, board state added to critical boards')
+    
+    
+    def load_critical_boards(self):
+        """ load list of possible initial conditions"""
+        filename_crit = os.path.join(os.path.dirname(__file__), 'board_bank_crit.csv')
+        if os.path.isfile(filename_crit):
+            with open(filename_crit, 'r') as f: 
+                # using csv.reader method from CSV package 
+                csv_reader = csv.reader(f)
+                # Pass reader object to list() to get a list of lists
+                self.critical_boards = [list(map(int, row)) for row in csv_reader ]
+        else:
+            self.critical_boards = []
+            
     
     
     def loss_risk_value(self, action, own, prob = 0.8):
@@ -542,7 +590,7 @@ class Chess(gym.Env):
             piece_idx = np.abs(self.check_board(l,n))
             for moves in possible_moves(piece_idx, l, n, own=own ):
                 action = (l,n,moves[0], moves[1])
-                if self.evaluate_move(action, own = own, hypoth_opp = False):
+                if self.evaluate_move(action, own = own, hypoth_opp = False) and valid_action_space(action):
                     if self.check_proof_action(action, own)[0]:
                         return True
         return False
@@ -573,17 +621,16 @@ class Chess(gym.Env):
 
     def checked_position(self, L, N, own = True):
         """ check if given position is checked by opponent """
-        if own:
-            opponents_pos = np.where(self.chessboard < 0)
-        else:
-            opponents_pos = np.where(self.chessboard > 0)
+        sign = 2*int(own)-1
+        opponents_pos = np.where(sign*self.chessboard < 0)
+        if not np.isscalar(L):
+            L = L[0]
+            N = N[0]
+
         for n , l in zip( opponents_pos[0], opponents_pos[1] ):
             if not np.isscalar(l):
                 l = l[0]
                 n = n[0]
-            if not np.isscalar(L):
-                L = L[0]
-                N = N[0]
             action = (l,n,L,N) 
             if self.evaluate_move(action, own = not own, hypoth_opp = True) and valid_action_space(action):
                 return True
@@ -806,7 +853,7 @@ if __name__ == "__main__":
     pr.enable()
     """
 
-    game = Chess(print_out = True, pause = 0)
+    game = Chess(print_out = False, pause = 0, evaluate_critical=False)
     game.reset()
     done = False
     

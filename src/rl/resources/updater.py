@@ -14,6 +14,7 @@ import numpy as np
 #import time
 
 from copy import deepcopy
+import os
 
 from .memory import unpack_batch
 
@@ -57,6 +58,11 @@ class RL_Updater():
         self.model_qv.save_net_params(path, model_name)
         if self.rl_mode == 'AC':
             self.model_pg.save_net_params(path, model_name+'_policy')
+        
+        with open(os.path.join(path,'train_log.txt'), 'a+') as f:
+                f.writelines(model_name + "\n")
+                if self.rl_mode == 'AC':
+                    f.writelines(model_name+'_policy'+ "\n")
         
     ##################################################################################        
     # required to check if model is inherited
