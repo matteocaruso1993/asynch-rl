@@ -15,8 +15,6 @@ import matplotlib.pyplot as plt
 
 #%%
 
-
-
 class PlatoonEnv(gym.Env):
     
     def __init__(self, sim_length_max = 200, difficulty = 1, rewards = [1000, 1, 200, 100], options = {False}):
@@ -214,22 +212,24 @@ class PlatoonEnv(gym.Env):
         # self.rewards
         #[0] crash/lost track, [1] prize, [2] energy, [3] control
         
-        info = {}
+        info = {'outcome':None}
 
         # too close  --> end simulation
         if  self.state[0] < (self.ref_distance - self.max_tracking_error)  :
             done = True
             reward = -self.rewards[0]
+            info['outcome'] = 'fail'
         # too far, penalize
         elif  self.state[0] > self.ref_distance + round(1.5*self.max_tracking_error):
             done = True
             reward = -self.rewards[0]
+            info['outcome'] = 'fail'
         elif self.duration >= self.sim_length_max:
             done = True
             energy_reward = self.rewards[2] * (1-cum_energy/(self.states_sequence.shape[0]*self.dt*self.max_power))
             ctrl_reward = self.rewards[3] *( 1 - np.sum(np.diff(self.ctrl_sequence[:,0])**2)/(2*self.states_sequence.shape[0])  )
             reward = (energy_reward + ctrl_reward).item()
-            info = {'successful run'}
+            info['outcome'] = 'finalized'
             
             """
             print(f'done! final reward = {reward}')

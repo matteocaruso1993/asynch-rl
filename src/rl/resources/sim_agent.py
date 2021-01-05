@@ -243,7 +243,7 @@ class SimulationAgent:
                 self.simulation_log = np.append(self.simulation_log, single_run_log, axis = 0)
         
     ##################################################################################
-    def run_synch(self, use_NN = False, pctg_ctrl = 0):
+    def run_synch(self, use_NN = False, pctg_ctrl = 0, test_qv = False):
         
         self.simulation_log = None
         self.run_variables_init()
@@ -266,16 +266,15 @@ class SimulationAgent:
                     break
                 state, use_controller = self.reset_agent(pctg_ctrl)
             
-            action, action_index, noise_added = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN)
+            action, action_index, noise_added = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN, test_qv=test_qv )
             state, reward_np, done , info = self.stepAndRecord(state, action, action_index, noise_added)
             
-            if use_NN and len(info)>0:
+            if use_NN and info['outcome']=='finalized':
                 self.agent_run_variables['successful_runs'] += 1
             
             if self.verbosity > 0:
                 self.displayStatus()                    
             self.trainVariablesUpdate(reward_np, done)
-            
         
         single_run_log = self.trainVariablesUpdate(reset_variables = True)
         self.update_sim_log(single_run_log)
@@ -287,7 +286,7 @@ class SimulationAgent:
         # self.simulation_log contains duration and cumulative reward of every single-run
 
     ##################################################################################
-    async def run(self, use_NN = False):
+    async def run(self, use_NN = False, test_qv = False):
         
         self.simulation_log = None
         self.run_variables_init()
@@ -314,10 +313,10 @@ class SimulationAgent:
                     break
                 state, use_controller = self.reset_agent()
             
-            action, action_index, noise_added = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN)
+            action, action_index, noise_added = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN, test_qv=test_qv )
             state, reward_np, done , info = self.stepAndRecord(state, action, action_index, noise_added)
             
-            if use_NN and len(info)>0:
+            if use_NN and info['outcome']=='finalized':
                 successful_runs += 1
             
             if self.verbosity > 0:
@@ -364,7 +363,7 @@ class SimulationAgent:
             state = None
             state_1 = None
             done = None
-            info = {}
+            info = {'outcome' : 'fail'}
         ################# 
         if not self.agent_run_variables['failed_iteration']:
 
@@ -444,7 +443,7 @@ class SimulationAgent:
         return ani, filename, duration
 
     ##################################################################################
-    def getNextAction(self,state, use_controller = False, use_NN = False):
+    def getNextAction(self,state, use_controller = False, use_NN = False, test_qv = False):
         # initialize action
         noise_added = False
         action = torch.zeros([self.n_actions], dtype=torch.bool)
@@ -455,6 +454,9 @@ class SimulationAgent:
             if random.random() <= self.epsilon and not use_NN:
                 action_index = torch.argmax(output + self.noise_sd*torch.randn(output.shape))
                 noise_added = True
+            elif test_qv:
+                output = self.model_qv.cpu()(state.float())
+                action_index = torch.argmax(output)
             else:
                 action_index = torch.argmax(output)
 
@@ -510,6 +512,8 @@ class SimulationAgent:
             # update of reset_simulation and stop_run
             if self.agent_run_variables['failed_iteration'] or done or self.agent_run_variables['steps_since_start'] > self.max_steps_single_run +1 :  # (+1 is added to be able to verify the condition in the next step)
                 self.reset_simulation = True
+            #else:
+            #    print("sim goes on")
                                 
                 """
                 print(f'failed iteration: {self.agent_run_variables["failed_iteration"]}')

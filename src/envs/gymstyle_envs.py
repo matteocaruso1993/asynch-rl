@@ -16,7 +16,7 @@ from envs.platoon_env.Platooning_env import PlatoonEnv
 from envs.chess_env.Chess_env import Chess
 # conditional import of RobotEnv
 
-if os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'envs.robot_env.Robot_env.py') ):
+if os.path.isdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.path.join('robot_env','src')) ):
     from envs.robot_env.Robot_env import RobotEnv
 else:
     from envs.robot_env.Robot_env_dummy import RobotEnv

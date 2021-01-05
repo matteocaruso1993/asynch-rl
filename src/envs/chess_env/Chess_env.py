@@ -23,7 +23,7 @@ colorama.init()
 
 class Chess(gym.Env):
     
-    def __init__(self, use_NN = False, max_n_moves = 60, pause = 2, rewards = [100,50, 1, 1e6], \
+    def __init__(self, use_NN = False, max_n_moves = 60, pause = 0, rewards = [100,50, 1, 1e6], \
                  update_boards_bank = False, random_init = True, print_out = False, \
                      pure_resets_pctg = 0.1 , act_nD_flattened = None, evaluate_critical = False):
         
@@ -342,7 +342,8 @@ class Chess(gym.Env):
         
     def is_valid_move(self, action, own = True, mirror = False):
         """ returns True if move is valid"""
-        sign = 2*int(own)-1
+        if action is None:
+            return False
         if len(action)==3:
             action = self.action_to_move(action, own = own)
             if action is None:
@@ -350,6 +351,7 @@ class Chess(gym.Env):
         if mirror:
             action = tuple([7-act for act in action])
         l,n,L,N = action
+        sign = 2*int(own)-1
         if sign*self.chessboard[n,l] > 0 and self.evaluate_move(action, own = own) and valid_action_space(action):
             if self.validate_action(action, own = own) is not None:
                 return True
@@ -366,7 +368,7 @@ class Chess(gym.Env):
 
     def step(self,act_raw, random_gen = False):
         """ single step, comprises application of """
-        info = {}
+        info = {'outcome':None}
         done = False
         
         action = self.action_to_move(act_raw, own = True)
@@ -390,10 +392,12 @@ class Chess(gym.Env):
                     reward = self.rewards[0]
                     done = True
                     info['winner'] = 'player'
+                    info['outcome'] = 'finalized'
                 elif mate_check == 2:
                     reward = 0
                     done = True
                     info['winner'] = 'draw'
+                    info['outcome'] = 'finalized'
             else:
                 opp_action = self.get_opponent_action()
                 self.apply_move(opp_action, own = False)
@@ -406,16 +410,19 @@ class Chess(gym.Env):
                         reward = -self.rewards[0]
                         done = True
                         info['winner'] = 'opponent'
+                        info['outcome'] = 'finalized'
                     elif mate_check == 2:
                         reward = -self.rewards[1]
                         done = True
-                        winner = 'draw'
                         info['winner'] = 'draw'
+                        info['outcome'] = 'finalized'
                 elif self.update_boards_bank:
                     self.recorded_boards.append(self.get_state().tolist())
         else:
             reward = -self.rewards[3]
             done = True
+            info['outcome'] = 'fail'
+            self.chessboard = np.zeros((8,8),dtype = np.int)
             
         if done and self.update_boards_bank:
             [self.board_bank.append(new_board) for new_board in self.recorded_boards]
@@ -559,6 +566,9 @@ class Chess(gym.Env):
      
     def extract_move(self, l, n, own = True):
         """ select randomly a move for the given piece"""
+        if not np.isscalar(l):
+            l = l[0]
+            n = n[0]
         piece_idx = np.abs(self.check_board(l,n))
         moves = possible_moves(piece_idx, l, n, own)
         idx = np.random.randint(moves.shape[0])
@@ -853,21 +863,28 @@ if __name__ == "__main__":
     pr.enable()
     """
 
-    game = Chess(print_out = False, pause = 0, evaluate_critical=False)
+    game = Chess(print_out = False, pause = 0, evaluate_critical=False, max_n_moves = 50, \
+                 random_init = False, update_boards_bank = True)
     game.reset()
     done = False
     
-    while not done:
-        
-        action = game.random_move(own = True)
-        state,reward,done,info = game.step(action)
-        #print(f'reward = {reward}')
-        #print(f'state = {state}')
-        
-    if len(info) == 0:
-        print('wrong move selected!')
-    else:
-        print(f'the winner is: {info["winner"]}')
+    
+    for _ in range(100):
+
+        game.reset()
+        done = False
+
+        while not done:
+            
+            action = game.random_move(own = True)
+            state,reward,done,info = game.step(action)
+            #print(f'reward = {reward}')
+            #print(f'state = {state}')
+            
+        if len(info) == 0:
+            print('wrong move selected!')
+        else:
+            print(f'the winner is: {info["winner"]}')
         
         
         
