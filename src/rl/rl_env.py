@@ -28,7 +28,8 @@ from pathlib import Path as createPath
 
 #%%
 # My Libraries
-from envs.gymstyle_envs import discr_GymStyle_Robot, discr_GymStyle_CartPole, discr_GymStyle_Platoon, contn_hyb_GymStyle_Platoon, Gymstyle_Chess
+from envs.gymstyle_envs import discr_GymStyle_Robot, discr_GymStyle_CartPole, discr_GymStyle_Platoon, \
+    contn_hyb_GymStyle_Platoon, Gymstyle_Chess, Gymstyle_Connect4
 from nns.custom_networks import ConvModel, LinearModel
 from .resources.memory import ReplayMemory
 from .resources.sim_agent import SimulationAgent
@@ -55,14 +56,14 @@ class Multiprocess_RL_Environment:
                  ctrlr_prob_annealing_factor = .9,  ctrlr_probability = 0, difficulty = 0, \
                  memory_turnover_ratio = 0.2, val_frequency = 10, bashplot = False, layers_width= (5,5), \
                  rewards = np.ones(5), validation_set_ratio = 4, env_options = {}, pg_partial_update = False, 
-                 beta_PG = 0.01, n_epochs_PG = 100, batch_size_PG = 32, noise_sd = 0.1):
+                 beta_PG = 0.01, n_epochs_PG = 100, batch_size_PG = 32, noise_factor = 1):
         
-        self.noise_sd = noise_sd
+        
         self.one_vs_one = False
         
         ####################### net/environment initialization
         # check if env/net types make sense
-        allowed_envs = ['RobotEnv', 'CartPole', 'Platoon', 'Chess']
+        allowed_envs = ['RobotEnv', 'CartPole', 'Platoon', 'Chess', 'Connect4']
         allowed_nets = ['ConvModel', 'LinearModel'] #, 'LinearModel0', 'LinearModel1', 'LinearModel2', 'LinearModel3', 'LinearModel4']
         allowed_rl_modes = ['DQL', 'AC']
         
@@ -175,6 +176,8 @@ class Multiprocess_RL_Environment:
         # this env can be used as reference and to get topologic information, but is not used for simulations!
         #(those are inside each agent)
         self.n_actions_discr = self.env_discr.get_actions_structure()
+        self.noise_sd = noise_factor/np.clip(self.n_actions_discr, 5, 20)
+        
         self.N_in_model = self.env_discr.get_observations_structure()
 
         self.model_qv = self.generate_model()
@@ -257,6 +260,9 @@ class Multiprocess_RL_Environment:
         elif self.env_type == 'Chess':
             self.one_vs_one = True
             return Gymstyle_Chess(use_NN = True,  max_n_moves = self.sim_length_max  , rewards = self.rewards, print_out = self.show_rendering)
+        elif self.env_type == 'Connect4':
+            self.one_vs_one = True
+            return Gymstyle_Connect4(use_NN = True, rewards = self.rewards, print_out = self.show_rendering)
         
     ##################################################################################
     def generateContnsHybActSpace_GymStyleEnv(self):

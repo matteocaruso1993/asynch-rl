@@ -65,6 +65,7 @@ class DiscretizedActionWrapper(gym.ActionWrapper):
                              enumerate(zip(low_act.flatten(), high_act.flatten()))]
             
         elif self.act_space_dim  == 1:
+            self.n_bins_act = n_bins_act
             self.val_bins_act = np.linspace(low_act[0], high_act[0], self.n_bins_act + 1)
 
         self.act_shape = self.action_space.shape

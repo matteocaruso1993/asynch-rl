@@ -166,6 +166,12 @@ class RL_Updater():
     #################################################
     def policy_loss_update(self, state_batch, action_batch, reward_batch, state_1_batch, actual_idxs_batch):
         
+        print('Actions Distribution')
+        a = np.array(actual_idxs_batch)
+        unique, counts = np.unique(a, return_counts=True)
+        print(dict(zip(unique, counts)))
+        
+        
         if self.move_to_cuda:  # put on GPU if CUDA is available
             state_batch = state_batch.cuda()
             action_batch = action_batch.cuda()
@@ -195,6 +201,8 @@ class RL_Updater():
             n_invalid = 0
             self.PG_update_failed_once = False
             
+            print(f'pg_loss = {torch.mean(-torch.log(prob_action_batch)*advantage)}')
+            print(f'entropy = {torch.mean(self.beta_PG*entropy)}')
         else:
             print('WARNING: selected action mismatch detected')
             valid_rows   = (action_batch == action_batch_grad).all(dim = 1)

@@ -146,10 +146,11 @@ class nnBase(nn.Module):
             print("Can not load model parameters! Using previous version")
             print("*****************************************************")
             
-            parts = filename_pt.rsplit('_')
+            parts = net_name.rsplit('_')
             parts[1] = str(int(parts[1])-1)
-            filename_pt_1 = "_".join(parts)
+            net_name__ = "_".join(parts)
                
+            filename_pt_1 = os.path.join(path_log, net_name__ + '.pt')
             checkpoint = torch.load(filename_pt_1, map_location=device)
             self.model_version = checkpoint['model_version']+1
         

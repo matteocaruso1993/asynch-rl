@@ -269,7 +269,7 @@ class SimulationAgent:
             action, action_index, noise_added = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN, test_qv=test_qv )
             state, reward_np, done , info = self.stepAndRecord(state, action, action_index, noise_added)
             
-            if use_NN and info['outcome']=='finalized':
+            if use_NN and (info['outcome'] is not None) and (info['outcome'] != 'fail') and (info['outcome'] != 'opponent'):
                 self.agent_run_variables['successful_runs'] += 1
             
             if self.verbosity > 0:
@@ -452,14 +452,23 @@ class SimulationAgent:
             output = self.model_pg.cpu()(state.float())
             
             if random.random() <= self.epsilon and not use_NN:
-                action_index = torch.argmax(output + self.noise_sd*torch.randn(output.shape))
+                #action_index = torch.argmax(output + self.noise_sd*torch.randn(output.shape))
+                try:
+                    action_index = torch.multinomial(torch.clamp( (output + self.noise_sd*torch.randn(output.shape)), 0,1), 1, replacement=True)
+                except Exception:
+                    action_index = torch.argmax(output + self.noise_sd*torch.randn(output.shape))
                 noise_added = True
             elif test_qv:
                 output = self.model_qv.cpu()(state.float())
                 action_index = torch.argmax(output)
             else:
-                action_index = torch.argmax(output)
-
+                #action_index = torch.argmax(output)
+                try:
+                    action_index = torch.multinomial(output, 1, replacement=True)
+                except Exception:
+                    action_index = torch.argmax(output)
+                
+                
         elif self.rl_mode == 'DQL':
             if use_controller and not use_NN:
                 action_index = torch.tensor(self.env.get_control_idx(discretized = True), dtype = torch.int8)
