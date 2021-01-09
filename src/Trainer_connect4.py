@@ -45,7 +45,7 @@ parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, def
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=1000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=500,
                     help="Replay Memory Size")
 
 # following params can be left as default
@@ -58,7 +58,7 @@ parser.add_argument("-lr", "--learning-rate", dest="learning_rate", type=float, 
 
 parser.add_argument(
   "-e", "--epochs-training",  nargs="*",  # 0 or more values expected => creates a list
-  dest = "n_epochs", type=int, default=[500, 400],  # default if nothing is provided
+  dest = "n_epochs", type=int, default=  [500, 400],  # default if nothing is provided
   help="Number of epochs per training iteration [QV, PG]. If parallelized, e[QV] is ignored. If scalar, e[QV] = e[PG] = e"
 )
 
@@ -71,7 +71,7 @@ parser.add_argument("-y", "--epsilon", dest="epsilon", nargs=2, type=float, defa
 parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, default=0.995,
                     help="annealing factor of epsilon")
 
-parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=int, default=10,
+parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=int, default=5, #10,
                     help="model is validated every -vf iterations")
 
 parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=bool, default=False,

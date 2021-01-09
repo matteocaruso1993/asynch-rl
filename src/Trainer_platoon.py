@@ -40,7 +40,7 @@ parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, def
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=2000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=1000,
                     help="Replay Memory Size")
 
 ######
@@ -53,7 +53,7 @@ parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int,
 parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.25,
                     help="Ratio of Memory renewed at each iteration")
 
-parser.add_argument("-lr", "--learning-rate", dest="learning_rate", type=float, default=1e-4,
+parser.add_argument("-lr", "--learning-rate", dest="learning_rate", type=float, default=1e-5,
                     help="NN learning rate")
 
 #parser.add_argument("-e", "--epochs-training", dest="n_epochs", type=int, default=500,
@@ -114,7 +114,7 @@ parser.add_argument(
 
 parser.add_argument(
   "-rw", "--rewards",  nargs="*",  # 0 or more values expected => creates a list
-  dest = "rewards_list", type=int, default=[200,50, 1,1],  # default if nothing is provided
+  dest = "rewards_list", type=int, default = [100, 1, 20, 10],  # default if nothing is provided
 )
 
 parser.add_argument(

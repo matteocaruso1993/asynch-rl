@@ -133,14 +133,14 @@ class RL_Updater():
                 total_loss.append(loss.cpu().detach().numpy())
                 
             self.model_qv.model_version +=1
+            pg_entropy = None
 
         elif net == 'policy' and policy_memory is not None :
             
             state_dict_0 = deepcopy(self.model_pg.state_dict()) #.copy()
                         
-            loss, n_mismatch = self.policy_loss_update(*tuple([batch for i, batch in enumerate(unpack_batch(policy_memory)) if i in [0,1,2,3,5]]))
-            total_loss = loss.cpu().detach().numpy()
-    
+            total_loss, n_mismatch, pg_entropy = self.policy_loss_update(*tuple([batch for i, batch in enumerate(unpack_batch(policy_memory)) if i in [0,1,2,3,5]]))
+            
             invalid_samples_pctg =  np.round(100*n_mismatch/ len(policy_memory), 2)
             print(f'Update finished. mismatch % =  {invalid_samples_pctg}%') 
             
@@ -148,7 +148,8 @@ class RL_Updater():
                 self.model_pg.load_conv_params(self.storage_path,self.net_name, self.device)
             
             update_diff = self.model_pg.compare_weights(state_dict_0)
-            print(f'PG. loss = {total_loss}, model update = {round(update_diff,10)}')
+            print(f'PG. average loss per epoch : {round(total_loss,3)}, model update = {round(update_diff,8)}')
+            print(f'sample entropy : {round(pg_entropy,3)}')
             
             #print(state_dict_0['fc1.weight'][:5,:])
             #print(self.model_pg.fc1.weight[:5,:])
@@ -159,7 +160,7 @@ class RL_Updater():
             raise('Undefined Net-type')
         
         #self.nn_updating = False
-        return total_loss
+        return total_loss, pg_entropy
     
 
     
@@ -185,8 +186,6 @@ class RL_Updater():
         
         action_batch_grad = torch.zeros(action_batch.shape).cuda()
         action_batch_grad[torch.arange(action_batch_grad.size(0)),action_idx_batch] = 1
-        
-        self.model_pg.optimizer.zero_grad()
             
         prob_action_batch = prob_distribs_batch[torch.arange(prob_distribs_batch.size(0)), action_idx_batch].unsqueeze(1)
         entropy = -torch.sum(prob_distribs_batch*torch.log(prob_distribs_batch),dim = 1).unsqueeze(1)
@@ -201,8 +200,8 @@ class RL_Updater():
             n_invalid = 0
             self.PG_update_failed_once = False
             
-            print(f'pg_loss = {torch.mean(-torch.log(prob_action_batch)*advantage)}')
-            print(f'entropy = {torch.mean(self.beta_PG*entropy)}')
+            #print(f'pg_loss = {torch.mean(-torch.log(prob_action_batch)*advantage)}')
+            #print(f'entropy = {torch.mean(self.beta_PG*entropy)}')
         else:
             print('WARNING: selected action mismatch detected')
             valid_rows   = (action_batch == action_batch_grad).all(dim = 1)
@@ -233,12 +232,15 @@ class RL_Updater():
             loss_policy = torch.tensor(float('nan'))
         else:
             if self.n_epochs_PG < 10:
+                self.model_pg.optimizer.zero_grad()
                 loss_policy = torch.mean(loss_vector)
                 loss_policy.backward()
                 self.model_pg.optimizer.step()  
             else:
                 losses = []
                 batch_size = min(self.batch_size_PG, round(0.5*loss_vector.shape[0]))
+                self.model_pg.optimizer.zero_grad()
+                
                 for _ in tqdm(range(self.n_epochs_PG)):
                     #self.model_pg.optimizer.zero_grad()
                     loss = torch.mean(extract_tensor_batch(loss_vector, batch_size))
@@ -254,7 +256,7 @@ class RL_Updater():
                 
                 loss_policy = torch.mean(torch.cat(losses))
         
-        return loss_policy, n_invalid
+        return loss_policy.item(), n_invalid, torch.mean(entropy).item()
     
     
     #################################################

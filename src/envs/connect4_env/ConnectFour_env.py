@@ -20,7 +20,7 @@ colorama.init()
 
 class ConnectFour(gym.Env):
     
-    def __init__(self, rewards = [100,1], pause = 0, print_out = False, use_NN = False):
+    def __init__(self, rewards = [100,1], pause = 2, print_out = False, use_NN = False):
         
         self.env_type = 'Connect4'
         

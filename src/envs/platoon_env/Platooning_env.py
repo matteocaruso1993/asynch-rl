@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 
 class PlatoonEnv(gym.Env):
     
-    def __init__(self, sim_length_max = 200, difficulty = 1, rewards = [1000, 1, 200, 100], options = {False}):
+    def __init__(self, sim_length_max = 200, difficulty = 1, rewards = [100, 1, 20, 10], options = {False}):
         # cartpole params
         
         self.env_type = 'Platoon'
@@ -211,6 +211,7 @@ class PlatoonEnv(gym.Env):
         
         # self.rewards
         #[0] crash/lost track, [1] prize, [2] energy, [3] control
+        norm_tracking_error = (self.ref_distance - self.state[0])/self.max_tracking_error
         
         info = {'outcome':None}
 
@@ -238,21 +239,25 @@ class PlatoonEnv(gym.Env):
             """
         else:
             done = False
+            """
             #reward = 1 - (np.abs(self.state[2]-self.state[1])/ (self.state[1] + 0.01 ) )**(1/2)
             if np.abs(self.state[0] - self.ref_distance) < 15:
-                relative_v_err = np.abs(self.state[2]-self.state[1])/ (self.state[1] + 0.0001 ) 
+                relative_v_err = np.abs(self.state[2]-self.state[1])/ (self.state[1] + 1e-8 ) 
                 reward = self.rewards[1] *(0.7 - (np.clip(relative_v_err, -3,3))**(1/4))
             elif self.state[0] > self.ref_distance:
-                reward =  self.rewards[1] *0.05*((self.state[2] - self.state[1])**3) *np.abs(self.state[0] - self.ref_distance)/self.max_tracking_error
-                reward = np.clip(reward, -2, 0)
+                reward =  self.rewards[1] *0.05*((self.state[2] - self.state[1])**3) *np.abs(norm_tracking_error)
             elif self.state[0] < self.ref_distance:
-                reward =  self.rewards[1]*((self.state[1] - self.state[2])**3)*np.abs(self.state[0] - self.ref_distance)/self.max_tracking_error
-                reward = np.clip(reward, -2, 0)
-                
-            reward += 1
-            #print(reward)
+                reward =  self.rewards[1]*((self.state[1] - self.state[2])**3)*np.abs(norm_tracking_error)
+            reward = np.clip(reward, -2, 0)
+            """
+
+                        
+            reward = -self.rewards[1] *(np.clip(np.abs(self.state[2]-self.state[1])/ (self.state[1] + 0.01 ), 0,1 ))**(3)
 
         self.duration += self.dt
+        
+        
+        
         
         if done:
             self.stored_states_sequence = self.states_sequence
@@ -269,7 +274,7 @@ class PlatoonEnv(gym.Env):
         #norm_vel_att_z1 = vel_att_z1/self.max_vel
         
         #state_norm = np.array([norm_dist_z1, (self.ref_distance - self.state[0]) /self.max_tracking_error, norm_vel_att_z1, self.state[1]/self.max_vel, self.state[2]/self.max_vel ], dtype = np.float)
-        state_norm = np.array([  (self.ref_distance - self.state[0]) /self.max_tracking_error, \
+        state_norm = np.array([  norm_tracking_error, \
                                  self.state[1]/self.max_vel, \
                                  self.state[2]/self.max_vel ], \
                                  dtype = np.float)
@@ -404,11 +409,15 @@ if __name__ == "__main__":
     done = False
     env.reset()
     cum_reward = 0
+    t = 0 
     
     while not done:
         
         state, reward, done, info = env.step(env.get_controller_input(discretized=True, bins=[10,1]))
         cum_reward += reward
+        if np.abs(reward)> 0.2:
+            print(f't = {t}, reward = {np.round(reward,2)}')
+        t += 1
         
     print(f'cum reward =  {cum_reward}')
     
