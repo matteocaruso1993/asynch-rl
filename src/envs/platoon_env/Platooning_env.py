@@ -156,7 +156,7 @@ class PlatoonEnv(gym.Env):
 
 
     #####################################################################################################            
-    def step(self,action = None):
+    def step(self,action = None, *args):
         
         if action is None:
             action = self.no_action()

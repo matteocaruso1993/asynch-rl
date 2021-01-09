@@ -34,22 +34,24 @@ parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10
 parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
 
-parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default=0, help = "task degree of difficulty")
+parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=2,
+                    help="Number of agents to be used")
 
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=100,
-                    help="Length of one successful run in seconds")
-
 parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=2000,
                     help="Replay Memory Size")
 
-parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.5,
-                    help="Ratio of Memory renewed at each iteration")
+######
 
-parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=2,
-                    help="Number of agents to be used")
+parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default=0, help = "task degree of difficulty")
+
+parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=100,
+                    help="Length of one successful run in seconds")
+
+parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.25,
+                    help="Ratio of Memory renewed at each iteration")
 
 parser.add_argument("-lr", "--learning-rate", dest="learning_rate", type=float, default=1e-4,
                     help="NN learning rate")
@@ -59,12 +61,12 @@ parser.add_argument("-lr", "--learning-rate", dest="learning_rate", type=float, 
 
 parser.add_argument(
   "-e", "--epochs-training",  nargs="*",  # 0 or more values expected => creates a list
-  dest = "n_epochs", type=int, default=[500, 100],  # default if nothing is provided
+  dest = "n_epochs", type=int, default=[500, 200],  # default if nothing is provided
   help="Number of epochs per training iteration [QV, PG]. If parallelized, e[QV] is ignored. If scalar, e[QV] = e[PG] = e"
 )
 
 
-parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size",  nargs="*", type=int, default=[128],
+parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size",  nargs="*", type=int, default=[512, 256],
                     help="Size of the minibatches used for training [QV, PG]")
 
 parser.add_argument("-y", "--epsilon", dest="epsilon", type=float, default=-1,
@@ -73,7 +75,7 @@ parser.add_argument("-y", "--epsilon", dest="epsilon", type=float, default=-1,
 parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, default=0.995,
                     help="annealing factor of epsilon")
 
-parser.add_argument("-c", "--controller-probability", dest="ctrl_prob", type=float, default=0.4,
+parser.add_argument("-c", "--controller-probability", dest="ctrl_prob", type=float, default=0,
                     help="probability of control action being decided by conventional controller")
 
 parser.add_argument("-cd", "--controller-probability-decay", dest="ctrl_prob_decay", type=float, default=0.9,
@@ -96,7 +98,7 @@ parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC',
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.99, help="GAMMA parameter in QV learning")
 
-parser.add_argument("-b", "--beta", dest="beta", type=float, default=0.001, help="BETA parameter for entropy in PG learning")
+parser.add_argument("-b", "--beta", dest="beta", type=float, default=0.1, help="BETA parameter for entropy in PG learning")
 
 
 # env specific parameters
@@ -107,7 +109,7 @@ parser.add_argument("-pu", "--pg-partial-update", dest="pg_partial_update", type
 """
 parser.add_argument(
   "-ll", "--layers-list",  nargs="*",  # 0 or more values expected => creates a list
-  dest = "layers_list", type=int, default=[20,20, 2],  # default if nothing is provided
+  dest = "layers_list", type=int, default=[40,40, 20],  # default if nothing is provided
 )
 
 parser.add_argument(
@@ -117,7 +119,7 @@ parser.add_argument(
 
 parser.add_argument(
   "-dab", "--discrete-action-bins",  nargs="*",  # 0 or more values expected => creates a list
-  dest = "discr_act_bins", type=int, default=[10,1],  # default if nothing is provided
+  dest = "discr_act_bins", type=int, default=[20,1],  # default if nothing is provided
 )
 
 args = parser.parse_args()
