@@ -25,7 +25,7 @@ import torch
 from bashplotlib.scatterplot import plot_scatter
 from pathlib import Path as createPath
 
-
+from copy import deepcopy
 #%%
 # My Libraries
 from envs.gymstyle_envs import discr_GymStyle_Robot, discr_GymStyle_CartPole, discr_GymStyle_Platoon, \
@@ -58,7 +58,7 @@ class Multiprocess_RL_Environment:
                  rewards = np.ones(5), validation_set_ratio = 4, env_options = {}, pg_partial_update = False, 
                  beta_PG = 1, n_epochs_PG = 100, batch_size_PG = 32, noise_factor = 1):
         
-        
+        self.update_policy_online = True
         self.one_vs_one = False
         
         ####################### net/environment initialization
@@ -538,6 +538,8 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     def runSerialized(self, memory_fill_only = False):
 
+        initial_pg_weights = deepcopy(self.model_pg.cpu().state_dict())        
+
         average_qval_loss = policy_loss = pg_entropy = np.nan
         total_log = np.zeros((1,2),dtype = np.float)
         total_runs = 0
@@ -553,7 +555,15 @@ class Multiprocess_RL_Environment:
         while not self.shared_memory.isFull():
             progress(round(1000*self.shared_memory.fill_ratio), 1000 , 'Fill memory')
             
-            partial_log, single_runs , successful_runs = self.sim_agents_discr[0].run_synch()
+
+            partial_log, single_runs , successful_runs, pg_info = self.sim_agents_discr[0].run_synch()
+            
+            # implementation for A3C
+            if self.rl_mode == 'AC' and self.update_policy_online:
+                delta_theta_i, policy_loss, pg_entropy = pg_info
+                for k in self.model_pg.state_dict().keys():
+                    self.model_pg.state_dict()[k] += delta_theta_i[k]
+                self.sim_agents_discr[0].setAttribute('model_pg',self.model_pg)
             
             total_log = np.append(total_log, partial_log, axis = 0)
             total_runs += single_runs
@@ -562,19 +572,25 @@ class Multiprocess_RL_Environment:
                 self.shared_memory.addMemoryBatch(self.sim_agents_discr[0].emptyLocalMemory() )
                 
         if not memory_fill_only:
-            if self.rl_mode == 'AC' and self.policy_loaded:
+            if self.rl_mode == 'AC' and self.policy_loaded and not self.update_policy_online:
                 if DEBUG_MODEL_VERSIONS:
                     model_version_update = self.check_model_version(print_out = False, mode = 'update', save_v0 = False)
                     print(f'model_version_sim = {model_version_sim}')
                     print(f'model_version_update = {model_version_update}')
                 policy_loss, pg_entropy =  self.nn_updater.update_DeepRL('policy', self.shared_memory.memory ) 
                 
+            elif self.rl_mode == 'AC' and self.update_policy_online:
+                model_diff = np.round(self.model_pg.compare_weights(initial_pg_weights), 5)
+                print(f'PG model change: {model_diff}')
+                
             self.get_log(total_runs, total_log, average_qval_loss, policy_loss , pg_entropy)
     
 
     ##################################################################################
     def runParallelized(self, memory_fill_only = False):
-
+        
+        initial_pg_weights = deepcopy(self.model_pg.cpu().state_dict())
+        
         qv_update_launched = False        
 
         total_log = np.zeros((1,2),dtype = np.float)
@@ -605,7 +621,18 @@ class Multiprocess_RL_Environment:
                 # 2.1) get info from complete processes
                 if not ray.get(agent.isRunning.remote()): 
                     if task_lst[i] is not None:
-                        partial_log, single_runs, successful_runs = ray.get(task_lst[i])
+                        partial_log, single_runs, successful_runs, pg_info = ray.get(task_lst[i])
+                        
+                        # implementation for A3C
+                        if self.rl_mode == 'AC' and self.update_policy_online:
+                            delta_theta_i, pg_loss, enthropy = pg_info
+                            policy_loss += pg_loss
+                            pg_entropy += enthropy
+                            for k in self.model_pg.state_dict().keys():
+                                try:
+                                    self.model_pg.state_dict()[k] += delta_theta_i[k]
+                                except Exception:
+                                    stophere = 1
                         
                         task_lst[i] = None
                         total_log = np.append(total_log, partial_log, axis = 0)
@@ -616,6 +643,7 @@ class Multiprocess_RL_Environment:
                     
                     # 2.1.1) run another task if required
                     if not self.shared_memory.isPartiallyFull(min_fill_ratio):
+                        agent.setAttribute.remote('model_pg',self.model_pg)
                         task_lst[i] = agent.run.remote()
                     
             # if memory is (almost) full and task list empty, inform qv update it can stop
@@ -625,24 +653,29 @@ class Multiprocess_RL_Environment:
                 break
             
         print('')
+        
+        if self.rl_mode == 'AC' and self.update_policy_online:
+            model_diff = np.round(self.model_pg.compare_weights(initial_pg_weights), 5)
+            print(f'PG model change: {model_diff}')
+
             
         # log training history
         if qv_update_launched:
             
             # 1) compute qv average loss
             self.qval_loss_hist_iteration = np.array(ray.get(updating_process))
-            average_qval_loss = np.average(self.qval_loss_hist_iteration)
+            average_qval_loss = np.round(np.average(self.qval_loss_hist_iteration), 3)
             print(f'QV. loss = {average_qval_loss}')
                   
             # 2) update policy and get policy loss (single batch, no need to average)) 
-            if self.rl_mode == 'AC' and self.policy_loaded:
+            if self.rl_mode == 'AC' and self.policy_loaded and not self.update_policy_online:
                 model_update = ray.get(self.nn_updater.getAttributeValue.remote('model_pg'))
                 model_diff = self.model_pg.compare_weights(model_update.cpu().state_dict().copy() )
                 if model_diff > 0.001:
                     print(f'PG models MISMATCH: {model_diff}')
                     raise('update model different than SIM one')
                 else:
-                    policy_loss, entropy = ray.get(self.nn_updater.update_DeepRL.remote('policy', self.shared_memory.memory ))
+                    policy_loss, pg_entropy = ray.get(self.nn_updater.update_DeepRL.remote('policy', self.shared_memory.memory ))
                 
             #3) store computed losses
             self.get_log(total_runs, total_log, average_qval_loss, policy_loss , pg_entropy)
@@ -670,7 +703,7 @@ class Multiprocess_RL_Environment:
         while not self.shared_memory.isFull():
             progress(round(1000*self.shared_memory.fill_ratio), 1000 , 'Fill memory')
             
-            partial_log, single_runs, successful_runs = self.sim_agents_discr[0].run_synch(use_NN = True)
+            partial_log, single_runs, successful_runs, _ = self.sim_agents_discr[0].run_synch(use_NN = True)
             # partial log: steps_since_start, cum_reward
             
             total_log = np.append(total_log, partial_log, axis = 0)
@@ -699,7 +732,7 @@ class Multiprocess_RL_Environment:
                 [agents_lst.append(agent.run.remote(use_NN = True)) for i, agent in enumerate(self.sim_agents_discr)]
                 for agnt in agents_lst:
                     #for each single run, partial log includes: 1) steps since start 2) cumulative reward
-                    partial_log, single_runs, successful_runs = ray.get(agnt)
+                    partial_log, single_runs, successful_runs, _  = ray.get(agnt)
                     total_log = np.append(total_log, partial_log, axis = 0)
                     total_runs += single_runs
                     tot_successful_runs += successful_runs

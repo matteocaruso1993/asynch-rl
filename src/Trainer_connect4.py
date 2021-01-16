@@ -31,7 +31,7 @@ from argparse import ArgumentParser
 parser = ArgumentParser()
 
 #following params always to be declared
-parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100,
+parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=108,
                     help="net version used")
 
 parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10, help="number of training iterations")
@@ -45,7 +45,7 @@ parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, def
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=500,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=2000,
                     help="Replay Memory Size")
 
 # following params can be left as default

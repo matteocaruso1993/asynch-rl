@@ -24,6 +24,8 @@ import matplotlib.animation as animation
 import torch
 import asyncio
 
+from copy import deepcopy
+
 #%%
 # my libraries
 from .memory import ReplayMemory
@@ -44,6 +46,11 @@ class SimulationAgent:
         
         self.noise_sd = noise_sd
         self.prob_correction = 0.2 # probability of "correction" of "non sense random inputs" generated
+        
+        self.beta_PG = 1
+        self.gamma = 0.99
+        
+        self.update_policy_online = True
 
         self.rl_mode = rl_mode
         
@@ -109,6 +116,8 @@ class SimulationAgent:
     ##################################################################################        
     #initialize variables at the beginning of each run (to reset iterations) 
     def run_variables_init(self):
+       
+        self.loss_policy = 0 
        
         self.agent_run_variables = dict(
             iteration = 1,
@@ -241,10 +250,59 @@ class SimulationAgent:
                 self.simulation_log = single_run_log
             else:
                 self.simulation_log = np.append(self.simulation_log, single_run_log, axis = 0)
+                
+
+    ##################################################################################
+    def pg_update_online(self, reward, state_0, state_1, prob, action_idx, done, valid):
+        
+        loss_pg_i = 0
+        
+        if valid:
+            
+            entropy = torch.sum(-torch.log(prob)*prob)
+            if torch.isnan(entropy).any():
+                print(f'prob : {prob}')
+                entropy = torch.sum(-torch.log(prob+1e-5)*prob)
+                print(f'new entropy: {entropy}')
+            
+            advantage = reward + self.gamma * torch.max(self.model_qv(state_1.float())) \
+                                - torch.max(self.model_qv(state_0.float()))
+            
+            self.loss_policy += -advantage.cpu()*torch.log(prob[:,action_idx]) + self.beta_PG*entropy
+            
+            """
+            print(f'entropy {entropy}') 
+            print(f'advantage {advantage}')
+            print(f'torch.log(prob[:,action_idx]) {torch.log(prob[:,action_idx])}')
+            """
+            
+            if done:
+                self.loss_policy.backward()
+                self.model_pg.optimizer.step()
+                loss_pg_i = np.round(self.loss_policy.item(),3)
+                self.loss_policy = 0
+                self.model_pg.optimizer.zero_grad()   
+                
+                return loss_pg_i
+
+        else:
+            self.loss_policy = 0
+            self.model_pg.optimizer.zero_grad()
+            
+        return loss_pg_i
+            
         
     ##################################################################################
     def run_synch(self, use_NN = False, pctg_ctrl = 0, test_qv = False):
+
+        pg_info = None
+        loss_pg = 0
+        enthropy = 0
         
+        if self.update_policy_online:
+            delta_theta = {}
+            theta_0 = deepcopy(self.model_pg.state_dict())
+
         self.simulation_log = None
         self.run_variables_init()
         
@@ -259,6 +317,9 @@ class SimulationAgent:
         self.reset_simulation = True
         self.stop_run = False
         
+        if self.update_policy_online:
+            self.model_pg.optimizer.zero_grad()
+        
         while not self.stop_run:
 
             if self.reset_simulation:
@@ -266,15 +327,21 @@ class SimulationAgent:
                     break
                 state, use_controller = self.reset_agent(pctg_ctrl)
             
-            action, action_index, noise_added = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN, test_qv=test_qv )
-            state, reward_np, done , info = self.stepAndRecord(state, action, action_index, noise_added)
+            action, action_index, noise_added, prob_distrib = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN, test_qv=test_qv )
+            state_1, reward_np, done , info = self.stepAndRecord(state, action, action_index, noise_added)
             
             if use_NN and (info['outcome'] is not None) and (info['outcome'] != 'fail') and (info['outcome'] != 'opponent'):
                 self.agent_run_variables['successful_runs'] += 1
+                
+            if self.update_policy_online:
+                loss_pg_i = self.pg_update_online(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
+                loss_pg += loss_pg_i
             
             if self.verbosity > 0:
                 self.displayStatus()                    
             self.trainVariablesUpdate(reward_np, done)
+            
+            state = state_1
         
         single_run_log = self.trainVariablesUpdate(reset_variables = True)
         self.update_sim_log(single_run_log)
@@ -282,11 +349,32 @@ class SimulationAgent:
         self.endOfRunRoutine(fig_film = fig_film)
         plt.close(fig_film)
         
-        return self.simulation_log, self.agent_run_variables['single_run'], self.agent_run_variables['successful_runs'] #[0]
+        if self.update_policy_online:
+            for k in theta_0.keys():
+                delta = self.model_pg.state_dict()[k]-theta_0[k]
+            pg_info = (delta_theta, loss_pg , enthropy )
+        
+        return self.simulation_log, self.agent_run_variables['single_run'], self.agent_run_variables['successful_runs'], pg_info #[0]
         # self.simulation_log contains duration and cumulative reward of every single-run
 
     ##################################################################################
     async def run(self, use_NN = False, test_qv = False):
+        
+        abort = False
+        for k,v in self.model_pg.state_dict().items():
+            if torch.isnan(v).any():
+                print(v)
+                abort = True
+        if abort:
+            raise('nan tensor from start')
+        
+        
+        pg_info = None
+        if self.update_policy_online:
+            loss_pg = 0
+            enthropy = 0
+            delta_theta = {}
+            theta_0 = deepcopy(self.model_pg.state_dict())
         
         self.simulation_log = None
         self.run_variables_init()
@@ -313,15 +401,21 @@ class SimulationAgent:
                     break
                 state, use_controller = self.reset_agent()
             
-            action, action_index, noise_added = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN, test_qv=test_qv )
-            state, reward_np, done , info = self.stepAndRecord(state, action, action_index, noise_added)
+            action, action_index, noise_added, prob_distrib = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN, test_qv=test_qv )
+            state_1, reward_np, done , info = self.stepAndRecord(state, action, action_index, noise_added)
             
             if use_NN and info['outcome']=='finalized':
                 successful_runs += 1
             
+            if self.update_policy_online:
+                loss_pg_i = self.pg_update_online(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
+                loss_pg += loss_pg_i
+            
             if self.verbosity > 0:
                 self.displayStatus()                    
             self.trainVariablesUpdate(reward_np, done)
+            
+            state = state_1
         
         single_run_log = self.trainVariablesUpdate(reset_variables = True)
         self.update_sim_log(single_run_log)
@@ -330,7 +424,27 @@ class SimulationAgent:
         self.is_running = False
         plt.close(fig_film)
         
-        return self.simulation_log, self.agent_run_variables['single_run'], successful_runs #[0]
+        if self.update_policy_online:
+            for k in theta_0.keys():
+                delta = self.model_pg.state_dict()[k]-theta_0[k]
+                if not torch.isnan(delta).any():
+                    delta_theta[k] = delta 
+                else:
+                    delta_theta[k] = torch.zeros(theta_0[k].shape) 
+                """
+                    print('nan weights')
+                    if torch.isnan(theta_0[k]).any():
+                        print('theta_0 problem')
+                    if torch.isnan(self.model_pg.state_dict()[k]).any():
+                        print('current theta problem')
+                        print(self.model_pg.state_dict()[k])
+                        
+                    raise('theta problem')
+                """
+                    
+            pg_info = (delta_theta, loss_pg , enthropy )
+        
+        return self.simulation_log, self.agent_run_variables['single_run'], successful_runs , pg_info #[0]
         # self.simulation_log contains duration and cumulative reward of every single-run
         
     ################################################################################
@@ -445,28 +559,29 @@ class SimulationAgent:
     ##################################################################################
     def getNextAction(self,state, use_controller = False, use_NN = False, test_qv = False):
         # initialize action
+        prob_distrib = None
         noise_added = False
         action = torch.zeros([self.n_actions], dtype=torch.bool)
         # PG only uses greedy approach            
         if self.rl_mode == 'AC':
-            output = self.model_pg.cpu()(state.float())
+            prob_distrib = self.model_pg.cpu()(state.float())
             
             if random.random() <= self.epsilon and not use_NN:
-                #action_index = torch.argmax(output + self.noise_sd*torch.randn(output.shape))
+                #action_index = torch.argmax(prob_distrib + self.noise_sd*torch.randn(output.shape))
                 try:
-                    action_index = torch.multinomial(torch.clamp( (output + self.noise_sd*torch.randn(output.shape)), 0,1), 1, replacement=True)
+                    action_index = torch.multinomial(torch.clamp( (prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape)), 1e-5,1), 1, replacement=True)
                 except Exception:
-                    action_index = torch.argmax(output + self.noise_sd*torch.randn(output.shape))
+                    action_index = torch.argmax(prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape))
                 noise_added = True
             elif test_qv:
-                output = self.model_qv.cpu()(state.float())
-                action_index = torch.argmax(output)
+                qvals = self.model_qv.cpu()(state.float())
+                action_index = torch.argmax(qvals)
             else:
-                #action_index = torch.argmax(output)
+                #action_index = torch.argmax(prob_distrib)
                 try:
-                    action_index = torch.multinomial(output, 1, replacement=True)
+                    action_index = torch.multinomial(prob_distrib, 1, replacement=True)
                 except Exception:
-                    action_index = torch.argmax(output)
+                    action_index = torch.argmax(prob_distrib)
                 
                 
         elif self.rl_mode == 'DQL':
@@ -478,13 +593,13 @@ class SimulationAgent:
                     action_index = torch.randint(self.n_actions, torch.Size([]), dtype=torch.int8)
                     #source = 'random'
                 else:
-                    output = self.model_qv.cpu()(state.float())
-                    action_index = torch.argmax(output)
+                    qvals = self.model_qv.cpu()(state.float())
+                    action_index = torch.argmax(qvals)
                     #source = 'qv'
             
         action[action_index] = 1
         
-        return action, action_index, noise_added
+        return action, action_index, noise_added, (prob_distrib if self.update_policy_online else None )
             
     ##################################################################################
     def trainVariablesUpdate(self, reward_np = 0, done = False, reset_variables = False):
