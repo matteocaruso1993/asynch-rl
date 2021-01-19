@@ -26,6 +26,8 @@ from rl.utilities import lineno
 class RL_Updater():
     def __init__(self):
         
+        
+        
         # internal initializations
         self.PG_update_failed_once = False
         self.memory_pool = None
@@ -35,6 +37,8 @@ class RL_Updater():
         self.beta_PG       = None # 0.01
         self.n_epochs_PG   = None # 100
         self.batch_size_PG = None # 32
+        
+        self.update_policy_online = None
 
         # following attributes are in common with rl_env and will be updated externally
         self.net_name = None
@@ -56,7 +60,7 @@ class RL_Updater():
     #################################################
     def save_model(self, path, model_name):
         self.model_qv.save_net_params(path, model_name)
-        if self.rl_mode == 'AC':
+        if self.rl_mode == 'AC' and not self.update_policy_online:
             self.model_pg.save_net_params(path, model_name+'_policy')
         
         with open(os.path.join(path,'train_log.txt'), 'a+') as f:

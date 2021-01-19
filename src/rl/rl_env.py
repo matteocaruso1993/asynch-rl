@@ -17,6 +17,7 @@ if csfp not in sys.path:
     
 #%%
 # External Libraries
+import time
 import ray
 import numpy as np
 import pandas as pd
@@ -29,14 +30,14 @@ from copy import deepcopy
 #%%
 # My Libraries
 from envs.gymstyle_envs import discr_GymStyle_Robot, discr_GymStyle_CartPole, discr_GymStyle_Platoon, \
-    contn_hyb_GymStyle_Platoon, Gymstyle_Chess, Gymstyle_Connect4
+    contn_hyb_GymStyle_Platoon, Gymstyle_Chess, Gymstyle_Connect4, Gymstyle_DicePoker
 from nns.custom_networks import ConvModel, LinearModel
 from .resources.memory import ReplayMemory
 from .resources.sim_agent import SimulationAgent
 from .resources.updater import RL_Updater 
 from .resources.parallelize import Ray_RL_Updater , Ray_SimulationAgent
 
-from utilities import progress, lineno
+from utilities import progress, lineno, check_WhileTrue_timeout
 
 #%%
 
@@ -61,9 +62,14 @@ class Multiprocess_RL_Environment:
         self.update_policy_online = True
         self.one_vs_one = False
         
+        if self.update_policy_online:
+            self.global_pg_loss = []
+            self.global_pg_entropy = []
+
+        
         ####################### net/environment initialization
         # check if env/net types make sense
-        allowed_envs = ['RobotEnv', 'CartPole', 'Platoon', 'Chess', 'Connect4']
+        allowed_envs = ['RobotEnv', 'CartPole', 'Platoon', 'Chess', 'Connect4', 'DicePoker']
         allowed_nets = ['ConvModel', 'LinearModel'] #, 'LinearModel0', 'LinearModel1', 'LinearModel2', 'LinearModel3', 'LinearModel4']
         allowed_rl_modes = ['DQL', 'AC']
         
@@ -263,6 +269,9 @@ class Multiprocess_RL_Environment:
         elif self.env_type == 'Connect4':
             self.one_vs_one = True
             return Gymstyle_Connect4(use_NN = True, rewards = self.rewards, print_out = self.show_rendering)
+        elif self.env_type == 'DicePoker':
+            return Gymstyle_DicePoker()
+
         
     ##################################################################################
     def generateContnsHybActSpace_GymStyleEnv(self):
@@ -422,7 +431,15 @@ class Multiprocess_RL_Environment:
                         self.runSerialized(memory_fill_only = True)
                     self.memory_stored = self.shared_memory.cloneMemory()
                     self.memory_stored.save(self.storage_path,self.net_name)
+
                                         
+            if self.update_policy_online:
+                filename_pg_train = os.path.join(self.storage_path, 'PG_training'+ '.npy')
+                np_pg_hist = np.load(filename_pg_train)[:self.training_session_number]
+                
+                self.global_pg_loss    = np_pg_hist[:,0].tolist()
+                self.global_pg_entropy = np_pg_hist[:,1].tolist()
+
 
     ##################################################################################
     def check_model_version(self, print_out = False, mode = 'sim', save_v0 = False):
@@ -515,12 +532,20 @@ class Multiprocess_RL_Environment:
             self.nn_updater.save_model.remote(self.storage_path,self.net_name)
         else:
             self.nn_updater.save_model(self.storage_path,self.net_name)
+            
+        # in this case PG net is not saved by the updater, but is locally in the main thread
+        if self.update_policy_online:
+            self.model_pg.save_net_params(self.storage_path,self.net_name+ '_policy')
+            filename_pg_train = os.path.join(self.storage_path, 'PG_training'+ '.npy')
+            np_pg_hist = np.concatenate((np.array(self.global_pg_loss)[:,np.newaxis], np.array(self.global_pg_entropy)[:,np.newaxis]),axis = 1)
+            np.save(filename_pg_train, np_pg_hist)
+
 
         filename_log = os.path.join(self.storage_path, 'TrainingLog'+ '.pkl')
         self.log_df.to_pickle(filename_log)
         
         if last_iter:
-            filename_log_fin = os.path.join(self.storage_path, 'TrainingLog_tsn_'+str(int(training_session_number)) + '.pkl')
+            filename_log_fin = os.path.join(self.storage_path, 'TrainingLog_tsn_'+str(self.training_session_number) + '.pkl')
             self.log_df.to_pickle(filename_log_fin)
         
         if self.qval_loss_history is not None:
@@ -554,22 +579,36 @@ class Multiprocess_RL_Environment:
             
         while not self.shared_memory.isFull():
             progress(round(1000*self.shared_memory.fill_ratio), 1000 , 'Fill memory')
-            
-
             partial_log, single_runs , successful_runs, pg_info = self.sim_agents_discr[0].run_synch()
+            
             
             # implementation for A3C
             if self.rl_mode == 'AC' and self.update_policy_online:
-                delta_theta_i, policy_loss, pg_entropy = pg_info
-                for k in self.model_pg.state_dict().keys():
-                    self.model_pg.state_dict()[k] += delta_theta_i[k]
-                self.sim_agents_discr[0].setAttribute('model_pg',self.model_pg)
+                delta_theta_i, policy_loss, pg_entropy, valid_model = pg_info
+                self.global_pg_loss.append(policy_loss)
+                self.global_pg_entropy.append(pg_entropy)
+            """
+                if valid_model:
+                    for k in self.model_pg.state_dict().keys():
+                        self.model_pg.state_dict()[k] += delta_theta_i[k]
+                    self.sim_agents_discr[0].setAttribute('model_pg',self.model_pg)
+            """    
             
             total_log = np.append(total_log, partial_log, axis = 0)
             total_runs += single_runs
             
             if not self.shared_memory.isFull():
                 self.shared_memory.addMemoryBatch(self.sim_agents_discr[0].emptyLocalMemory() )
+        
+        progress(round(1000*self.shared_memory.fill_ratio), 1000 , 'Fill memory')
+                
+        """ will be removed from here"""
+        # implementation for A3C
+        if self.rl_mode == 'AC' and self.update_policy_online:
+            if valid_model:
+                self.model_pg = self.sim_agents_discr[0].getAttributeValue('model_pg')
+        """ will be removed from here"""    
+
                 
         if not memory_fill_only:
             if self.rl_mode == 'AC' and self.policy_loaded and not self.update_policy_online:
@@ -625,14 +664,12 @@ class Multiprocess_RL_Environment:
                         
                         # implementation for A3C
                         if self.rl_mode == 'AC' and self.update_policy_online:
-                            delta_theta_i, pg_loss, enthropy = pg_info
-                            policy_loss += pg_loss
-                            pg_entropy += enthropy
-                            for k in self.model_pg.state_dict().keys():
-                                try:
+                            delta_theta_i, pg_loss, enthropy, valid_model = pg_info
+                            if valid_model:
+                                policy_loss += pg_loss
+                                pg_entropy += enthropy
+                                for k in self.model_pg.state_dict().keys():
                                     self.model_pg.state_dict()[k] += delta_theta_i[k]
-                                except Exception:
-                                    stophere = 1
                         
                         task_lst[i] = None
                         total_log = np.append(total_log, partial_log, axis = 0)
@@ -643,7 +680,24 @@ class Multiprocess_RL_Environment:
                     
                     # 2.1.1) run another task if required
                     if not self.shared_memory.isPartiallyFull(min_fill_ratio):
+                        
+                        # check if model contains nan
+                        """
+                        for k,v in self.model_pg.state_dict().items():
+                            if torch.isnan(v).any():
+                                raise('nan in model')
+                        """
+
                         agent.setAttribute.remote('model_pg',self.model_pg)
+                        
+                        # check model differences - REQUIRED to ensure synchronization before 
+                        model_diff = 1
+                        time_in = time.time()
+                        while np.round(model_diff, 3) >= 0.001:
+                            model_diff = self.model_pg.compare_weights( ray.get(agent.getAttributeValue.remote('model_pg')).state_dict()  )
+                            if check_WhileTrue_timeout(time_in, 5):
+                                raise('model in simulator different from current consensus model')
+                        
                         task_lst[i] = agent.run.remote()
                     
             # if memory is (almost) full and task list empty, inform qv update it can stop
@@ -683,6 +737,8 @@ class Multiprocess_RL_Environment:
 
     ##################################################################################
     def get_log(self, total_runs, total_log, *args):
+        
+        #total log includes (for all runs): 1) steps since start 2) cumulative reward
         
         entry = np.zeros(len(args))
         
@@ -752,6 +808,7 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     def end_validation_routine(self, total_runs, tot_successful_runs, total_log):
         
+        #total log includes (for all runs): 1) steps since start 2) cumulative reward
         self.get_log(total_runs, total_log, 0)
         if total_runs > 0 :
             success_ratio = np.round(tot_successful_runs/total_runs ,2)
@@ -1037,6 +1094,16 @@ class Multiprocess_RL_Environment:
         ax4_1.plot(self.log_df.iloc[init_epoch:][indicators[5]])
         ax4_1.legend([indicators[5]])
    
+    
+        if self.update_policy_online:
+            
+            fig_2, ax2 = plt.subplots(2,1)
+
+            ax2[0].plot(self.global_pg_loss)
+            ax2[1].plot(self.global_pg_entropy)
+            
+            return fig, fig_1 , fig_2
+    
         return fig, fig_1 
 
 #%%

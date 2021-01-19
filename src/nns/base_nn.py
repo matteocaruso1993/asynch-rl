@@ -192,7 +192,6 @@ class nnBase(nn.Module):
             average_diff = 0.0
         else:
             diff_list = [torch.mean(torch.abs(v0[1] - v1[1])).item()  for v0,v1 in zip(state_dict_0.items(), state_dict_1.items())  ]
-            print(diff_list)
             average_diff = np.average(np.array(diff_list ))
 
         return average_diff

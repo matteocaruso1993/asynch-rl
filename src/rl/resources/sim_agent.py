@@ -255,49 +255,46 @@ class SimulationAgent:
     ##################################################################################
     def pg_update_online(self, reward, state_0, state_1, prob, action_idx, done, valid):
         
-        loss_pg_i = 0
-        
+        loss_pg_i = entropy = 0
         if valid:
             
-            entropy = torch.sum(-torch.log(prob)*prob)
-            if torch.isnan(entropy).any():
-                print(f'prob : {prob}')
-                entropy = torch.sum(-torch.log(prob+1e-5)*prob)
-                print(f'new entropy: {entropy}')
+            prob_pract = prob + torch.rand(prob.shape)/1000
             
+            entropy = torch.sum(-torch.log(prob_pract)*prob_pract)
             advantage = reward + self.gamma * torch.max(self.model_qv(state_1.float())) \
                                 - torch.max(self.model_qv(state_0.float()))
             
-            self.loss_policy += -advantage.cpu()*torch.log(prob[:,action_idx]) + self.beta_PG*entropy
-            
-            """
-            print(f'entropy {entropy}') 
-            print(f'advantage {advantage}')
-            print(f'torch.log(prob[:,action_idx]) {torch.log(prob[:,action_idx])}')
-            """
+            self.loss_policy += -advantage.cpu()*torch.log(prob_pract[:,action_idx]) + self.beta_PG*entropy
             
             if done:
+                
                 self.loss_policy.backward()
                 self.model_pg.optimizer.step()
                 loss_pg_i = np.round(self.loss_policy.item(),3)
                 self.loss_policy = 0
                 self.model_pg.optimizer.zero_grad()   
                 
-                return loss_pg_i
+                # check if model contains nan
+                for k,v in self.model_pg.state_dict().items():
+                    if torch.isnan(v).any():
+                        print('nan tensor after update')
+                        return np.nan
+
+                return loss_pg_i, entropy.item()
 
         else:
             self.loss_policy = 0
             self.model_pg.optimizer.zero_grad()
             
-        return loss_pg_i
+        return loss_pg_i, entropy.item()
             
         
     ##################################################################################
     def run_synch(self, use_NN = False, pctg_ctrl = 0, test_qv = False):
 
         pg_info = None
-        loss_pg = 0
-        enthropy = 0
+        pg_loss_hist = []
+        entropy_hist = []
         
         if self.update_policy_online:
             delta_theta = {}
@@ -323,6 +320,7 @@ class SimulationAgent:
         while not self.stop_run:
 
             if self.reset_simulation:
+                loss_pg = 0
                 if self.agent_run_variables['single_run'] >= self.max_n_single_runs+1:
                     break
                 state, use_controller = self.reset_agent(pctg_ctrl)
@@ -334,8 +332,11 @@ class SimulationAgent:
                 self.agent_run_variables['successful_runs'] += 1
                 
             if self.update_policy_online:
-                loss_pg_i = self.pg_update_online(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
+                loss_pg_i, entropy_i = self.pg_update_online(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
                 loss_pg += loss_pg_i
+                entropy_hist.append(entropy_i)
+                if done:
+                    pg_loss_hist.append(loss_pg)
             
             if self.verbosity > 0:
                 self.displayStatus()                    
@@ -351,8 +352,8 @@ class SimulationAgent:
         
         if self.update_policy_online:
             for k in theta_0.keys():
-                delta = self.model_pg.state_dict()[k]-theta_0[k]
-            pg_info = (delta_theta, loss_pg , enthropy )
+                delta_theta[k] = self.model_pg.state_dict()[k]-theta_0[k]
+            pg_info = (delta_theta, np.average(pg_loss_hist) , np.average(entropy_hist), True )
         
         return self.simulation_log, self.agent_run_variables['single_run'], self.agent_run_variables['successful_runs'], pg_info #[0]
         # self.simulation_log contains duration and cumulative reward of every single-run
@@ -360,14 +361,10 @@ class SimulationAgent:
     ##################################################################################
     async def run(self, use_NN = False, test_qv = False):
         
-        abort = False
+        # check if model contains nan
         for k,v in self.model_pg.state_dict().items():
             if torch.isnan(v).any():
-                print(v)
-                abort = True
-        if abort:
-            raise('nan tensor from start')
-        
+                raise('nan tensor from start')
         
         pg_info = None
         if self.update_policy_online:
@@ -409,11 +406,12 @@ class SimulationAgent:
             
             if self.update_policy_online:
                 loss_pg_i = self.pg_update_online(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
-                loss_pg += loss_pg_i
+                loss_pg += loss_pg_i*int(not np.isnan(loss_pg_i) )
+                force_stop = np.isnan(loss_pg_i)
             
             if self.verbosity > 0:
                 self.displayStatus()                    
-            self.trainVariablesUpdate(reward_np, done)
+            self.trainVariablesUpdate(reward_np, done, force_stop)
             
             state = state_1
         
@@ -425,24 +423,19 @@ class SimulationAgent:
         plt.close(fig_film)
         
         if self.update_policy_online:
-            for k in theta_0.keys():
-                delta = self.model_pg.state_dict()[k]-theta_0[k]
-                if not torch.isnan(delta).any():
-                    delta_theta[k] = delta 
-                else:
-                    delta_theta[k] = torch.zeros(theta_0[k].shape) 
-                """
-                    print('nan weights')
-                    if torch.isnan(theta_0[k]).any():
-                        print('theta_0 problem')
-                    if torch.isnan(self.model_pg.state_dict()[k]).any():
-                        print('current theta problem')
-                        print(self.model_pg.state_dict()[k])
-                        
-                    raise('theta problem')
-                """
+            
+            if force_stop:
+                valid_model = False
+            else:
+                valid_model = True
+                for k in theta_0.keys():
+                    delta_theta[k] = self.model_pg.state_dict()[k]-theta_0[k]
+                    if torch.isnan(delta_theta[k]).any():
+                        print('invalid model')
+                        valid_model = False
+                        break
                     
-            pg_info = (delta_theta, loss_pg , enthropy )
+            pg_info = (delta_theta, loss_pg , enthropy, valid_model )
         
         return self.simulation_log, self.agent_run_variables['single_run'], successful_runs , pg_info #[0]
         # self.simulation_log contains duration and cumulative reward of every single-run
@@ -602,7 +595,7 @@ class SimulationAgent:
         return action, action_index, noise_added, (prob_distrib if self.update_policy_online else None )
             
     ##################################################################################
-    def trainVariablesUpdate(self, reward_np = 0, done = False, reset_variables = False):
+    def trainVariablesUpdate(self, reward_np = 0, done = False, reset_variables = False, force_stop = False):
         # output is the model output given a certain state in
         
         if reset_variables:
@@ -644,7 +637,7 @@ class SimulationAgent:
                 print(f'done: {done}')
                 print(f'too many steps: {self.agent_run_variables["steps_since_start"] > self.max_steps_single_run +1}')
                 """
-                if self.agent_run_variables['consecutive_fails'] >= self.max_consecutive_env_fails or self.agent_run_variables['iteration'] >= self.tot_iterations:
+                if self.agent_run_variables['consecutive_fails'] >= self.max_consecutive_env_fails or self.agent_run_variables['iteration'] >= self.tot_iterations or force_stop:
                     self.stop_run = True
         pass
                     

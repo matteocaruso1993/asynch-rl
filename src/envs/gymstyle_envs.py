@@ -10,6 +10,7 @@ import os
 
 from envs.wrappers import DiscretizedActionWrapper,DiscretizedObservationWrapper, ContinuousHybridActionWrapper
 
+from envs.DicePoker import DicePoker
 
 from envs.cartpole_env.CartPole_env import CartPoleEnv
 from envs.platoon_env.Platooning_env import PlatoonEnv
@@ -64,6 +65,14 @@ class Gymstyle_Connect4(DiscretizedActionWrapper):
         
         env = ConnectFour(**kwargs)
         super().__init__(env, env.width-1)
+        
+
+class Gymstyle_DicePoker(DiscretizedActionWrapper):
+    def __init__(self):
+        
+        env = DicePoker()
+        super().__init__(env, 1)
+        
         
         
 #%%
