@@ -31,7 +31,7 @@ from argparse import ArgumentParser
 parser = ArgumentParser()
 
 #following params always to be declared
-parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=108,
+parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100,
                     help="net version used")
 
 parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10, help="number of training iterations")
@@ -39,7 +39,7 @@ parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10
 parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
 
-parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=4,
+parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=20,
                     help="Number of agents to be used")
 
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
@@ -52,9 +52,8 @@ parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, 
 parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.25,
                     help="Ratio of Memory renewed at each iteration")
 
-
-parser.add_argument("-lr", "--learning-rate", dest="learning_rate", type=float, default=1e-4,
-                    help="NN learning rate")
+parser.add_argument("-lr", "--learning-rate", dest="learning_rate",  nargs="*", type=float, default=[1e-4, 1e-3],
+                    help="NN learning rate [QV, PG]. If parallelized, lr[QV] is ignored. If scalar, lr[QV] = lr[PG] = lr")
 
 parser.add_argument(
   "-e", "--epochs-training",  nargs="*",  # 0 or more values expected => creates a list
@@ -65,13 +64,13 @@ parser.add_argument(
 parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size",  nargs="*", type=int, default=[512, 256],
                     help="Size of the minibatches used for training [QV, PG]")
 
-parser.add_argument("-y", "--epsilon", dest="epsilon", nargs=2, type=float, default=[0.999 , 0.2],
+parser.add_argument("-y", "--epsilon", dest="epsilon", nargs=2, type=float, default=[0.999 , 0.01],
                     help="two values: initial epsilon, final epsilon")
 
-parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, default=0.995,
+parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, default=0.9,
                     help="annealing factor of epsilon")
 
-parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=int, default=5, #10,
+parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=int, default=10, #10,
                     help="model is validated every -vf iterations")
 
 parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=bool, default=False,
@@ -82,7 +81,7 @@ parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC',
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.99, help="GAMMA parameter in QV learning")
 
-parser.add_argument("-b", "--beta", dest="beta", type=float, default=0.1, help="BETA parameter for entropy in PG learning")
+parser.add_argument("-b", "--beta", dest="beta", type=float, default=1, help="BETA parameter for entropy in PG learning")
 
 # env specific parameters
 

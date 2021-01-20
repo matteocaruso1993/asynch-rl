@@ -47,7 +47,7 @@ DEBUG_MODEL_VERSIONS = True
 #%%
 class Multiprocess_RL_Environment:
     def __init__(self, env_type , net_type , net_version ,rl_mode = 'DQL', n_agents = 1, ray_parallelize = False , \
-                 move_to_cuda = True, show_rendering = False , n_frames=4, learning_rate = 0.001 , \
+                 move_to_cuda = True, show_rendering = False , n_frames=4, learning_rate = [0.0001, 0.001] , \
                  rl_params = None,movie_frequency = 20, max_steps_single_run = 200, \
                  training_session_number = None, save_movie = True, live_plot = False, \
                  display_status_frequency = 50, max_consecutive_env_fails = 3, tot_iterations = 400,\
@@ -91,7 +91,11 @@ class Multiprocess_RL_Environment:
         self.bashplot = bashplot 
         self.difficulty = difficulty
         self.sim_length_max = sim_length_max # seconds after which simulation is over (and successful)
-        self.lr = learning_rate
+        if np.isscalar(learning_rate):
+            self.lr = [learning_rate, learning_rate]
+        else:
+            self.lr = learning_rate
+            
         self.val_frequency = val_frequency
         self.ray_parallelize = ray_parallelize
         self.resume_epsilon = False
@@ -216,11 +220,21 @@ class Multiprocess_RL_Environment:
         self.nn_updater = None
         self.memory_stored = None
         self.policy_loaded = False
+        
+                # update log and history
+        # (log structure: ['training session','epsilon', 'total single-run(s)','average single-run duration',\
+        #    'average single-run reward' , 'average qval loss','average policy loss', 'N epochs', 'memory size', \
+        #    action gen splits (0,1,2)..., 'pg_entropy']  )
 
-        self.log_df = pd.DataFrame(columns=['training session','epsilon', 'ctrl prob','total single-run(s)',\
+        self.log_df = pd.DataFrame(columns=['training session','epsilon', 'total single-run(s)',\
                                     'average single-run duration', 'average single-run reward' , 'av. q-val loss', \
                                     'av. policy loss','N epochs', 'memory size', 'split random/noisy','split conventional',\
                                         'split NN', 'pg_entropy'])
+            
+        self.session_log = {'total runs':None, 'steps since start': None, \
+                            'cumulative reward':None, 'qval_loss':None, \
+                                'policy_loss':None, 'pg_entropy' : None}
+            
         self.splits = np.array([np.nan, np.nan, np.nan])
         # splits: random/noisy, conventional, NN
 
@@ -242,14 +256,19 @@ class Multiprocess_RL_Environment:
             n_actions = self.n_actions_contn
         else:
             n_actions = self.n_actions_discr
+            
+        if pg_model:
+            lr= self.lr[1]
+        else:
+            lr= self.lr[0]
         
         if self.net_type == 'ConvModel':
-                model = ConvModel(model_version = 0, net_type = self.net_type+str(self.net_version), lr= self.lr, \
+                model = ConvModel(model_version = 0, net_type = self.net_type+str(self.net_version), lr= lr, \
                                   n_actions = n_actions, channels_in = self.n_frames, N_in = self.N_in_model,
                                   conv_no_grad = (pg_model and self.pg_partial_update), softmax = pg_model)
                 # only for ConvModel in the PG case, it is allowed to "partially" update the model (convolutional layers are evaluated with "no_grad()")
         elif self.net_type == 'LinearModel': 
-                model = LinearModel(0, self.net_type+str(self.net_version), self.lr, n_actions, \
+                model = LinearModel(0, self.net_type+str(self.net_version), lr, n_actions, \
                                     self.N_in_model, *(self.layers_width), softmax = pg_model) 
         return model
     
@@ -569,6 +588,9 @@ class Multiprocess_RL_Environment:
         total_log = np.zeros((1,2),dtype = np.float)
         total_runs = 0
         
+        temp_pg_loss = []
+        temp_entropy = []
+        
         if DEBUG_MODEL_VERSIONS:
             model_version_sim = self.check_model_version(print_out = True, mode = 'sim', save_v0 = False)
                 
@@ -581,18 +603,17 @@ class Multiprocess_RL_Environment:
             progress(round(1000*self.shared_memory.fill_ratio), 1000 , 'Fill memory')
             partial_log, single_runs , successful_runs, pg_info = self.sim_agents_discr[0].run_synch()
             
-            
             # implementation for A3C
             if self.rl_mode == 'AC' and self.update_policy_online:
                 delta_theta_i, policy_loss, pg_entropy, valid_model = pg_info
-                self.global_pg_loss.append(policy_loss)
-                self.global_pg_entropy.append(pg_entropy)
-            """
                 if valid_model:
+                    self.global_pg_loss.append(policy_loss)
+                    self.global_pg_entropy.append(pg_entropy)
+                    temp_pg_loss.append(policy_loss)
+                    temp_entropy.append(pg_entropy)
                     for k in self.model_pg.state_dict().keys():
                         self.model_pg.state_dict()[k] += delta_theta_i[k]
                     self.sim_agents_discr[0].setAttribute('model_pg',self.model_pg)
-            """    
             
             total_log = np.append(total_log, partial_log, axis = 0)
             total_runs += single_runs
@@ -601,14 +622,6 @@ class Multiprocess_RL_Environment:
                 self.shared_memory.addMemoryBatch(self.sim_agents_discr[0].emptyLocalMemory() )
         
         progress(round(1000*self.shared_memory.fill_ratio), 1000 , 'Fill memory')
-                
-        """ will be removed from here"""
-        # implementation for A3C
-        if self.rl_mode == 'AC' and self.update_policy_online:
-            if valid_model:
-                self.model_pg = self.sim_agents_discr[0].getAttributeValue('model_pg')
-        """ will be removed from here"""    
-
                 
         if not memory_fill_only:
             if self.rl_mode == 'AC' and self.policy_loaded and not self.update_policy_online:
@@ -619,11 +632,16 @@ class Multiprocess_RL_Environment:
                 policy_loss, pg_entropy =  self.nn_updater.update_DeepRL('policy', self.shared_memory.memory ) 
                 
             elif self.rl_mode == 'AC' and self.update_policy_online:
-                model_diff = np.round(self.model_pg.compare_weights(initial_pg_weights), 5)
-                print(f'PG model change: {model_diff}')
-                
-            self.get_log(total_runs, total_log, average_qval_loss, policy_loss , pg_entropy)
-    
+                #model_diff = np.round(self.model_pg.compare_weights(initial_pg_weights), 5)
+                #print(f'PG model change: {model_diff}')
+                policy_loss = np.round(sum(temp_pg_loss)/len(temp_pg_loss), 3)
+                pg_entropy =  np.round(sum(temp_entropy)/len(temp_entropy), 3)
+                print(f'average policy loss : {policy_loss}')
+                print(f'average pg entropy  : {pg_entropy}')
+                print(f'average cum-reward  : {np.round(np.average(total_log[:,1]),2)}')
+
+            self.get_log(total_runs, total_log, qval_loss = average_qval_loss, policy_loss = policy_loss , pg_entropy = pg_entropy)
+
 
     ##################################################################################
     def runParallelized(self, memory_fill_only = False):
@@ -635,6 +653,10 @@ class Multiprocess_RL_Environment:
         total_log = np.zeros((1,2),dtype = np.float)
         average_qval_loss = policy_loss = pg_entropy = np.nan
         total_runs = 0        
+        
+        temp_pg_loss = []
+        temp_entropy = []
+
 
         # to avoid wasting simulations
         min_fill_ratio = 0.95
@@ -661,13 +683,16 @@ class Multiprocess_RL_Environment:
                 if not ray.get(agent.isRunning.remote()): 
                     if task_lst[i] is not None:
                         partial_log, single_runs, successful_runs, pg_info = ray.get(task_lst[i])
+                        # partial_log contains 1) duration and 2) cumulative reward of every single-run
                         
                         # implementation for A3C
                         if self.rl_mode == 'AC' and self.update_policy_online:
-                            delta_theta_i, pg_loss, enthropy, valid_model = pg_info
+                            delta_theta_i, policy_loss, pg_entropy, valid_model = pg_info
                             if valid_model:
-                                policy_loss += pg_loss
-                                pg_entropy += enthropy
+                                self.global_pg_loss.append(policy_loss)
+                                self.global_pg_entropy.append(pg_entropy)
+                                temp_pg_loss.append(policy_loss)
+                                temp_entropy.append(pg_entropy)
                                 for k in self.model_pg.state_dict().keys():
                                     self.model_pg.state_dict()[k] += delta_theta_i[k]
                         
@@ -681,13 +706,6 @@ class Multiprocess_RL_Environment:
                     # 2.1.1) run another task if required
                     if not self.shared_memory.isPartiallyFull(min_fill_ratio):
                         
-                        # check if model contains nan
-                        """
-                        for k,v in self.model_pg.state_dict().items():
-                            if torch.isnan(v).any():
-                                raise('nan in model')
-                        """
-
                         agent.setAttribute.remote('model_pg',self.model_pg)
                         
                         # check model differences - REQUIRED to ensure synchronization before 
@@ -709,9 +727,13 @@ class Multiprocess_RL_Environment:
         print('')
         
         if self.rl_mode == 'AC' and self.update_policy_online:
-            model_diff = np.round(self.model_pg.compare_weights(initial_pg_weights), 5)
-            print(f'PG model change: {model_diff}')
-
+            #model_diff = np.round(self.model_pg.compare_weights(initial_pg_weights), 5)
+            #print(f'PG model change: {model_diff}')
+            policy_loss = np.round(sum(temp_pg_loss)/len(temp_pg_loss), 3)
+            pg_entropy =  np.round(sum(temp_entropy)/len(temp_entropy), 3)
+            print(f'average policy loss : {policy_loss}')
+            print(f'average pg entropy  : {pg_entropy}')
+            print(f'average cum-reward  : {np.round(np.average(total_log[:,1]),2)}')
             
         # log training history
         if qv_update_launched:
@@ -719,7 +741,7 @@ class Multiprocess_RL_Environment:
             # 1) compute qv average loss
             self.qval_loss_hist_iteration = np.array(ray.get(updating_process))
             average_qval_loss = np.round(np.average(self.qval_loss_hist_iteration), 3)
-            print(f'QV. loss = {average_qval_loss}')
+            print(f'QV. loss = {np.round(average_qval_loss, 3)}')
                   
             # 2) update policy and get policy loss (single batch, no need to average)) 
             if self.rl_mode == 'AC' and self.policy_loaded and not self.update_policy_online:
@@ -732,21 +754,21 @@ class Multiprocess_RL_Environment:
                     policy_loss, pg_entropy = ray.get(self.nn_updater.update_DeepRL.remote('policy', self.shared_memory.memory ))
                 
             #3) store computed losses
-            self.get_log(total_runs, total_log, average_qval_loss, policy_loss , pg_entropy)
+            self.get_log(total_runs, total_log, qval_loss = average_qval_loss, policy_loss = policy_loss , pg_entropy = pg_entropy)
 
 
     ##################################################################################
-    def get_log(self, total_runs, total_log, *args):
+    def get_log(self, total_runs, total_log, **kwargs):
         
-        #total log includes (for all runs): 1) steps since start 2) cumulative reward
-        
-        entry = np.zeros(len(args))
-        
-        for i,arg in enumerate(args):
-            entry[i] = np.round(arg, 2)
+        #total log includes (for all runs): [0] steps since start [1] cumulative reward
+
+        for k,v in kwargs.items():
+            self.session_log[k] = np.round( v , 2)
         
         # total runs, steps since start, cumulative reward, average loss / total_successful_runs, entropy (pg training only)
-        self.session_log = np.append( np.append( int(total_runs), np.round(np.average(total_log[1:,:], axis = 0),2)), entry)  
+        self.session_log['total runs'] = int(total_runs)
+        self.session_log['steps since start'] = np.round(np.average(total_log[:,0]),2)
+        self.session_log['cumulative reward'] = np.round(np.average(total_log[:,1]),2)
 
     
     ##################################################################################
@@ -809,13 +831,15 @@ class Multiprocess_RL_Environment:
     def end_validation_routine(self, total_runs, tot_successful_runs, total_log):
         
         #total log includes (for all runs): 1) steps since start 2) cumulative reward
-        self.get_log(total_runs, total_log, 0)
+        self.get_log(total_runs, total_log)
         if total_runs > 0 :
             success_ratio = np.round(tot_successful_runs/total_runs ,2)
         else:
             success_ratio = -1
-        # session_log: total runs, steps since start, cumulative reward, average loss
-        val_history = np.append(np.array([self.training_session_number, success_ratio ]) , self.session_log[:-1] )
+
+        val_history = np.array([self.training_session_number, success_ratio, self.session_log['total runs'], \
+                                self.session_log['steps since start'], self.session_log['cumulative reward'] ]) 
+            
         # 0) iteration ---- 1)success_ratio  2) total runs 3) average duration   4)average single run reward           
         if self.val_history is None:
             self.val_history =  val_history[np.newaxis,:].copy()
@@ -857,7 +881,7 @@ class Multiprocess_RL_Environment:
             if display_graphs:
                 self.plot_training_log()
                 
-            if i> 1 and not i % self.val_frequency:
+            if i> 1 and not i % self.val_frequency and self.rl_mode == 'DQL':
                 print('###################################################################')
                 print('validation cycle start...')
                 self.shared_memory.resetMemory(self.validation_set_size)
@@ -867,12 +891,7 @@ class Multiprocess_RL_Environment:
                     self.validation_serialized()
                 print('end of validation cycle')
                 print('###################################################################')
-            """
-            if i >= 30:
-                losses = self.log_df[['av. q-val loss', 'av. policy loss']].to_numpy()
-                if (losses[-1,:]>= 1e5*losses[-21]).any():
-                    break
-            """
+
         # save memory to reload for next iteration
         self.memory_stored.save(self.storage_path,self.net_name)
 
@@ -918,16 +937,6 @@ class Multiprocess_RL_Environment:
             self.updateAgentsAttributesExcept(print_attribute=['env','env','model','model_version'])
         else:
             raise('Loading error')
-            
-            """
-            print('loading problem! did not find correct policy file!')
-            self.check_model_version(print_out = True, mode = 'sim', save_v0 = True)
-            if self.update_model_cpu():
-                self.updateAgentsAttributesExcept()
-            else:
-                raise('Loading error')
-            """
-
         
         if self.nn_updater is None:
             # if needed, initialize the model for the updating
@@ -1001,11 +1010,14 @@ class Multiprocess_RL_Environment:
         # update log and history
         # (log structure: ['training session','epsilon', 'total single-run(s)','average single-run duration',\
         #    'average single-run reward' , 'average qval loss','average policy loss', 'N epochs', 'memory size', \
-        #    action gen splits..., 'pg_entropy']  )
+        #    action gen splits (0,1,2)..., 'pg_entropy']  )
         if self.training_session_number > 1:
-            new_row = [int(self.training_session_number), self.epsilon, self.ctrlr_probability , self.session_log[0] , self.session_log[1] ,\
-                       self.session_log[2], self.session_log[3],self.session_log[4], self.n_epochs, self.replay_memory_size, \
-                       self.splits[0], self.splits[1], self.splits[2] ,  self.session_log[5]   ]
+            new_row = [int(self.training_session_number), self.epsilon, self.session_log['total runs'] , \
+                       self.session_log['steps since start'] , self.session_log['cumulative reward'], self.session_log['qval_loss'],\
+                           self.session_log['policy_loss'], self.n_epochs, self.replay_memory_size, \
+                               self.splits[0], self.splits[1], self.splits[2] ,  \
+                                   self.session_log['pg_entropy']   ]
+                
             self.log_df.loc[len(self.log_df)] = new_row
         
         if self.qval_loss_history is None:
@@ -1045,9 +1057,9 @@ class Multiprocess_RL_Environment:
         #log_norm_df=(self.log_df-self.log_df.min())/(self.log_df.max()-self.log_df.min())
         #fig, ax = plt.subplots()
         # (log structure: 
-        # 0: 'training session', 1: 'epsilon', 2: 'ctrl prob',3: 'total single-run(s)',
-        # 4: 'average single-run duration', 5: 'average single-run reward' , 6: 'av. q-val loss', 
-        # 7: 'av. policy loss','N epochs', 8: 'memory size', 9: 'split random/noisy',
+        # 0: 'training session', 1: 'epsilon', 2: 'total single-run(s)',
+        # 3: 'average single-run duration', 4: 'average single-run reward' , 5: 'av. q-val loss', 
+        # 6: 'av. policy loss', 7: 'N epochs', 8: 'memory size', 9: 'split random/noisy',
         # 10:'split conventional', 11: 'split NN', 12: 'pg_entropy'] )        
 
         indicators = self.log_df.columns
@@ -1075,24 +1087,24 @@ class Multiprocess_RL_Environment:
         
         # 'av. q-val loss'
         ax1_1 = fig_1.add_subplot(411)
-        ax1_1.plot(self.log_df.iloc[init_epoch:][indicators[6]])
+        ax1_1.plot(self.log_df.iloc[init_epoch:][indicators[5]])
         #ax1_1.set_yscale('log')
-        ax1_1.legend([indicators[6]])
+        ax1_1.legend([indicators[5]])
 
         # 'av. policy loss'
         ax2_1 = fig_1.add_subplot(412)
-        ax2_1.plot(self.log_df.iloc[init_epoch:][indicators[7]])
-        ax2_1.legend([indicators[7]])
+        ax2_1.plot(self.log_df.iloc[init_epoch:][indicators[6]])
+        ax2_1.legend([indicators[6]])
         
         # 'pg entropy'
         ax3_1 = fig_1.add_subplot(413)
-        ax3_1.plot(self.log_df.iloc[init_epoch:][indicators[3]])
-        ax3_1.legend([indicators[13]])
+        ax3_1.plot(self.log_df.iloc[init_epoch:][indicators[12]])
+        ax3_1.legend([indicators[12]])
 
         # 'average single-run reward'
         ax4_1 = fig_1.add_subplot(414)
-        ax4_1.plot(self.log_df.iloc[init_epoch:][indicators[5]])
-        ax4_1.legend([indicators[5]])
+        ax4_1.plot(self.log_df.iloc[init_epoch:][indicators[4]])
+        ax4_1.legend([indicators[4]])
    
     
         if self.update_policy_online:

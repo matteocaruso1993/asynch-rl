@@ -41,6 +41,8 @@ class DicePoker(gym.Env):
         self.state = np.sort(np.random.randint(1,7,5))
         self.n_rethrows = 0
         
+        return self.state/6
+        
     def step(self, action, *args ):
         
         info = {'outcome': None}
@@ -56,6 +58,7 @@ class DicePoker(gym.Env):
             reward = 0
             done = True
             info['result'] = 0
+            info['no step'] = None
         
         success = self.success_condition() 
         

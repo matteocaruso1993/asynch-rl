@@ -216,13 +216,14 @@ class SimulationAgent:
                 self.states_full_sequences.append(state_sequence)
                 self.ctrl_full_sequences.append(ctrl_sequence)
         
-        self.env.reset(save_history = (not self.agent_run_variables['single_run'] % self.movie_frequency) )
+        state_obs = self.env.reset(save_history = (not self.agent_run_variables['single_run'] % self.movie_frequency) )
         
-        # initial action is do nothing
-        action = torch.zeros([self.n_actions], dtype=torch.bool)
-        action[round((self.n_actions-1)/2)] = 1
-        
-        state_obs, reward, done, info = self.env.action(action)
+        if state_obs is None:
+            # initial action is do nothing
+            action = torch.zeros([self.n_actions], dtype=torch.bool)
+            action[round((self.n_actions-1)/2)] = 1
+            state_obs, reward, done, info = self.env.action(action)
+            
         state_obs_tensor = torch.from_numpy(state_obs).unsqueeze(0)  #added here
         
         # n_channels consecutive "images" of the state are used by the NN to predict --> we build the channels here (second to last dimension)
@@ -255,11 +256,9 @@ class SimulationAgent:
     ##################################################################################
     def pg_update_online(self, reward, state_0, state_1, prob, action_idx, done, valid):
         
-        loss_pg_i = entropy = 0
         if valid:
-            
+            loss_pg_i = 0
             prob_pract = prob + torch.rand(prob.shape)/1000
-            
             entropy = torch.sum(-torch.log(prob_pract)*prob_pract)
             advantage = reward + self.gamma * torch.max(self.model_qv(state_1.float())) \
                                 - torch.max(self.model_qv(state_0.float()))
@@ -267,7 +266,6 @@ class SimulationAgent:
             self.loss_policy += -advantage.cpu()*torch.log(prob_pract[:,action_idx]) + self.beta_PG*entropy
             
             if done:
-                
                 self.loss_policy.backward()
                 self.model_pg.optimizer.step()
                 loss_pg_i = np.round(self.loss_policy.item(),3)
@@ -278,15 +276,14 @@ class SimulationAgent:
                 for k,v in self.model_pg.state_dict().items():
                     if torch.isnan(v).any():
                         print('nan tensor after update')
-                        return np.nan
+                        return np.nan, np.nan
 
-                return loss_pg_i, entropy.item()
+            return loss_pg_i, entropy.item()
 
         else:
             self.loss_policy = 0
             self.model_pg.optimizer.zero_grad()
-            
-        return loss_pg_i, entropy.item()
+            return np.nan, np.nan
             
         
     ##################################################################################
@@ -334,13 +331,14 @@ class SimulationAgent:
             if self.update_policy_online:
                 loss_pg_i, entropy_i = self.pg_update_online(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
                 loss_pg += loss_pg_i
+                force_stop = np.isnan(loss_pg_i)
                 entropy_hist.append(entropy_i)
                 if done:
                     pg_loss_hist.append(loss_pg)
             
             if self.verbosity > 0:
                 self.displayStatus()                    
-            self.trainVariablesUpdate(reward_np, done)
+            self.trainVariablesUpdate(reward_np, done, force_stop, no_step = ('no step' in info) )
             
             state = state_1
         
@@ -367,6 +365,10 @@ class SimulationAgent:
                 raise('nan tensor from start')
         
         pg_info = None
+        pg_loss_hist = []
+        entropy_hist = []
+
+        
         if self.update_policy_online:
             loss_pg = 0
             enthropy = 0
@@ -405,13 +407,23 @@ class SimulationAgent:
                 successful_runs += 1
             
             if self.update_policy_online:
+                loss_pg_i, entropy_i = self.pg_update_online(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
+                loss_pg += loss_pg_i
+                force_stop = np.isnan(loss_pg_i)
+                entropy_hist.append(entropy_i)
+                if done:
+                    pg_loss_hist.append(loss_pg)
+
+            """            
+            if self.update_policy_online:
                 loss_pg_i = self.pg_update_online(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
                 loss_pg += loss_pg_i*int(not np.isnan(loss_pg_i) )
                 force_stop = np.isnan(loss_pg_i)
+            """
             
             if self.verbosity > 0:
                 self.displayStatus()                    
-            self.trainVariablesUpdate(reward_np, done, force_stop)
+            self.trainVariablesUpdate(reward_np, done, force_stop, no_step = ('no step' in info) )
             
             state = state_1
         
@@ -423,7 +435,6 @@ class SimulationAgent:
         plt.close(fig_film)
         
         if self.update_policy_online:
-            
             if force_stop:
                 valid_model = False
             else:
@@ -434,8 +445,7 @@ class SimulationAgent:
                         print('invalid model')
                         valid_model = False
                         break
-                    
-            pg_info = (delta_theta, loss_pg , enthropy, valid_model )
+            pg_info = (delta_theta, np.average(pg_loss_hist) , np.average(entropy_hist), valid_model )
         
         return self.simulation_log, self.agent_run_variables['single_run'], successful_runs , pg_info #[0]
         # self.simulation_log contains duration and cumulative reward of every single-run
@@ -595,7 +605,7 @@ class SimulationAgent:
         return action, action_index, noise_added, (prob_distrib if self.update_policy_online else None )
             
     ##################################################################################
-    def trainVariablesUpdate(self, reward_np = 0, done = False, reset_variables = False, force_stop = False):
+    def trainVariablesUpdate(self, reward_np = 0, done = False, force_stop = False, reset_variables = False, no_step = False):
         # output is the model output given a certain state in
         
         if reset_variables:
@@ -623,7 +633,7 @@ class SimulationAgent:
                 self.agent_run_variables['iteration'] += 1
                 self.agent_run_variables['consecutive_fails'] = 0
                 # keep track of the length of the current run and of the gained rewards
-                self.agent_run_variables['steps_since_start'] += 1
+                self.agent_run_variables['steps_since_start'] += 1*int(not no_step)
                 self.agent_run_variables['cum_reward'] += reward_np[0] if isinstance(reward_np, np.ndarray) else reward_np 
             
             # update of reset_simulation and stop_run
