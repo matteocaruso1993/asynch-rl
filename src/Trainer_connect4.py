@@ -76,8 +76,8 @@ parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=
 parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=bool, default=False,
                     help="reset optimizer")
 
-parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC',
-                    help="RL mode (AC, DQL)")
+parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='staticAC',
+                    help="RL mode (AC, DQL, staticAC)")
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.99, help="GAMMA parameter in QV learning")
 

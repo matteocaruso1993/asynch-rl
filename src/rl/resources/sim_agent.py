@@ -52,7 +52,7 @@ class SimulationAgent:
         
         self.update_policy_online = True
 
-        self.rl_mode = rl_mode
+        self.rl_mode = rl_mode if 'AC' not in rl_mode else 'AC'
         
         self.save_sequences  = save_sequences
         self.reset_full_sequences()
@@ -266,15 +266,15 @@ class SimulationAgent:
         
         if valid:
             loss_pg_i = 0
-            prob_pract = prob + torch.rand(prob.shape)/1000
+            prob_pract = prob + torch.rand(prob.shape)*1e-8
             entropy = torch.sum(-torch.log(prob_pract)*prob_pract)
-            advantage = reward + self.gamma * torch.max(self.model_qv(state_1.float())) \
+            advantage = reward + self.gamma * torch.max(self.model_qv(state_1.float()))*int(not done) \
                                 - torch.max(self.model_qv(state_0.float()))
             
             target_entropy = self.max_entropy*( 0.1 + 0.5*self.epsilon )
             
             self.loss_policy += -advantage.cpu()*torch.log(prob_pract[:,action_idx]) \
-                                + self.beta_PG*entropy
+                                - self.beta_PG*(1/(1e-2 + entropy))
             #    - self.beta_PG*(entropy - target_entropy)**2
             
             #print(f'target entropy : {target_entropy}')
@@ -291,14 +291,14 @@ class SimulationAgent:
                 for k,v in self.model_pg.state_dict().items():
                     if torch.isnan(v).any():
                         print('nan tensor after update')
-                        return np.nan, np.nan
+                        return np.nan, np.nan, np.nan
 
-            return loss_pg_i, entropy.item()
+            return loss_pg_i, entropy.item(), advantage.item()
 
         else:
             self.loss_policy = 0
             self.model_pg.optimizer.zero_grad()
-            return np.nan, np.nan
+            return np.nan, np.nan, np.nan
             
         
     ##################################################################################
@@ -308,6 +308,7 @@ class SimulationAgent:
         pg_info = None
         pg_loss_hist = []
         entropy_hist = []
+        advantage_hist = []
         
         if self.update_policy_online:
             delta_theta = {}
@@ -345,10 +346,11 @@ class SimulationAgent:
                 self.agent_run_variables['successful_runs'] += 1
                 
             if self.update_policy_online:
-                loss_pg_i, entropy_i = self.pg_update_online(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
+                loss_pg_i, entropy_i, advantage_i = self.pg_update_online(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
                 loss_pg += loss_pg_i
                 force_stop = np.isnan(loss_pg_i)
                 entropy_hist.append(entropy_i)
+                advantage_hist.append(advantage_i)
                 if done:
                     pg_loss_hist.append(loss_pg)
             
@@ -379,8 +381,9 @@ class SimulationAgent:
         pg_info = None
         pg_loss_hist = []
         entropy_hist = []
+        advantage_hist = []
         
-        if self.update_policy_online and self.rl_mode == 'AC':
+        if self.update_policy_online and 'AC' in self.rl_mode :
             # check if model contains nan
             for k,v in self.model_pg.state_dict().items():
                 if torch.isnan(v).any():
@@ -422,10 +425,11 @@ class SimulationAgent:
                 successful_runs += 1
             
             if self.update_policy_online:
-                loss_pg_i, entropy_i = self.pg_update_online(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
+                loss_pg_i, entropy_i, advantage_i = self.pg_update_online(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
                 loss_pg += loss_pg_i
                 force_stop = np.isnan(loss_pg_i)
                 entropy_hist.append(entropy_i)
+                advantage_hist.append(advantage_i)
                 if done:
                     pg_loss_hist.append(loss_pg)
 
@@ -529,7 +533,8 @@ class SimulationAgent:
             display_failed_runs = round(100*self.agent_run_variables["fails_count"]/(self.agent_run_variables["fails_count"] + self.agent_run_variables["single_run"]),1)
             print(f"failed runs: {display_failed_runs}%")
         
-        if self.agent_run_variables["single_run"]>=self.movie_frequency  and not self.live_plot and not self.agent_run_variables["consecutive_fails"] >= 3:
+        if self.show_rendering and self.agent_run_variables["single_run"]>=self.movie_frequency  and \
+            not self.live_plot and not self.agent_run_variables["consecutive_fails"] >= 3:
             
             ani = None
             if self.env.env_type == 'RobotEnv':
@@ -543,7 +548,7 @@ class SimulationAgent:
                 plt.waitforbuttonpress(round(duration))
                             
                 if self.save_movie:
-                    if self.rl_mode == 'AC':
+                    if 'AC' in self.rl_mode :
                         net_type = self.model_pg.net_type
                     elif self.rl_mode == 'DQL':
                         net_type = self.model_qv.net_type
@@ -559,7 +564,8 @@ class SimulationAgent:
     ##################################################################################
     def getVideoCartPole(self, fig_film):
         filename = self.net_name +'.mp4'
-        duration = None
+        interval = round(0.5*self.env.dt*1000)
+        duration = round(0.001*len(self.ims)*interval,1)
         ani = self.env.get_gif(fig = fig_film, save_history = (not self.agent_run_variables['single_run'] % self.movie_frequency) )
         return ani, filename, duration
 
@@ -581,7 +587,7 @@ class SimulationAgent:
         noise_added = False
         action = torch.zeros([self.n_actions], dtype=torch.bool)
         # PG only uses greedy approach            
-        if self.rl_mode == 'AC':
+        if 'AC' in self.rl_mode:
             prob_distrib = self.model_pg.cpu()(state.float())
             
             if random.random() <= self.epsilon and not use_NN:

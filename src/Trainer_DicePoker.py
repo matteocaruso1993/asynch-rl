@@ -36,7 +36,7 @@ parser.add_argument("-v", "--net-version", dest="net_version", type=int, default
 
 parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10, help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=True,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
 
 parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=4,
@@ -53,7 +53,7 @@ parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_rati
                     help="Ratio of Memory renewed at each iteration")
 
 
-parser.add_argument("-lr", "--learning-rate", dest="learning_rate",  nargs="*", type=float, default=[1e-4, 1e-3],
+parser.add_argument("-lr", "--learning-rate", dest="learning_rate",  nargs="*", type=float, default=[1e-4, 1e-4],
                     help="NN learning rate [QV, PG]. If parallelized, lr[QV] is ignored. If scalar, lr[QV] = lr[PG] = lr")
 
 parser.add_argument(

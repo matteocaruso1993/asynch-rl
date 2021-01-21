@@ -75,7 +75,7 @@ parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=boo
                     help="reset optimizer")
 
 parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC',
-                    help="RL mode (AC, DQL)")
+                    help="RL mode (AC, DQL, 'staticAC')")
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.99, help="GAMMA parameter in QV learning")
 
@@ -89,7 +89,7 @@ parser.add_argument("-pu", "--pg-partial-update", dest="pg_partial_update", type
 """
 parser.add_argument(
   "-ll", "--layers-list",  nargs="*",  # 0 or more values expected => creates a list
-  dest = "layers_list", type=int, default=[50, 50, 50, 10],  # default if nothing is provided
+  dest = "layers_list", type=int, default=[40, 40, 10],  # default if nothing is provided
 )
 
 """
@@ -112,7 +112,7 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
         load_iteration = -1, agents_number = n_agents, learning_rate= 0.001 , \
         n_epochs = [400, 100], replay_memory_size = 5000, epsilon = [.9, 0.1], ctrlr_probability = 0,  \
         epsilon_annealing_factor = 0.95,  mini_batch_size = [64, 32] , \
-        memory_turnover_ratio = 0.1, val_frequency = 10, layers_width= (100,100), reset_optimizer = False, rl_mode = 'DQL', \
+        memory_turnover_ratio = 0.1, val_frequency = 10, layers_width= (100,100), reset_optimizer = False, rl_mode = 'AC', \
         gamma = 0.99, beta = 0.001 , difficulty = 0, sim_length_max = 100):
 
 

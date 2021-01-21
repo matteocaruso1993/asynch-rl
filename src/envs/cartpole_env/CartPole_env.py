@@ -21,10 +21,10 @@ class CartPoleEnv(gym.Env):
         
         self.env_type = 'CartPole'
         
-        self.done_reward = [-50, -20, 10]
+        self.done_reward = [-100, -20, 10]
         
         #self.weight = [0.1, 2, .25]  # tracking error, vertical angle, changes in control action
-        self.weight = [0.05, 1, .1]  # tracking error, vertical angle, changes in control action
+        self.weight = [0.05, 2, .05]  # tracking error, vertical angle, changes in control action
         
         self.sim_length_max = sim_length_max # max simulation length (in seconds)
         self.dt = 0.05
@@ -115,12 +115,12 @@ class CartPoleEnv(gym.Env):
         if  np.abs(self.state[2]) > np.pi/2:
             done = True
             reward = self.done_reward[0] # 50   # 
-            info['outcome'] = 'fail'
+            info['outcome'] = 'lost'
         
         elif np.abs(self.state[0]-self.x_target) > self.max_distance:
             done = True
             reward = self.done_reward[1]
-            info['outcome'] = 'fail'
+            info['outcome'] = 'lost'
             
         else:
             #print(f'current time = {self.duration}, max time = {self.sim_length_max}')

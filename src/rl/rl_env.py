@@ -65,7 +65,7 @@ class Multiprocess_RL_Environment:
         # check if env/net types make sense
         allowed_envs = ['RobotEnv', 'CartPole', 'Platoon', 'Chess', 'Connect4', 'DicePoker']
         allowed_nets = ['ConvModel', 'LinearModel'] #, 'LinearModel0', 'LinearModel1', 'LinearModel2', 'LinearModel3', 'LinearModel4']
-        allowed_rl_modes = ['DQL', 'AC']
+        allowed_rl_modes = ['DQL', 'AC', 'staticAC']
         
         self.net_version = net_version
         
@@ -424,7 +424,7 @@ class Multiprocess_RL_Environment:
             # loss history file
             loss_history_file = os.path.join(self.storage_path, 'loss_history_'+ str(self.training_session_number) + '.npy')
             if os.path.isfile(loss_history_file):
-                self.qval_loss_history = np.load(loss_history_file)
+                self.qval_loss_history = np.load(loss_history_file, allow_pickle=True)
                 self.qval_loss_history = self.qval_loss_history[:self.training_session_number]
                
             val_history_file = os.path.join(self.storage_path, 'val_history.npy')
@@ -472,7 +472,7 @@ class Multiprocess_RL_Environment:
                         model = ray.get(self.sim_agents_contn[0].getAttributeValue.remote('model_qv'))
                     else:
                         model = self.sim_agents_contn[0].getAttributeValue('model_qv')
-                elif self.rl_mode == 'AC':
+                elif 'AC' in self.rl_mode:
                     if self.ray_parallelize:
                         model = ray.get(self.sim_agents_contn[0].getAttributeValue.remote('model_pg'))
                     else:
@@ -483,7 +483,7 @@ class Multiprocess_RL_Environment:
                         model = ray.get(self.sim_agents_discr[0].getAttributeValue.remote('model_qv'))
                     else:
                         model = self.sim_agents_discr[0].getAttributeValue('model_qv')
-                elif self.rl_mode == 'AC':
+                elif 'AC' in self.rl_mode:
                     if self.ray_parallelize:
                         model = ray.get(self.sim_agents_discr[0].getAttributeValue.remote('model_pg'))
                     else:
@@ -494,20 +494,20 @@ class Multiprocess_RL_Environment:
             if save_v0:
                 if not os.path.isfile(os.path.join(self.storage_path,self.net_name+ '.pt')):
                     model.save_net_params(self.storage_path,self.net_name)                
-                if self.rl_mode == 'AC':
+                if 'AC' in self.rl_mode:
                     if not os.path.isfile(os.path.join(self.storage_path,self.net_name+ '_policy.pt')):
                         model.save_net_params(self.storage_path,self.net_name+'_policy')
                         
                 with open(os.path.join(self.storage_path,'train_log.txt'), 'a+') as f:
                     f.writelines(self.net_name + "\n")
-                    if self.rl_mode == 'AC':
+                    if 'AC' in self.rl_mode:
                         f.writelines(self.net_name+'_policy'+ "\n")
                     
             if print_out:
                 print(f'SYSTEM is SIMULATING with model version: {model_v}')  
 
         elif mode == 'update':
-            if self.rl_mode == 'AC':
+            if 'AC' in self.rl_mode:
                 if self.ray_parallelize:
                     model = ray.get(self.nn_updater.getAttributeValue.remote('model_pg'))
                 else:
@@ -537,7 +537,7 @@ class Multiprocess_RL_Environment:
         if self.one_vs_one:
             self.env_discr.update_model(self.model_qv)
        
-        if self.rl_mode == 'AC': 
+        if 'AC' in self.rl_mode: 
             # "reload" flag handles the situation where initial training has only been performed with QV network
             if reload and not os.path.isfile(os.path.join(self.storage_path,self.net_name + '_policy.pt')):
                 self.model_pg.init_weights()
@@ -599,7 +599,7 @@ class Multiprocess_RL_Environment:
         if DEBUG_MODEL_VERSIONS:
             model_version_sim = self.check_model_version(print_out = True, mode = 'sim', save_v0 = False)
                 
-        if self.memory_stored is not None and not memory_fill_only: # and not self.model_new.is_updating:
+        if self.memory_stored is not None and not memory_fill_only and not self.rl_mode == 'staticAC': # and not self.model_new.is_updating:
             #print('entered NN update')
             self.qval_loss_hist_iteration, _ = np.array(self.nn_updater.update_DeepRL())
             average_qval_loss = np.average(self.qval_loss_hist_iteration)
@@ -609,7 +609,7 @@ class Multiprocess_RL_Environment:
             partial_log, single_runs , successful_runs, pg_info = self.sim_agents_discr[0].run_synch()
             
             # implementation for A3C
-            if self.rl_mode == 'AC' and self.update_policy_online:
+            if 'AC' in self.rl_mode and self.update_policy_online:
                 delta_theta_i, policy_loss, pg_entropy, valid_model = pg_info
                 if valid_model:
                     self.global_pg_loss.append(policy_loss)
@@ -629,18 +629,18 @@ class Multiprocess_RL_Environment:
         progress(round(1000*self.shared_memory.fill_ratio), 1000 , 'Fill memory')
                 
         if not memory_fill_only:
-            if self.rl_mode == 'AC' and self.policy_loaded and not self.update_policy_online:
+            if 'AC' in self.rl_mode and self.policy_loaded and not self.update_policy_online:
                 if DEBUG_MODEL_VERSIONS:
                     model_version_update = self.check_model_version(print_out = False, mode = 'update', save_v0 = False)
                     print(f'model_version_sim = {model_version_sim}')
                     print(f'model_version_update = {model_version_update}')
                 policy_loss, pg_entropy =  self.nn_updater.update_DeepRL('policy', self.shared_memory.memory ) 
                 
-            elif self.rl_mode == 'AC' and self.update_policy_online:
+            elif 'AC' in self.rl_mode and self.update_policy_online:
                 #model_diff = np.round(self.model_pg.compare_weights(initial_pg_weights), 5)
                 #print(f'PG model change: {model_diff}')
-                policy_loss = np.round(sum(temp_pg_loss)/len(temp_pg_loss), 3)
-                pg_entropy =  np.round(sum(temp_entropy)/len(temp_entropy), 3)
+                policy_loss = np.round(sum(temp_pg_loss)/(1e-5+len(temp_pg_loss)), 3)
+                pg_entropy =  np.round(sum(temp_entropy)/(1e-5+len(temp_entropy)), 3)
                 print(f'average policy loss : {policy_loss}')
                 print(f'average pg entropy  : {pg_entropy}')
 
@@ -674,7 +674,7 @@ class Multiprocess_RL_Environment:
             #        raise('missing internal memory pool')
             
             # 1) start qv update based on existing memory stored
-            if not memory_fill_only:
+            if not memory_fill_only and not self.rl_mode == 'staticAC':
                 if ray.get(self.nn_updater.hasMemoryPool.remote()) and not qv_update_launched:
                     # this check is required to ensure nn_udater has finished loading the memory 
                     #(in asynchronous setting this could take long)
@@ -691,7 +691,7 @@ class Multiprocess_RL_Environment:
                         # partial_log contains 1) duration and 2) cumulative reward of every single-run
                         
                         # implementation for A3C
-                        if self.rl_mode == 'AC' and self.update_policy_online:
+                        if 'AC' in self.rl_mode  and self.update_policy_online:
                             delta_theta_i, policy_loss, pg_entropy, valid_model = pg_info
                             if valid_model:
                                 self.global_pg_loss.append(policy_loss)
@@ -731,13 +731,15 @@ class Multiprocess_RL_Environment:
             
         print('')
         
-        if self.rl_mode == 'AC' and self.update_policy_online:
+        if 'AC' in self.rl_mode and self.update_policy_online:
             #model_diff = np.round(self.model_pg.compare_weights(initial_pg_weights), 5)
             #print(f'PG model change: {model_diff}')
-            policy_loss = np.round(sum(temp_pg_loss)/len(temp_pg_loss), 3)
-            pg_entropy =  np.round(sum(temp_entropy)/len(temp_entropy), 3)
+            policy_loss = np.round(sum(temp_pg_loss)/(1e-5+len(temp_pg_loss)), 3)
+            pg_entropy =  np.round(sum(temp_entropy)/(1e-5+len(temp_entropy)), 3)
             print(f'average policy loss : {policy_loss}')
             print(f'average pg entropy  : {pg_entropy}')
+            
+        print(f'average cum-reward  : {np.round(np.average(total_log[:,1]),2)}')
             
         # log training history
         if qv_update_launched:
@@ -746,7 +748,6 @@ class Multiprocess_RL_Environment:
             self.qval_loss_hist_iteration = np.array(ray.get(updating_process))
             average_qval_loss = np.round(np.average(self.qval_loss_hist_iteration), 3)
             print(f'QV. loss = {np.round(average_qval_loss, 3)}')
-            print(f'average cum-reward  : {np.round(np.average(total_log[:,1]),2)}')
                   
             # 2) update policy and get policy loss (single batch, no need to average)) 
             if self.rl_mode == 'AC' and self.policy_loaded and not self.update_policy_online:
@@ -964,7 +965,7 @@ class Multiprocess_RL_Environment:
         # initialize models (will be transferred to NN updater)
         model_pg = None
         model_qv = self.generate_model()
-        if self.rl_mode == 'AC':
+        if 'AC' in self.rl_mode:
             model_pg = self.generate_model(pg_model=True)
         if self.ray_parallelize:
             self.nn_updater = Ray_RL_Updater.remote()
