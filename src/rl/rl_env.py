@@ -59,13 +59,7 @@ class Multiprocess_RL_Environment:
                  rewards = np.ones(5), validation_set_ratio = 4, env_options = {}, pg_partial_update = False, 
                  beta_PG = 1, n_epochs_PG = 100, batch_size_PG = 32, noise_factor = 1):
         
-        self.update_policy_online = True
         self.one_vs_one = False
-        
-        if self.update_policy_online:
-            self.global_pg_loss = []
-            self.global_pg_entropy = []
-
         
         ####################### net/environment initialization
         # check if env/net types make sense
@@ -82,6 +76,13 @@ class Multiprocess_RL_Environment:
         self.net_type = net_type
         self.env_type = env_type
         self.rl_mode = rl_mode
+        
+        self.update_policy_online = True and self.rl_mode != 'DQL'
+        if self.update_policy_online:
+            self.global_pg_loss = []
+            self.global_pg_entropy = []
+
+
         
         self.training_session_number = 0 #by default ==0, if saved net is loaded this will be changed
         self.update_net_name()
@@ -418,7 +419,7 @@ class Multiprocess_RL_Environment:
             
             # this loads models' params (both qv and pg)
             #self.model_qv.cpu()
-            self.update_model_cpu()
+            self.update_model_cpu(reload = True)
             
             # loss history file
             loss_history_file = os.path.join(self.storage_path, 'loss_history_'+ str(self.training_session_number) + '.npy')
@@ -454,10 +455,10 @@ class Multiprocess_RL_Environment:
                                         
             if self.update_policy_online:
                 filename_pg_train = os.path.join(self.storage_path, 'PG_training'+ '.npy')
-                np_pg_hist = np.load(filename_pg_train)[:self.training_session_number]
-                
-                self.global_pg_loss    = np_pg_hist[:,0].tolist()
-                self.global_pg_entropy = np_pg_hist[:,1].tolist()
+                if os.path.isfile(filename_pg_train):
+                    np_pg_hist = np.load(filename_pg_train)[:self.training_session_number]
+                    self.global_pg_loss    = np_pg_hist[:,0].tolist()
+                    self.global_pg_entropy = np_pg_hist[:,1].tolist()
 
 
     ##################################################################################
@@ -527,7 +528,7 @@ class Multiprocess_RL_Environment:
 
 
     ##################################################################################
-    def update_model_cpu(self):
+    def update_model_cpu(self, reload = False):
         """Upload the correct model on CPU (used to select the action when a simulation is run) """
         device_cpu = torch.device('cpu')
  
@@ -537,8 +538,12 @@ class Multiprocess_RL_Environment:
             self.env_discr.update_model(self.model_qv)
        
         if self.rl_mode == 'AC': 
-            #if os.path.isfile(os.path.join(self.storage_path,self.net_name + '_policy.pt')):
-            self.model_pg.load_net_params(self.storage_path,self.net_name + '_policy', device_cpu)
+            # "reload" flag handles the situation where initial training has only been performed with QV network
+            if reload and not os.path.isfile(os.path.join(self.storage_path,self.net_name + '_policy.pt')):
+                self.model_pg.init_weights()
+                self.model_pg.save_net_params(self.storage_path,self.net_name+ '_policy')
+            else:
+                self.model_pg.load_net_params(self.storage_path,self.net_name + '_policy', device_cpu)
             self.policy_loaded = True
         return True
 
@@ -638,8 +643,8 @@ class Multiprocess_RL_Environment:
                 pg_entropy =  np.round(sum(temp_entropy)/len(temp_entropy), 3)
                 print(f'average policy loss : {policy_loss}')
                 print(f'average pg entropy  : {pg_entropy}')
-                print(f'average cum-reward  : {np.round(np.average(total_log[:,1]),2)}')
 
+            print(f'average cum-reward  : {np.round(np.average(total_log[:,1]),2)}')
             self.get_log(total_runs, total_log, qval_loss = average_qval_loss, policy_loss = policy_loss , pg_entropy = pg_entropy)
 
 
@@ -706,15 +711,15 @@ class Multiprocess_RL_Environment:
                     # 2.1.1) run another task if required
                     if not self.shared_memory.isPartiallyFull(min_fill_ratio):
                         
-                        agent.setAttribute.remote('model_pg',self.model_pg)
-                        
-                        # check model differences - REQUIRED to ensure synchronization before 
-                        model_diff = 1
-                        time_in = time.time()
-                        while np.round(model_diff, 3) >= 0.001:
-                            model_diff = self.model_pg.compare_weights( ray.get(agent.getAttributeValue.remote('model_pg')).state_dict()  )
-                            if check_WhileTrue_timeout(time_in, 5):
-                                raise('model in simulator different from current consensus model')
+                        if self.update_policy_online:
+                            agent.setAttribute.remote('model_pg',self.model_pg)
+                            # check model differences - REQUIRED to ensure synchronization before 
+                            model_diff = 1
+                            time_in = time.time()
+                            while np.round(model_diff, 3) >= 0.001:
+                                model_diff = self.model_pg.compare_weights( ray.get(agent.getAttributeValue.remote('model_pg')).state_dict()  )
+                                if check_WhileTrue_timeout(time_in, 5):
+                                    raise('model in simulator different from current consensus model')
                         
                         task_lst[i] = agent.run.remote()
                     
@@ -733,7 +738,6 @@ class Multiprocess_RL_Environment:
             pg_entropy =  np.round(sum(temp_entropy)/len(temp_entropy), 3)
             print(f'average policy loss : {policy_loss}')
             print(f'average pg entropy  : {pg_entropy}')
-            print(f'average cum-reward  : {np.round(np.average(total_log[:,1]),2)}')
             
         # log training history
         if qv_update_launched:
@@ -742,6 +746,7 @@ class Multiprocess_RL_Environment:
             self.qval_loss_hist_iteration = np.array(ray.get(updating_process))
             average_qval_loss = np.round(np.average(self.qval_loss_hist_iteration), 3)
             print(f'QV. loss = {np.round(average_qval_loss, 3)}')
+            print(f'average cum-reward  : {np.round(np.average(total_log[:,1]),2)}')
                   
             # 2) update policy and get policy loss (single batch, no need to average)) 
             if self.rl_mode == 'AC' and self.policy_loaded and not self.update_policy_online:

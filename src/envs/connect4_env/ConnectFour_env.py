@@ -10,6 +10,9 @@ import numpy as np
 import torch
 import gym
 from gym import spaces
+import os
+import csv
+import random
 
 import colorama
 from colorama import Back, Style
@@ -20,9 +23,13 @@ colorama.init()
 
 class ConnectFour(gym.Env):
     
-    def __init__(self, rewards = [100,1], pause = 2, print_out = False, use_NN = False):
+    def __init__(self, rewards = [100,1], pause = 2, print_out = False, \
+                 pure_resets_pctg = 0.2 , use_NN = False, random_init = True, \
+                     update_boards_bank = False):
         
         self.env_type = 'Connect4'
+        
+        self.random_init = random_init
         
         self.width = 7
         self.height = 6
@@ -35,12 +42,18 @@ class ConnectFour(gym.Env):
             self.pause = pause
         self.use_NN = use_NN
         self.rewards = rewards
+        
+        self.pure_resets_pctg = pure_resets_pctg
 
         self.action_space = spaces.Box(low=np.array([0]), high=np.array([self.width-1])) 
         
         self.board = np.zeros((self.height+1,self.width), dtype = np.int8) 
         self.next_mover = None
     
+        self.update_boards_bank = update_boards_bank
+        self.board_bank = []
+        if self.random_init:
+            self.load_board_bank()
     
     ###################################
     """ these three methods are needed in sim env / rl env"""
@@ -53,6 +66,17 @@ class ConnectFour(gym.Env):
     def get_observations_structure(self):
         return len(self.get_state())
     ###################################
+
+
+    def initialize_board(self):
+        """ board initialization """
+        if self.random_init and np.random.random() > self.pure_resets_pctg :
+            invalid_board = True
+            while invalid_board:
+                self.board = (np.reshape(np.array(random.choice(self.board_bank )), (self.height+1,self.width) )).astype(np.int8)
+                invalid_board = any(self.board[-1,:])
+        else:
+            self.board = np.zeros((self.height+1,self.width), dtype = np.int8)         
 
         
     def update_model(self, external_model):
@@ -76,18 +100,18 @@ class ConnectFour(gym.Env):
                     print('--------------')
         print('--------------')
     
+    
     def reset(self, **kwargs):
-        
         self.moves_counter = 0
-        
-        self.board = np.zeros((self.height+1,self.width), dtype = np.int8)         
-        if np.random.random()<0.5:
+        self.recorded_boards = []
+        self.initialize_board()
+        if np.random.random()<0.5 or self.random_init:
             self.next_mover = 'player'
-        
-        self.next_mover = 'opponent'
-        opp_move = self.generate_random_move()
-        self.apply_move(opp_move, own = False)
-        self.next_mover = 'player'
+        else:        
+            self.next_mover = 'opponent'
+            opp_move = self.generate_random_move()
+            self.apply_move(opp_move, own = False)
+            self.next_mover = 'player'
         
     def apply_move(self, action, own = True):
         free_slot = np.where(self.board[:,action]== 0)[0].min()
@@ -106,6 +130,27 @@ class ConnectFour(gym.Env):
             action = np.random.randint(self.width)
             count += 1
         return action
+
+
+    def save_board_bank(self):
+        """ save extended list of possible initial conditions"""
+        filename = os.path.join(os.path.dirname(__file__), 'board_bank.csv')
+        new_bank = [list(i) for i in set(tuple(i) for i in self.board_bank)]
+        with open(filename, 'w') as f: 
+            # using csv.writer method from CSV package 
+            write = csv.writer(f) 
+            write.writerows(new_bank) 
+
+            
+    def load_board_bank(self):
+        """ load list of possible initial conditions"""
+        filename = os.path.join(os.path.dirname(__file__), 'board_bank.csv')
+        with open(filename, 'r') as f: 
+            # using csv.reader method from CSV package 
+            csv_reader = csv.reader(f)
+            # Pass reader object to list() to get a list of lists
+            self.board_bank = [list(map(int, row)) for row in csv_reader ]
+
 
     def step(self, action, *args, **kwargs):
         
@@ -140,6 +185,16 @@ class ConnectFour(gym.Env):
                 done = True
                 info={'outcome':'draw'}
                 reward = 0
+            elif self.update_boards_bank:
+                self.recorded_boards.append(self.get_state().tolist())
+
+        if any(self.board[-1,:]):
+            info={'outcome':'fail'}
+            done = True
+            reward = -self.rewards[0]
+        elif done and self.update_boards_bank:
+            [self.board_bank.append(new_board) for new_board in self.recorded_boards]
+            self.save_board_bank()
 
         if self.print_out:
             self.render()
@@ -275,22 +330,24 @@ def search_sequence_numpy(arr,seq):
 
 if __name__ == "__main__":
 
-    game = ConnectFour(print_out=True)
+    game = ConnectFour(print_out=False, random_init = True, update_boards_bank = True)
     
-    #for i in range(100):
-    #    print(f'Game Nr. {i+1}')
+    for i in range(200):
+        print(f'Game Nr. {i+1}')
     
-    game.reset()
-    done = False
+        game.reset()
+        done = False
     
-    while not done:
+        while not done:
+            
+            my_action = game.generate_random_move()
+            _,_,done,info = game.step(my_action)
+            #game.render()
         
-        my_action = game.generate_random_move()
-        _,_,done,info = game.step(my_action)
-        #game.render()
-    
-    print(info['outcome'])
-    if info['outcome']!='fail':
-        idxs = game.get_four_straight_idxs(own = (info['outcome']=='player'))
-        #print(idxs)
-        game.render(idxs)
+        """
+        print(info['outcome'])
+        if info['outcome']!='fail':
+            idxs = game.get_four_straight_idxs(own = (info['outcome']=='player'))
+            #print(idxs)
+            game.render(idxs)
+        """

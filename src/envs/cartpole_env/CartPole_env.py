@@ -90,7 +90,9 @@ class CartPoleEnv(gym.Env):
 
 
     #####################################################################################################            
-    def step(self,action):
+    def step(self,action, *args):
+        
+        info = {'outcome' : None}
         
         self.generate_target()
         if self.duration == 0:
@@ -113,10 +115,12 @@ class CartPoleEnv(gym.Env):
         if  np.abs(self.state[2]) > np.pi/2:
             done = True
             reward = self.done_reward[0] # 50   # 
+            info['outcome'] = 'fail'
         
         elif np.abs(self.state[0]-self.x_target) > self.max_distance:
             done = True
             reward = self.done_reward[1]
+            info['outcome'] = 'fail'
             
         else:
             #print(f'current time = {self.duration}, max time = {self.sim_length_max}')
@@ -127,6 +131,7 @@ class CartPoleEnv(gym.Env):
             if self.duration >= self.sim_length_max:
                 reward += self.done_reward[2]
                 done = True
+                info['outcome'] = 'success'
             else:
                 done = False
         
@@ -136,7 +141,7 @@ class CartPoleEnv(gym.Env):
             self.stored_states_sequence = np.append(self.cartpole.solution, self.cartpole.target_pos[:,np.newaxis], axis=1)
             self.stored_ctrl_sequence = self.cartpole.ctrl_inputs
         
-        return self.state, reward, done, {}
+        return self.state, reward, done, info
 
 
     #####################################################################################################

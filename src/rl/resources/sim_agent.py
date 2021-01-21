@@ -76,6 +76,8 @@ class SimulationAgent:
         self.env = env
         
         self.n_actions = self.env.get_actions_structure()
+        self.calculate_max_entropy()
+        
         #(self.env.n_bins_act+1)**(self.env.act_shape[0])  # n_actions depends strictly on the type of environment
         
         self.model_qv = model_qv
@@ -252,6 +254,12 @@ class SimulationAgent:
             else:
                 self.simulation_log = np.append(self.simulation_log, single_run_log, axis = 0)
                 
+    ##################################################################################        
+    def calculate_max_entropy(self):
+        p = 1/self.n_actions*torch.ones((1,self.n_actions))
+        self.max_entropy = -torch.sum(torch.log(p)*p).item() 
+        
+         
 
     ##################################################################################
     def pg_update_online(self, reward, state_0, state_1, prob, action_idx, done, valid):
@@ -263,7 +271,14 @@ class SimulationAgent:
             advantage = reward + self.gamma * torch.max(self.model_qv(state_1.float())) \
                                 - torch.max(self.model_qv(state_0.float()))
             
-            self.loss_policy += -advantage.cpu()*torch.log(prob_pract[:,action_idx]) + self.beta_PG*entropy
+            target_entropy = self.max_entropy*( 0.1 + 0.5*self.epsilon )
+            
+            self.loss_policy += -advantage.cpu()*torch.log(prob_pract[:,action_idx]) \
+                                + self.beta_PG*entropy
+            #    - self.beta_PG*(entropy - target_entropy)**2
+            
+            #print(f'target entropy : {target_entropy}')
+            #print(f'actual entropy {entropy.item()}')
             
             if done:
                 self.loss_policy.backward()
@@ -289,6 +304,7 @@ class SimulationAgent:
     ##################################################################################
     def run_synch(self, use_NN = False, pctg_ctrl = 0, test_qv = False):
 
+        force_stop = False
         pg_info = None
         pg_loss_hist = []
         entropy_hist = []
@@ -359,17 +375,16 @@ class SimulationAgent:
     ##################################################################################
     async def run(self, use_NN = False, test_qv = False):
         
-        # check if model contains nan
-        for k,v in self.model_pg.state_dict().items():
-            if torch.isnan(v).any():
-                raise('nan tensor from start')
-        
+        force_stop = False
         pg_info = None
         pg_loss_hist = []
         entropy_hist = []
-
         
-        if self.update_policy_online:
+        if self.update_policy_online and self.rl_mode == 'AC':
+            # check if model contains nan
+            for k,v in self.model_pg.state_dict().items():
+                if torch.isnan(v).any():
+                    raise('nan tensor from start')
             loss_pg = 0
             enthropy = 0
             delta_theta = {}
