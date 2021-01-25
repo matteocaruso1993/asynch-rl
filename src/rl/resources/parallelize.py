@@ -54,10 +54,10 @@ class Ray_RL_Updater(RL_Updater):
 
             await asyncio.sleep(0.00001)
             
-            if self.rl_mode == 'DQL':
-                stop_update = (epochs >= self.n_epochs)
-            elif self.rl_mode == 'AC':
+            if self.rl_mode == 'DQL' or self.rl_mode == 'AC':
                 stop_update = self.sim_complete
+            elif self.rl_mode == 'singleNetAC':
+                stop_update = (epochs >= self.n_epochs)
             else:
                 raise('Undefined RL mode')
             

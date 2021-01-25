@@ -57,7 +57,7 @@ class Multiprocess_RL_Environment:
                  ctrlr_prob_annealing_factor = .9,  ctrlr_probability = 0, difficulty = 0, \
                  memory_turnover_ratio = 0.2, val_frequency = 10, bashplot = False, layers_width= (5,5), \
                  rewards = np.ones(5), validation_set_ratio = 4, env_options = {}, pg_partial_update = False, 
-                 beta_PG = 1, n_epochs_PG = 100, batch_size_PG = 32, noise_factor = 1):
+                 beta_PG = [1, 1] , n_epochs_PG = 100, batch_size_PG = 32, noise_factor = 1):
         
         self.one_vs_one = False
         
@@ -65,7 +65,7 @@ class Multiprocess_RL_Environment:
         # check if env/net types make sense
         allowed_envs = ['RobotEnv', 'CartPole', 'Platoon', 'Chess', 'Connect4', 'DicePoker']
         allowed_nets = ['ConvModel', 'LinearModel'] #, 'LinearModel0', 'LinearModel1', 'LinearModel2', 'LinearModel3', 'LinearModel4']
-        allowed_rl_modes = ['DQL', 'AC', 'staticAC']
+        allowed_rl_modes = ['DQL', 'AC', 'staticAC', 'singleNetAC']
         
         self.net_version = net_version
         
@@ -306,7 +306,7 @@ class Multiprocess_RL_Environment:
     def updateRLUpdaterAttributesExcept(self, *args):
   
         for rl_env_attr, value_out in self.__dict__.items():
-            if self.ray_parallelize:
+            if self.ray_parallelize and not self.rl_mode == 'singleNetAC':
                 for updater_attr in ray.get(self.nn_updater.getAttributes.remote() ):
                     if rl_env_attr == updater_attr and rl_env_attr not in args:
                             self.nn_updater.setAttribute.remote(updater_attr,value_out)
@@ -328,6 +328,8 @@ class Multiprocess_RL_Environment:
             if self.ray_parallelize:
                 for sim_ag_attr in ray.get(self.sim_agents_discr[0].getAttributes.remote() ):
                     if rl_env_attr == sim_ag_attr and rl_env_attr not in args:
+                        if rl_env_attr == 'model_qv' or rl_env_attr == 'model_pg':
+                            stop_here = 1
                         for agent in self.sim_agents_discr:
                             agent.setAttribute.remote(sim_ag_attr,value_out)
             else:
@@ -513,7 +515,7 @@ class Multiprocess_RL_Environment:
                 else:
                     model = self.nn_updater.getAttributeValue('model_pg')
             elif self.rl_mode == 'DQL':
-                if self.ray_parallelize:
+                if self.ray_parallelize and not self.rl_mode == 'singleNetAC':
                     model = ray.get(self.nn_updater.getAttributeValue.remote('model_qv'))
                 else:
                     model = self.nn_updater.getAttributeValue('model_qv')                
@@ -551,7 +553,7 @@ class Multiprocess_RL_Environment:
     def saveTrainIteration(self, last_iter = False):
         # we save the model at every iterations, memory only at the end (not inside this function)
         
-        if self.ray_parallelize:
+        if self.ray_parallelize and not self.rl_mode == 'singleNetAC':
             # save generated model (parallelized version)
             self.nn_updater.save_model.remote(self.storage_path,self.net_name)
         else:
@@ -648,6 +650,7 @@ class Multiprocess_RL_Environment:
             self.get_log(total_runs, total_log, qval_loss = average_qval_loss, policy_loss = policy_loss , pg_entropy = pg_entropy)
 
 
+
     ##################################################################################
     def runParallelized(self, memory_fill_only = False):
         
@@ -732,8 +735,8 @@ class Multiprocess_RL_Environment:
         print('')
         
         if 'AC' in self.rl_mode and self.update_policy_online:
-            #model_diff = np.round(self.model_pg.compare_weights(initial_pg_weights), 5)
-            #print(f'PG model change: {model_diff}')
+            model_diff = np.round(self.model_pg.compare_weights(initial_pg_weights), 5)
+            print(f'PG model change: {model_diff}')
             policy_loss = np.round(sum(temp_pg_loss)/(1e-5+len(temp_pg_loss)), 3)
             pg_entropy =  np.round(sum(temp_entropy)/(1e-5+len(temp_entropy)), 3)
             print(f'average policy loss : {policy_loss}')
@@ -747,7 +750,7 @@ class Multiprocess_RL_Environment:
             # 1) compute qv average loss
             self.qval_loss_hist_iteration = np.array(ray.get(updating_process))
             average_qval_loss = np.round(np.average(self.qval_loss_hist_iteration), 3)
-            print(f'QV. loss = {np.round(average_qval_loss, 3)}')
+            print(f'QV. loss = {average_qval_loss}')
                   
             # 2) update policy and get policy loss (single batch, no need to average)) 
             if self.rl_mode == 'AC' and self.policy_loaded and not self.update_policy_online:
@@ -761,6 +764,121 @@ class Multiprocess_RL_Environment:
                 
             #3) store computed losses
             self.get_log(total_runs, total_log, qval_loss = average_qval_loss, policy_loss = policy_loss , pg_entropy = pg_entropy)
+
+
+    ##################################################################################
+    def runParallelized_singleNet(self, memory_fill_only = False):
+              
+        
+        total_log = np.zeros((1,2),dtype = np.float)
+        average_qval_loss = policy_loss = pg_entropy = np.nan
+        total_runs = 0        
+        
+        temp_pg_loss = []
+        temp_entropy = []
+        
+        # 1) first we update the net (QV process)
+        if not memory_fill_only:
+            if self.nn_updater.hasMemoryPool():
+                # this check is required to ensure nn_udater has finished loading the memory 
+               
+                if self.nn_updater.move_to_cuda:
+                    self.nn_updater.move_qv_to_cuda()
+                
+                total_loss, _ = self.nn_updater.update_DeepRL()
+
+                # 1) compute qv average loss
+                self.qval_loss_hist_iteration = np.array(total_loss)
+                average_qval_loss = np.round(np.average(self.qval_loss_hist_iteration), 3)
+                print(f'QV. loss = {np.round(average_qval_loss, 3)}')
+
+        updated_qv_model = self.nn_updater.getAttributeValue('model_qv').cpu()
+        #self.model_qv = updated_qv_model
+        
+        for k in self.model_pg.state_dict().keys():
+            self.model_pg.state_dict()[k] = updated_qv_model.state_dict()[k].clone()
+            self.model_qv.state_dict()[k] = updated_qv_model.state_dict()[k].clone()
+        
+        self.updateAgentsAttributesExcept(print_attribute=['env','env','model','model_version'])
+        
+        # 2) we perform disributed PG
+        # to avoid wasting simulations
+        min_fill_ratio = 0.95
+        task_lst = [None for _ in self.sim_agents_discr]
+       
+        while True:
+               
+            # start parallel simulations
+            for i, agent in enumerate(self.sim_agents_discr):
+                
+                # 2.1) get info from complete processes
+                if not ray.get(agent.isRunning.remote()): 
+                    if task_lst[i] is not None:
+                        partial_log, single_runs, successful_runs, pg_info = ray.get(task_lst[i])
+                        # partial_log contains 1) duration and 2) cumulative reward of every single-run
+                        
+                        # implementation for A3C
+                        if 'AC' in self.rl_mode  and self.update_policy_online:
+                            delta_theta_i, policy_loss, pg_entropy, valid_model = pg_info
+                            if valid_model:
+                                self.global_pg_loss.append(policy_loss)
+                                self.global_pg_entropy.append(pg_entropy)
+                                temp_pg_loss.append(policy_loss)
+                                temp_entropy.append(pg_entropy)
+                                for k in self.model_pg.state_dict().keys():
+                                    self.model_pg.state_dict()[k] += delta_theta_i[k]
+                        
+                        task_lst[i] = None
+                        total_log = np.append(total_log, partial_log, axis = 0)
+                        total_runs += single_runs
+                        
+                        self.shared_memory.addMemoryBatch(ray.get(agent.emptyLocalMemory.remote()) )
+                        progress(round(1000*self.shared_memory.fill_ratio), 1000 , f'Fill memory - {self.shared_memory.size}')
+                    
+                    # 2.1.1) run another task if required
+                    if not self.shared_memory.isPartiallyFull(min_fill_ratio):
+                        
+                        if self.update_policy_online:
+                            agent.setAttribute.remote('model_pg',self.model_pg)
+                            # check model differences - REQUIRED to ensure synchronization before 
+                            model_diff = 1
+                            time_in = time.time()
+                            while np.round(model_diff, 3) >= 0.001:
+                                model_diff = self.model_pg.compare_weights( ray.get(agent.getAttributeValue.remote('model_pg')).state_dict()  )
+                                if check_WhileTrue_timeout(time_in, 5):
+                                    raise('model in simulator different from current consensus model')
+                        
+                        task_lst[i] = agent.run.remote()
+                    
+            # if memory is (almost) full and task list empty, inform qv update it can stop
+            if self.shared_memory.isPartiallyFull(min_fill_ratio) and all(tsk is None for tsk in task_lst):
+                break
+
+
+        if self.nn_updater.move_to_cuda:
+            self.nn_updater.move_qv_to_cuda()
+            
+        for k in self.model_qv.state_dict().keys():
+            self.model_qv.state_dict()[k] = self.model_pg.state_dict()[k]
+            self.nn_updater.model_qv.state_dict()[k] = (self.model_pg.state_dict()[k]).to(self.nn_updater.device)
+
+
+            
+        print('')
+        
+        if 'AC' in self.rl_mode and self.update_policy_online:
+            #model_diff = np.round(self.model_pg.compare_weights(initial_pg_weights), 5)
+            #print(f'PG model change: {model_diff}')
+            policy_loss = np.round(sum(temp_pg_loss)/(1e-5+len(temp_pg_loss)), 3)
+            pg_entropy =  np.round(sum(temp_entropy)/(1e-5+len(temp_entropy)), 3)
+            print(f'average policy loss : {policy_loss}')
+            print(f'average pg entropy  : {pg_entropy}')
+            
+        print(f'average cum-reward  : {np.round(np.average(total_log[:,1]),2)}')
+            
+        # log training history
+        #3) store computed losses
+        self.get_log(total_runs, total_log, qval_loss = average_qval_loss, policy_loss = policy_loss , pg_entropy = pg_entropy)
 
 
     ##################################################################################
@@ -953,7 +1071,7 @@ class Multiprocess_RL_Environment:
 
         else:
             # only update the net name (required to save/load net params)
-            if self.ray_parallelize:
+            if self.ray_parallelize and not self.rl_mode == 'singleNetAC':
                 self.nn_updater.setAttribute.remote('net_name',self.net_name)
             else:                
                 self.nn_updater.setAttribute('net_name',self.net_name)
@@ -967,7 +1085,7 @@ class Multiprocess_RL_Environment:
         model_qv = self.generate_model()
         if 'AC' in self.rl_mode:
             model_pg = self.generate_model(pg_model=True)
-        if self.ray_parallelize:
+        if self.ray_parallelize and not self.rl_mode == 'singleNetAC':
             self.nn_updater = Ray_RL_Updater.remote()
             self.updateRLUpdaterAttributesExcept()
             self.nn_updater.load_model.remote(model_qv, model_pg, reset_optimizer)
@@ -988,7 +1106,7 @@ class Multiprocess_RL_Environment:
         
     ##################################################################################
     def load_memorystored_to_updater(self):            
-        if self.ray_parallelize:
+        if self.ray_parallelize and not self.rl_mode == 'singleNetAC':
             self.nn_updater.setAttribute.remote('memory_pool', self.memory_stored)
         else:
             self.nn_updater.setAttribute('memory_pool', self.memory_stored)
@@ -1005,7 +1123,7 @@ class Multiprocess_RL_Environment:
         else:
             new_memory = self.shared_memory.getMemoryAndEmpty()
             turnover_pctg_act = np.round(100*self.memory_stored.addMemoryBatch(new_memory),2)
-            if self.ray_parallelize:
+            if self.ray_parallelize and not self.rl_mode == 'singleNetAC':
                 self.nn_updater.update_memory_pool.remote(new_memory)
             else:
                 self.nn_updater.update_memory_pool(new_memory)
@@ -1044,11 +1162,14 @@ class Multiprocess_RL_Environment:
         self.pre_training_routine(reset_optimizer)
         
         # core functionality
-        if self.ray_parallelize:
+        if not self.ray_parallelize:
+            self.runSerialized()
+        elif self.rl_mode == 'singleNetAC':
+            self.runParallelized_singleNet()
+        else:
             # run simulations/training in parallel
             self.runParallelized()
-        else:
-            self.runSerialized()
+            
             
         # we update the name in order to save it
         self.training_session_number +=1        

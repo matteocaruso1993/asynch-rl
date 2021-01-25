@@ -47,7 +47,7 @@ class SimulationAgent:
         self.noise_sd = noise_sd
         self.prob_correction = 0.2 # probability of "correction" of "non sense random inputs" generated
         
-        self.beta_PG = 1
+        self.beta_PG = [1, 1]
         self.gamma = 0.99
         
         self.update_policy_online = True
@@ -274,7 +274,10 @@ class SimulationAgent:
             target_entropy = self.max_entropy*( 0.1 + 0.5*self.epsilon )
             
             self.loss_policy += -advantage.cpu()*torch.log(prob_pract[:,action_idx]) \
-                                - self.beta_PG*(1/(1e-2 + entropy))
+                                - self.beta_PG[0]*entropy \
+                                + self.beta_PG[1]*(1/(1e-2 + entropy)) \
+
+                                
             #    - self.beta_PG*(entropy - target_entropy)**2
             
             #print(f'target entropy : {target_entropy}')
@@ -292,6 +295,8 @@ class SimulationAgent:
                     if torch.isnan(v).any():
                         print('nan tensor after update')
                         return np.nan, np.nan, np.nan
+                    
+            #print(entropy.item())
 
             return loss_pg_i, entropy.item(), advantage.item()
 
@@ -593,7 +598,7 @@ class SimulationAgent:
             if random.random() <= self.epsilon and not use_NN:
                 #action_index = torch.argmax(prob_distrib + self.noise_sd*torch.randn(output.shape))
                 try:
-                    action_index = torch.multinomial(torch.clamp( (prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape)), 1e-5,1), 1, replacement=True)
+                    action_index = torch.multinomial(torch.clamp( (prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape)), 1e-10,1), 1, replacement=True)
                 except Exception:
                     action_index = torch.argmax(prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape))
                 noise_added = True

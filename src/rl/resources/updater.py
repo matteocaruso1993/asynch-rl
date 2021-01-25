@@ -90,6 +90,13 @@ class RL_Updater():
     def hasMemoryPool(self):
         return self.memory_pool is not None
        
+
+    ##################################################################################        
+    def move_qv_to_cuda(self):
+        self.model_qv = self.model_qv.cuda()
+
+       
+       
     #################################################
     # loading occurs based on current iteration loaded in the RL environment
     def load_model(self, model_qv, model_pg=None, reset_optimizer = False):
@@ -102,7 +109,7 @@ class RL_Updater():
         # load qv model
         self.model_qv = model_qv #self.rl_env.generate_model()
         if self.move_to_cuda:
-            self.model_qv = self.model_qv.cuda()
+            self.move_qv_to_cuda()
 
         if self.training_session_number >= 1:
             self.model_qv.load_net_params(self.storage_path,self.net_name, self.device, reset_optimizer = reset_optimizer)

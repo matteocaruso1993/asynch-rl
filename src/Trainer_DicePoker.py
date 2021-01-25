@@ -34,7 +34,7 @@ parser = ArgumentParser()
 parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100,
                     help="net version used")
 
-parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10, help="number of training iterations")
+parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 15, help="number of training iterations")
 
 parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
@@ -53,7 +53,7 @@ parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_rati
                     help="Ratio of Memory renewed at each iteration")
 
 
-parser.add_argument("-lr", "--learning-rate", dest="learning_rate",  nargs="*", type=float, default=[1e-4, 1e-4],
+parser.add_argument("-lr", "--learning-rate", dest="learning_rate",  nargs="*", type=float, default=[1e-4, 1e-3],
                     help="NN learning rate [QV, PG]. If parallelized, lr[QV] is ignored. If scalar, lr[QV] = lr[PG] = lr")
 
 parser.add_argument(
@@ -78,11 +78,14 @@ parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=boo
                     help="reset optimizer")
 
 parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC',
-                    help="RL mode (AC, DQL)")
+                    help="RL mode (AC, DQL, singleNetAC, staticAC)")
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.99, help="GAMMA parameter in QV learning")
 
-parser.add_argument("-b", "--beta", dest="beta", type=float, default=1, help="BETA parameter for entropy in PG learning")
+parser.add_argument("-b", "--beta",  nargs="*", dest="beta", type=float, default=[0.5 , 1e-4] , \
+                    help="BETA parameter for entropy in PG learning. b[0] determines speed of convergence, b[1] residual entropy to avoid determinism")
+
+parser.add_argument("-nf", "--noise-factor", dest="noise_factor", type=float, default=0.01, help="influences the variance of noise added to the probability distribution")
 
 # env specific parameters
 
@@ -111,7 +114,7 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
         epsilon_annealing_factor = 0.95,  mini_batch_size = [64, 32] , \
         memory_turnover_ratio = 0.1, val_frequency = 10, layers_width= (100,100),  \
         rewards = np.ones(4), reset_optimizer = False, rl_mode = 'DQL', \
-        gamma = 0.99, beta = 0.001 ):
+        gamma = 0.99, beta = [0.2, 0.001], noise_factor = 0.01 ):
 
     function_inputs = locals().copy()
     
@@ -169,7 +172,8 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
                                          learning_rate = learning_rate, \
                                          memory_turnover_ratio = memory_turnover_ratio, val_frequency = val_frequency ,\
                                          layers_width = layers_width, env_options = env_options, \
-                                         gamma = gamma, beta_PG = beta, validation_set_ratio = 1)
+                                         gamma = gamma, beta_PG = beta, validation_set_ratio = 1,\
+                                         noise_factor = noise_factor)
         
     rl_env.resume_epsilon = resume_epsilon
 
@@ -219,7 +223,7 @@ if __name__ == "__main__":
                val_frequency = args.val_frequency, memory_turnover_ratio = args.memory_turnover_ratio, \
                layers_width= args.layers_list, \
                reset_optimizer = args.reset_optimizer, rl_mode = args.rl_mode, \
-               beta = args.beta, gamma = args.gamma )
+               beta = args.beta, gamma = args.gamma , noise_factor = args.noise_factor)
         
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)
