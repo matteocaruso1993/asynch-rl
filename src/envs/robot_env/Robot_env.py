@@ -3,7 +3,6 @@ import os
 import numpy as np
 import numpy.matlib
 import matplotlib as mpl
-import time
 
 import matplotlib.pyplot as plt
 
@@ -39,8 +38,6 @@ from gym.utils import seeding
 #rendering
 from PIL import Image
 import matplotlib.patches as patches
-
-from rl.utilities import check_WhileTrue_timeout
 
 #%%
 
@@ -100,7 +97,7 @@ class RobotEnv(gym.Env):
     #####################################################################################################
     def __init__(self, lidar_n_rays = 165, \
                  collision_distance = 0.7, visualization_angle_portion = 0.5, lidar_range = 10,\
-                 v_linear_max = 1.5 , v_angular_max = 2 , rewards = [1,50,20], max_v_x_delta = .5, \
+                 v_linear_max = 1.5 , v_angular_max = 2 , rewards = [1,100,20], max_v_x_delta = .5, \
                  initial_margin = .3,    max_v_rot_delta = .5, dt = None, normalize_obs_state = True, \
                      sim_length = 120, difficulty = 0, scan_noise = [0.005,0.002]):
         
@@ -168,7 +165,7 @@ class RobotEnv(gym.Env):
         pass
 
     #####################################################################################################            
-    def step(self,action):
+    def step(self,action,*args):
         # initial distance
         dist_0 = self.robot.target_rel_position(self.target_coordinates[:2])[0]
         
@@ -206,15 +203,27 @@ class RobotEnv(gym.Env):
             done = True
         """
         
+        #self.rewards[0] -> one more time-step (penalty)  
+        #self.rewards[1] -> success/failure reward
+        #self.rewards[2] -> rotation_penalty
+        
+        
+        failure_penalty = self.rewards[1]*(1+(dist_1/self.distance_init)**2)
+        
+        #cum_rotations = (self.rotation_counter/(2*np.pi))
+        #rotations_penalty = self.rewards[2] * cum_rotations / (1+self.duration)
+        
+        speed_penalty = 1-dot_x/self.max_v_x_delta
+        ang_speed_penalty = np.abs(dot_orient)/self.max_v_rot_delta
         
         # if pedestrian is hit
         if self.robot.check_pedestrians_collision(1):
-            reward = -2*self.rewards[1]
+            reward = -failure_penalty 
             done = True
             
         # if obstacle is hit
         elif self.robot.check_obstacle_collision():
-            reward = -self.rewards[1]
+            reward = -failure_penalty 
             done = True
         
         # if target is reached            
@@ -229,7 +238,12 @@ class RobotEnv(gym.Env):
             t = self.duration
             rel_rew = (t_max-t)/(t_max - t_min)
             
-            reward = self.rewards[2]*rel_rew* weight
+            # reward is proportional to distance covered / speed in getting to target
+            reward = self.rewards[1]*rel_rew* weight
+            
+            # we add a penalty due to excessive rotations
+
+            #reward -= rotations_penalty
            
             #print(f'final reward is {reward}')
             done = True
@@ -239,14 +253,15 @@ class RobotEnv(gym.Env):
             self.duration += self.dt
             # if time expired
             if self.duration >= self.sim_length:
-                reward = -self.rewards[2]
+                reward = 0.5*failure_penalty
                 done = True
             else:
                 # if nothing happened
-                reward = -self.rewards[0] #*(100*(dist_1-dist_0)/self.target_distance_max)
-                
                 peds_distances = self.robot.getPedsDistances()
-                danger_penalty = 0.005 * np.sum( (self.lidar_range - peds_distances[peds_distances < self.lidar_range])**2 )
+                danger_penalty = np.sum( (1 - peds_distances[peds_distances < self.lidar_range]/self.lidar_range)**2 )
+
+                reward = self.rewards[0]* (1 - 0.5*speed_penalty - 0.5*ang_speed_penalty\
+                                           - 0.2*danger_penalty) #+ 10*(dist_0-dist_1)/self.target_distance_max)
                 
                 #print(f'instant reward = {reward}')
                 #print(f'danger penalty = {danger_penalty}')
@@ -254,12 +269,6 @@ class RobotEnv(gym.Env):
                 reward -= danger_penalty
                 done = False
                 
-        if done and self.duration >= 5:
-            cum_rotations = (self.rotation_counter/(2*np.pi))
-            rotations_penalty = 20 * cum_rotations / (self.duration)
-            reward -= rotations_penalty
-            #print(f'cum rotations =  {cum_rotations}')
-            #print(f'rotations penalty =  {rotations_penalty}')
             
         return self._get_obs(), reward, done, {}
     
@@ -273,15 +282,15 @@ class RobotEnv(gym.Env):
 
         low_bound,high_bound = self._getPositionBounds()   
         
+        count = 0
+        min_distance = (high_bound[0]-low_bound[0])/10
         while True:
-            if 'time_in' not in locals():
-                time_in = time.time()
-            if check_WhileTrue_timeout(time_in, t_max = 10):
-                break
-                             
             self.target_coordinates = np.random.uniform(low = np.array(low_bound), high = np.array(high_bound),size=3)
-            if np.amin(np.sqrt(np.sum((self.robot.map.obstaclesCoordinates - self.target_coordinates[:2])**2, axis = 1)))>10:
+            if np.amin(np.sqrt(np.sum((self.robot.map.obstaclesCoordinates - self.target_coordinates[:2])**2, axis = 1)))>min_distance:
                 break
+            count +=1
+            if count >= 100:
+                raise('suitable initial coordinates not found')
             
         # if initial condition is too close (1.5m) to obstacle or pedestrians, generate new initial condition
         while self.robot.check_collision(1.5) or self.robot.checkOutOfBounds(margin = 0.2):

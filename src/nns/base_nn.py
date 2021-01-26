@@ -131,7 +131,11 @@ class nnBase(nn.Module):
         
         try:
             checkpoint = torch.load(filename_pt, map_location=device)
-            self.model_version = checkpoint['model_version']
+            if 'model_version' in checkpoint:
+                self.model_version = checkpoint['model_version']
+            else: 
+                parts = net_name.rsplit('_')
+                self.model_version = int(parts[1])
             
         except Exception:
             

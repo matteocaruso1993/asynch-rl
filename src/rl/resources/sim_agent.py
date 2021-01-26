@@ -494,7 +494,7 @@ class SimulationAgent:
                 action = 0*action
                 action_index = self.env.get_action_idx(info['move changed'])
                 action[ action_index ] = 1
-            elif self.show_rendering or DEBUG:
+            elif self.show_rendering and DEBUG:
                 # we show the selected action of the not corrected ones
                 print(f'selected action = {self.env.boolarray_to_action(action_bool_array)}')
 
@@ -525,6 +525,9 @@ class SimulationAgent:
             self.internal_memory.addInstance(new_transition)
             # set state to be state_1 (for next iteration)
             #state = state_1
+            
+            if not 'outcome' in info:
+                info['outcome'] = None
             
         return state_1, reward_np, done, info
     

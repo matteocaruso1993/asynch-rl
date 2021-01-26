@@ -416,51 +416,54 @@ class Multiprocess_RL_Environment:
                 self.ctrlr_probability = self.log_df.iloc[self.training_session_number-1]['ctrl prob']
             except Exception:
                 pass
-                
-            self.update_net_name(printout = True)
             
-            # this loads models' params (both qv and pg)
-            #self.model_qv.cpu()
-            self.update_model_cpu(reload = True)
-            
-            # loss history file
-            loss_history_file = os.path.join(self.storage_path, 'loss_history_'+ str(self.training_session_number) + '.npy')
-            if os.path.isfile(loss_history_file):
-                self.qval_loss_history = np.load(loss_history_file, allow_pickle=True)
-                self.qval_loss_history = self.qval_loss_history[:self.training_session_number]
-               
-            val_history_file = os.path.join(self.storage_path, 'val_history.npy')
-            if os.path.isfile(val_history_file):
-                self.val_history = np.load(val_history_file)
-                self.val_history = self.val_history[self.val_history[:,0]<=self.training_session_number]
+        else:
+            self.training_session_number = training_session_number
                 
-            if  self.model_qv.n_actions != self.env_discr.get_actions_structure():
-                raise Exception ("Loaded model has different number of actions from current one")
+        self.update_net_name(printout = True)
+        
+        # this loads models' params (both qv and pg)
+        #self.model_qv.cpu()
+        self.update_model_cpu(reload = True)
+        
+        # loss history file
+        loss_history_file = os.path.join(self.storage_path, 'loss_history_'+ str(self.training_session_number) + '.npy')
+        if os.path.isfile(loss_history_file):
+            self.qval_loss_history = np.load(loss_history_file, allow_pickle=True)
+            self.qval_loss_history = self.qval_loss_history[:self.training_session_number]
+           
+        val_history_file = os.path.join(self.storage_path, 'val_history.npy')
+        if os.path.isfile(val_history_file):
+            self.val_history = np.load(val_history_file)
+            self.val_history = self.val_history[self.val_history[:,0]<=self.training_session_number]
+            
+        if  self.model_qv.n_actions != self.env_discr.get_actions_structure():
+            raise Exception ("Loaded model has different number of actions from current one")
 
-            # this loads the memory
-            self.memory_stored = ReplayMemory(size = self.replay_memory_size, minibatch_size= self.mini_batch_size) 
-            if load_memory:
-                if os.path.isfile(os.path.join(self.storage_path,self.net_name+'_memory.pt')):
-                    self.memory_stored.load(self.storage_path,self.net_name)
-                    self.replay_memory_size = self.memory_stored.size
-                    self.memory_sizes_updater()
+        # this loads the memory
+        self.memory_stored = ReplayMemory(size = self.replay_memory_size, minibatch_size= self.mini_batch_size) 
+        if load_memory:
+            if os.path.isfile(os.path.join(self.storage_path,self.net_name+'_memory.pt')):
+                self.memory_stored.load(self.storage_path,self.net_name)
+                self.replay_memory_size = self.memory_stored.size
+                self.memory_sizes_updater()
+            else:
+                print('creating memory (and saving it to be sure)')
+                self.check_model_version(print_out = True, mode = 'sim', save_v0 = True)
+                if self.ray_parallelize:
+                    self.runParallelized(memory_fill_only = True)
                 else:
-                    print('creating memory (and saving it to be sure)')
-                    self.check_model_version(print_out = True, mode = 'sim', save_v0 = True)
-                    if self.ray_parallelize:
-                        self.runParallelized(memory_fill_only = True)
-                    else:
-                        self.runSerialized(memory_fill_only = True)
-                    self.memory_stored = self.shared_memory.cloneMemory()
-                    self.memory_stored.save(self.storage_path,self.net_name)
+                    self.runSerialized(memory_fill_only = True)
+                self.memory_stored = self.shared_memory.cloneMemory()
+                self.memory_stored.save(self.storage_path,self.net_name)
 
-                                        
-            if self.update_policy_online:
-                filename_pg_train = os.path.join(self.storage_path, 'PG_training'+ '.npy')
-                if os.path.isfile(filename_pg_train):
-                    np_pg_hist = np.load(filename_pg_train)[:self.training_session_number]
-                    self.global_pg_loss    = np_pg_hist[:,0].tolist()
-                    self.global_pg_entropy = np_pg_hist[:,1].tolist()
+                                    
+        if self.update_policy_online:
+            filename_pg_train = os.path.join(self.storage_path, 'PG_training'+ '.npy')
+            if os.path.isfile(filename_pg_train):
+                np_pg_hist = np.load(filename_pg_train)[:self.training_session_number]
+                self.global_pg_loss    = np_pg_hist[:,0].tolist()
+                self.global_pg_entropy = np_pg_hist[:,1].tolist()
 
 
     ##################################################################################
@@ -546,6 +549,9 @@ class Multiprocess_RL_Environment:
                 self.model_pg.save_net_params(self.storage_path,self.net_name+ '_policy')
             else:
                 self.model_pg.load_net_params(self.storage_path,self.net_name + '_policy', device_cpu)
+                if self.pg_partial_update:
+                    self.model_pg.load_conv_params(self.storage_path,self.net_name, device_cpu)
+                
             self.policy_loaded = True
         return True
 
@@ -603,8 +609,9 @@ class Multiprocess_RL_Environment:
                 
         if self.memory_stored is not None and not memory_fill_only and not self.rl_mode == 'staticAC': # and not self.model_new.is_updating:
             #print('entered NN update')
-            self.qval_loss_hist_iteration, _ = np.array(self.nn_updater.update_DeepRL())
-            average_qval_loss = np.average(self.qval_loss_hist_iteration)
+            if self.memory_stored.isFull():
+                self.qval_loss_hist_iteration, _ = np.array(self.nn_updater.update_DeepRL())
+                average_qval_loss = np.average(self.qval_loss_hist_iteration)
             
         while not self.shared_memory.isFull():
             progress(round(1000*self.shared_memory.fill_ratio), 1000 , 'Fill memory')
