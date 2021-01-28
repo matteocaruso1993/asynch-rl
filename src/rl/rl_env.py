@@ -57,9 +57,16 @@ class Multiprocess_RL_Environment:
                  ctrlr_prob_annealing_factor = .9,  ctrlr_probability = 0, difficulty = 0, \
                  memory_turnover_ratio = 0.2, val_frequency = 10, bashplot = False, layers_width= (5,5), \
                  rewards = np.ones(5), validation_set_ratio = 4, env_options = {}, pg_partial_update = False, 
-                 beta_PG = [1, 1] , n_epochs_PG = 100, batch_size_PG = 32, noise_factor = 1):
+                 beta_PG = [1, 1] , n_epochs_PG = 100, batch_size_PG = 32, noise_factor = 1, \
+                 sim_single_trajectory = False, continuous_qv_update = False, agents_reset_per_iteration = 0.1, \
+                 qval_exploration = False):
         
+        self.qval_exploration = qval_exploration 
+        self.agents_reset_per_iteration = agents_reset_per_iteration
+        self.save_memory = False
         self.one_vs_one = False
+        self.sim_single_trajectory = sim_single_trajectory
+        self.continuous_qv_update = continuous_qv_update
         
         ####################### net/environment initialization
         # check if env/net types make sense
@@ -81,8 +88,9 @@ class Multiprocess_RL_Environment:
         if self.update_policy_online:
             self.global_pg_loss = []
             self.global_pg_entropy = []
-
-
+            self.global_tr_sess_num = []
+            self.global_cum_reward = []
+            self.global_duration = []
         
         self.training_session_number = 0 #by default ==0, if saved net is loaded this will be changed
         self.update_net_name()
@@ -113,8 +121,8 @@ class Multiprocess_RL_Environment:
         self.n_epochs = N_epochs
         self.mini_batch_size = mini_batch_size
         self.memory_turnover_ratio = memory_turnover_ratio
-        two_power = [2**i for i in range(10)]
-        self.mb_policy = round(self.mini_batch_size / two_power[np.abs(round(1/self.memory_turnover_ratio) - np.array(two_power)).argmin()-1])
+        #two_power = [2**i for i in range(10)]
+        #self.mb_policy = round(self.mini_batch_size / two_power[np.abs(round(1/self.memory_turnover_ratio) - np.array(two_power)).argmin()-1])
         self.replay_memory_size = replay_memory_size
         self.validation_set_ratio = validation_set_ratio # relative dimension of validation set to test_set (n times smaller)
         self.memory_sizes_updater()
@@ -142,6 +150,7 @@ class Multiprocess_RL_Environment:
         self.sim_agents_contn = []
 
         # agents number depends...
+        self.n_agents_discr = 1
         if self.ray_parallelize:
             if self.use_continuous_act_env:
                 self.n_agents_discr = 0
@@ -184,9 +193,18 @@ class Multiprocess_RL_Environment:
         
         # added after configuration save (these attributes can't be saved in JSON format)
         self.env_discr = self.generateDiscrActSpace_GymStyleEnv()
+        
+        if self.rl_mode == 'AC' and self.agents_reset_per_iteration > 0:
+            self.span_eval_for_reset = int(np.round(self.memory_turnover_size/(self.n_agents_discr*self.env_discr.env.get_max_iterations()/4)))
+            print(f'last N sequences evaluated for average cum reward: {self.span_eval_for_reset}')
+        
         # this env can be used as reference and to get topologic information, but is not used for simulations!
         #(those are inside each agent)
         self.n_actions_discr = self.env_discr.get_actions_structure()
+        prob_even = 1/self.n_actions_discr*torch.ones(self.n_actions_discr)
+        self.max_entropy = np.round(torch.sum(-torch.log(prob_even)*prob_even).item(),3)
+        print(f'max entropy = {self.max_entropy}')
+        
         self.noise_sd = noise_factor/np.clip(self.n_actions_discr, 5, 20)
         
         self.N_in_model = self.env_discr.get_observations_structure()
@@ -277,7 +295,7 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     def generateDiscrActSpace_GymStyleEnv(self):
         if self.env_type  == 'RobotEnv':
-            return discr_GymStyle_Robot(n_bins_act= self.discr_env_bins)
+            return discr_GymStyle_Robot(n_bins_act= self.discr_env_bins , sim_length = self.sim_length_max)
         elif self.env_type  == 'CartPole':
             return discr_GymStyle_CartPole(n_bins_act= self.discr_env_bins, sim_length_max = self.sim_length_max, difficulty=self.difficulty)
         elif self.env_type  == 'Platoon':
@@ -448,22 +466,47 @@ class Multiprocess_RL_Environment:
                 self.replay_memory_size = self.memory_stored.size
                 self.memory_sizes_updater()
             else:
-                print('creating memory (and saving it to be sure)')
+                print('creating memory')
                 self.check_model_version(print_out = True, mode = 'sim', save_v0 = True)
                 if self.ray_parallelize:
                     self.runParallelized(memory_fill_only = True)
                 else:
                     self.runSerialized(memory_fill_only = True)
                 self.memory_stored = self.shared_memory.cloneMemory()
-                self.memory_stored.save(self.storage_path,self.net_name)
+                if self.save_memory:
+                    self.memory_stored.save(self.storage_path,self.net_name)
 
                                     
         if self.update_policy_online:
             filename_pg_train = os.path.join(self.storage_path, 'PG_training'+ '.npy')
             if os.path.isfile(filename_pg_train):
-                np_pg_hist = np.load(filename_pg_train)[:self.training_session_number]
-                self.global_pg_loss    = np_pg_hist[:,0].tolist()
-                self.global_pg_entropy = np_pg_hist[:,1].tolist()
+                np_pg_hist = np.load(filename_pg_train)
+                vect_len = np_pg_hist.shape[0]
+                
+                if np_pg_hist.shape[1]==2:
+                    self.global_pg_loss    = np_pg_hist[:,0].tolist()
+                    self.global_pg_entropy = np_pg_hist[:,1].tolist()
+                    
+                    self.global_tr_sess_num = [0 for _ in range(vect_len)]
+                    self.global_cum_reward = [0 for _ in range(vect_len)]
+                    self.global_duration = [0 for _ in range(vect_len)]
+
+                elif np_pg_hist.shape[1]==3:
+                    np_pg_hist = np_pg_hist[np_pg_hist[:,0] <= self.training_session_number]
+                    self.global_tr_sess_num= np_pg_hist[:,0].tolist()
+                    self.global_pg_loss    = np_pg_hist[:,1].tolist()
+                    self.global_pg_entropy = np_pg_hist[:,2].tolist()
+
+                    self.global_cum_reward = [0 for _ in range(vect_len)]
+                    self.global_duration = [0 for _ in range(vect_len)]
+                    
+                else:
+                    self.global_tr_sess_num= np_pg_hist[:,0].tolist()
+                    self.global_pg_loss    = np_pg_hist[:,1].tolist()
+                    self.global_pg_entropy = np_pg_hist[:,2].tolist()
+                    self.global_cum_reward = np_pg_hist[:,3].tolist()
+                    self.global_duration =   np_pg_hist[:,4].tolist()
+                    
 
 
     ##################################################################################
@@ -569,7 +612,13 @@ class Multiprocess_RL_Environment:
         if self.update_policy_online:
             self.model_pg.save_net_params(self.storage_path,self.net_name+ '_policy')
             filename_pg_train = os.path.join(self.storage_path, 'PG_training'+ '.npy')
-            np_pg_hist = np.concatenate((np.array(self.global_pg_loss)[:,np.newaxis], np.array(self.global_pg_entropy)[:,np.newaxis]),axis = 1)
+            #print(f'SAVING global_pg_loss. length: {len(self.global_pg_loss)}')
+            
+            tup = (np.array(self.global_tr_sess_num)[:,np.newaxis], np.array(self.global_pg_loss)[:,np.newaxis], \
+                   np.array(self.global_pg_entropy)[:,np.newaxis], np.array(self.global_cum_reward)[:,np.newaxis], \
+                   np.array(self.global_duration)[:,np.newaxis]  )
+            
+            np_pg_hist = np.concatenate(tup,axis = 1)
             np.save(filename_pg_train, np_pg_hist)
 
 
@@ -610,8 +659,10 @@ class Multiprocess_RL_Environment:
         if self.memory_stored is not None and not memory_fill_only and not self.rl_mode == 'staticAC': # and not self.model_new.is_updating:
             #print('entered NN update')
             if self.memory_stored.isFull():
-                self.qval_loss_hist_iteration, _ = np.array(self.nn_updater.update_DeepRL())
-                average_qval_loss = np.average(self.qval_loss_hist_iteration)
+                self.qval_loss_hist_iteration, _ = self.nn_updater.update_DeepRL()
+                average_qval_loss = np.round(np.average(self.qval_loss_hist_iteration), 3)
+                print(f'QV. loss = {average_qval_loss}')
+
             
         while not self.shared_memory.isFull():
             progress(round(1000*self.shared_memory.fill_ratio), 1000 , 'Fill memory')
@@ -619,12 +670,15 @@ class Multiprocess_RL_Environment:
             
             # implementation for A3C
             if 'AC' in self.rl_mode and self.update_policy_online:
-                delta_theta_i, policy_loss, pg_entropy, valid_model = pg_info
+                delta_theta_i, policy_loss_i, pg_entropy_i, valid_model = pg_info
                 if valid_model:
-                    self.global_pg_loss.append(policy_loss)
-                    self.global_pg_entropy.append(pg_entropy)
-                    temp_pg_loss.append(policy_loss)
-                    temp_entropy.append(pg_entropy)
+                    self.global_tr_sess_num.append(self.training_session_number)
+                    self.global_pg_loss.append(policy_loss_i)
+                    self.global_pg_entropy.append(pg_entropy_i)
+                    self.global_cum_reward.append(np.average(partial_log[:,1]))
+                    self.global_duration.append(np.average(partial_log[:,0]))
+                    temp_pg_loss.append(policy_loss_i)
+                    temp_entropy.append(pg_entropy_i)
                     for k in self.model_pg.state_dict().keys():
                         self.model_pg.state_dict()[k] += delta_theta_i[k]
                     self.sim_agents_discr[0].setAttribute('model_pg',self.model_pg)
@@ -636,7 +690,8 @@ class Multiprocess_RL_Environment:
                 self.shared_memory.addMemoryBatch(self.sim_agents_discr[0].emptyLocalMemory() )
         
         progress(round(1000*self.shared_memory.fill_ratio), 1000 , 'Fill memory')
-                
+        print('')        
+        
         if not memory_fill_only:
             if 'AC' in self.rl_mode and self.policy_loaded and not self.update_policy_online:
                 if DEBUG_MODEL_VERSIONS:
@@ -650,6 +705,7 @@ class Multiprocess_RL_Environment:
                 #print(f'PG model change: {model_diff}')
                 policy_loss = np.round(sum(temp_pg_loss)/(1e-5+len(temp_pg_loss)), 3)
                 pg_entropy =  np.round(sum(temp_entropy)/(1e-5+len(temp_entropy)), 3)
+                print('')
                 print(f'average policy loss : {policy_loss}')
                 print(f'average pg entropy  : {pg_entropy}')
 
@@ -661,9 +717,11 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     def runParallelized(self, memory_fill_only = False):
         
+        device_cpu = torch.device('cpu')
         initial_pg_weights = deepcopy(self.model_pg.cpu().state_dict())
         
         qv_update_launched = False        
+        qv_continuously_updated = 0 # just for print, will be removed
 
         total_log = np.zeros((1,2),dtype = np.float)
         average_qval_loss = policy_loss = pg_entropy = np.nan
@@ -674,7 +732,7 @@ class Multiprocess_RL_Environment:
 
 
         # to avoid wasting simulations
-        min_fill_ratio = 0.95
+        #min_fill_ratio = 0.95
         task_lst = [None for _ in self.sim_agents_discr]
         
         while True:
@@ -702,12 +760,17 @@ class Multiprocess_RL_Environment:
                         
                         # implementation for A3C
                         if 'AC' in self.rl_mode  and self.update_policy_online:
-                            delta_theta_i, policy_loss, pg_entropy, valid_model = pg_info
+                            delta_theta_i, policy_loss_i, pg_entropy_i, valid_model = pg_info
                             if valid_model:
-                                self.global_pg_loss.append(policy_loss)
-                                self.global_pg_entropy.append(pg_entropy)
-                                temp_pg_loss.append(policy_loss)
-                                temp_entropy.append(pg_entropy)
+                                self.global_tr_sess_num.append(self.training_session_number)
+                                self.global_pg_loss.append(policy_loss_i)
+                                self.global_pg_entropy.append(pg_entropy_i)
+                                self.global_cum_reward.append(np.average(partial_log[:,1]))
+                                self.global_duration.append(np.average(partial_log[:,0]))
+                                
+                                #print(f'global_pg_loss length: {len(self.global_pg_loss)}')
+                                temp_pg_loss.append(policy_loss_i)
+                                temp_entropy.append(pg_entropy_i)
                                 for k in self.model_pg.state_dict().keys():
                                     self.model_pg.state_dict()[k] += delta_theta_i[k]
                         
@@ -719,10 +782,22 @@ class Multiprocess_RL_Environment:
                         progress(round(1000*self.shared_memory.fill_ratio), 1000 , f'Fill memory - {self.shared_memory.size}')
                     
                     # 2.1.1) run another task if required
-                    if not self.shared_memory.isPartiallyFull(min_fill_ratio):
+                    expected_upcoming_memory_ratio = sum(not tsk is None for tsk in task_lst)*self.tot_iterations/self.memory_turnover_size
+                    min_fill = 0.95-np.clip(expected_upcoming_memory_ratio,0,1)
+                    if not self.shared_memory.isPartiallyFull(min_fill):
+                        #print('')
+                        #print('launching sim')
+                        #print(f'memory fill ratio : {self.shared_memory.fill_ratio}, min. fill target : {min_fill}')
+                        if self.continuous_qv_update and qv_update_launched:
+                            current_model_qv = ray.get(self.nn_updater.get_current_QV_model.remote())
+                            for k in self.model_qv.state_dict().keys():
+                                self.model_qv.state_dict()[k] = (current_model_qv.state_dict()[k]).to(device_cpu)
+                            agent.setAttribute.remote('model_qv', self.model_qv )
+                            qv_continuously_updated += 1
                         
                         if self.update_policy_online:
                             agent.setAttribute.remote('model_pg',self.model_pg)
+                            
                             # check model differences - REQUIRED to ensure synchronization before 
                             model_diff = 1
                             time_in = time.time()
@@ -734,12 +809,31 @@ class Multiprocess_RL_Environment:
                         task_lst[i] = agent.run.remote()
                     
             # if memory is (almost) full and task list empty, inform qv update it can stop
-            if self.shared_memory.isPartiallyFull(min_fill_ratio) and all(tsk is None for tsk in task_lst):
+            if self.shared_memory.isPartiallyFull(0.9) and all(tsk is None for tsk in task_lst):
                 if qv_update_launched:
                     self.nn_updater.sentinel.remote()
                 break
             
         print('')
+        
+        if self.continuous_qv_update:
+            print(f'advantage continuosuly updated: {qv_continuously_updated} times')
+
+        if self.rl_mode == 'AC' and not self.update_policy_online and self.agents_reset_per_iteration > 0:
+            if self.training_session_number > 0:
+                av_cum_rewards_list = [ray.get(agent.get_recent_reward_average.remote(self.span_eval_for_reset)) for agent in self.sim_agents_discr]
+                print(f'av_cum_rewards_list = {av_cum_rewards_list}')
+                if sum( [not np.isnan(i) for i in av_cum_rewards_list] ) > len(av_cum_rewards_list)/2:
+                    try:
+                        n_resets = round(self.agents_reset_per_iteration*self.n_agents_discr)
+                        idxs_worst = np.argpartition(av_cum_rewards_list,n_resets)[:n_resets]
+                        for idx in idxs_worst:
+                            self.sim_agents_discr[idx].reset_agent_pg_optimizer.remote()     
+                        #val, idx = min((val, idx) for (idx, val) in enumerate(av_cum_rewards_list))
+                        print(f'agents {idxs_worst} resetted')
+                    except Exception:
+                        print('Error during agents reset') # will be removed
+                    
         
         if 'AC' in self.rl_mode and self.update_policy_online:
             model_diff = np.round(self.model_pg.compare_weights(initial_pg_weights), 5)
@@ -747,8 +841,9 @@ class Multiprocess_RL_Environment:
             policy_loss = np.round(sum(temp_pg_loss)/(1e-5+len(temp_pg_loss)), 3)
             pg_entropy =  np.round(sum(temp_entropy)/(1e-5+len(temp_entropy)), 3)
             print(f'average policy loss : {policy_loss}')
-            print(f'average pg entropy  : {pg_entropy}')
+            print(f'average pg entropy  : {np.round(100*pg_entropy/self.max_entropy, 2)}%')
             
+        print('')
         print(f'average cum-reward  : {np.round(np.average(total_log[:,1]),2)}')
             
         # log training history
@@ -826,12 +921,15 @@ class Multiprocess_RL_Environment:
                         
                         # implementation for A3C
                         if 'AC' in self.rl_mode  and self.update_policy_online:
-                            delta_theta_i, policy_loss, pg_entropy, valid_model = pg_info
+                            delta_theta_i, policy_loss_i, pg_entropy_i, valid_model = pg_info
                             if valid_model:
-                                self.global_pg_loss.append(policy_loss)
-                                self.global_pg_entropy.append(pg_entropy)
-                                temp_pg_loss.append(policy_loss)
-                                temp_entropy.append(pg_entropy)
+                                self.global_tr_sess_num.append(self.training_session_number)
+                                self.global_pg_loss.append(policy_loss_i)
+                                self.global_pg_entropy.append(pg_entropy_i)
+                                self.global_cum_reward(np.average(partial_log[:,1]))
+                                self.global_duration(np.average(partial_log[:,0]))
+                                temp_pg_loss.append(policy_loss_i)
+                                temp_entropy.append(pg_entropy_i)
                                 for k in self.model_pg.state_dict().keys():
                                     self.model_pg.state_dict()[k] += delta_theta_i[k]
                         
@@ -1024,7 +1122,8 @@ class Multiprocess_RL_Environment:
                 print('###################################################################')
 
         # save memory to reload for next iteration
-        self.memory_stored.save(self.storage_path,self.net_name)
+        if self.save_memory:
+            self.memory_stored.save(self.storage_path,self.net_name)
 
 
     ##################################################################################
@@ -1065,7 +1164,10 @@ class Multiprocess_RL_Environment:
 
         #self.update_model_cpu() returns True if succesful
         if self.update_model_cpu():
-            self.updateAgentsAttributesExcept(print_attribute=['env','env','model','model_version'])
+            if self.update_policy_online:
+                self.updateAgentsAttributesExcept('model_pg', print_attribute=['env','env','model','model_version'])
+            else:
+                self.updateAgentsAttributesExcept(print_attribute=['env','env','model','model_version'])
         else:
             raise('Loading error')
         
@@ -1187,7 +1289,7 @@ class Multiprocess_RL_Environment:
         
     ##################################################################################
     # plot the training history
-    def plot_training_log(self, init_epoch=0):
+    def plot_training_log(self, init_epoch=0, qv_loss_log = False, pg_loss_log = False):
         #log_norm_df=(self.log_df-self.log_df.min())/(self.log_df.max()-self.log_df.min())
         #fig, ax = plt.subplots()
         # (log structure: 
@@ -1222,13 +1324,17 @@ class Multiprocess_RL_Environment:
         # 'av. q-val loss'
         ax1_1 = fig_1.add_subplot(411)
         ax1_1.plot(self.log_df.iloc[init_epoch:][indicators[5]])
-        #ax1_1.set_yscale('log')
+        if qv_loss_log:
+            ax1_1.set_yscale('log')
         ax1_1.legend([indicators[5]])
 
         # 'av. policy loss'
         ax2_1 = fig_1.add_subplot(412)
         ax2_1.plot(self.log_df.iloc[init_epoch:][indicators[6]])
+        if pg_loss_log:
+            ax2_1.set_yscale('symlog')
         ax2_1.legend([indicators[6]])
+        
         
         # 'pg entropy'
         ax3_1 = fig_1.add_subplot(413)
@@ -1243,10 +1349,19 @@ class Multiprocess_RL_Environment:
     
         if self.update_policy_online:
             
-            fig_2, ax2 = plt.subplots(2,1)
+            fig_2, ax2 = plt.subplots(4,1)
 
             ax2[0].plot(self.global_pg_loss)
+            ax2[0].legend(['pg loss complete'])
+            
             ax2[1].plot(self.global_pg_entropy)
+            ax2[1].legend(['entropy complete'])
+
+            ax2[2].plot(self.global_cum_reward)
+            ax2[2].legend(['av. cum reward'])
+            
+            ax2[3].plot(self.global_duration)
+            ax2[3].legend(['av. duration'])
             
             return fig, fig_1 , fig_2
     

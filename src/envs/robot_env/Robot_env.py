@@ -208,13 +208,13 @@ class RobotEnv(gym.Env):
         #self.rewards[2] -> rotation_penalty
         
         
-        failure_penalty = self.rewards[1]*(1+(dist_1/self.distance_init)**2)
+        failure_penalty = self.rewards[1]*( 1 + 0.5*(dist_1/self.distance_init)**2 + 0.5*(1-self.duration/self.sim_length) )
         
         #cum_rotations = (self.rotation_counter/(2*np.pi))
         #rotations_penalty = self.rewards[2] * cum_rotations / (1+self.duration)
         
-        speed_penalty = 1-dot_x/self.max_v_x_delta
-        ang_speed_penalty = np.abs(dot_orient)/self.max_v_rot_delta
+        speed_penalty = 1-self.robot.current_speed['linear']['x']/self.max_v_x_delta
+        ang_speed_penalty = np.abs(self.robot.current_speed['angular']['z'])/self.max_v_rot_delta
         
         # if pedestrian is hit
         if self.robot.check_pedestrians_collision(1):
@@ -253,20 +253,20 @@ class RobotEnv(gym.Env):
             self.duration += self.dt
             # if time expired
             if self.duration >= self.sim_length:
-                reward = 0.5*failure_penalty
+                reward = - failure_penalty
                 done = True
             else:
                 # if nothing happened
                 peds_distances = self.robot.getPedsDistances()
-                danger_penalty = np.sum( (1 - peds_distances[peds_distances < self.lidar_range]/self.lidar_range)**2 )
+                danger_penalty = np.sum( 0.2*(1 - (peds_distances[peds_distances < self.lidar_range]/self.lidar_range)**2) )
 
-                reward = self.rewards[0]* (1 - 0.5*speed_penalty - 0.5*ang_speed_penalty\
-                                           - 0.2*danger_penalty) #+ 10*(dist_0-dist_1)/self.target_distance_max)
+                reward = self.rewards[0]* (1 - 0.3*speed_penalty - 0.3*ang_speed_penalty\
+                                           - 0.4*danger_penalty) #+ 10*(dist_0-dist_1)/self.target_distance_max)
                 
                 #print(f'instant reward = {reward}')
                 #print(f'danger penalty = {danger_penalty}')
                 
-                reward -= danger_penalty
+                danger_penalty
                 done = False
                 
             

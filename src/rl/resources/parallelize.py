@@ -49,7 +49,7 @@ class Ray_RL_Updater(RL_Updater):
         while not stop_update:
 
             loss = self.qValue_loss_update(*self.memory_pool.extractMinibatch()[:-1])
-            total_loss.append(loss.cpu().detach().numpy())
+            total_loss.append(loss.cpu().item())
             epochs += 1
 
             await asyncio.sleep(0.00001)
@@ -74,5 +74,8 @@ class Ray_RL_Updater(RL_Updater):
         if sim_complete:
             self.sim_complete = True
     
+    async def get_current_QV_model(self):
+        """method to extract current QV model version during update process (to speed up PG training)"""
+        return self.model_qv
     
 

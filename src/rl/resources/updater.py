@@ -141,7 +141,7 @@ class RL_Updater():
             for epoch in tqdm(range(self.n_epochs)):
 
                 loss = self.qValue_loss_update(*self.memory_pool.extractMinibatch()[:-1])
-                total_loss.append(loss.cpu().detach().numpy())
+                total_loss.append(loss.cpu().item())
                 
             self.model_qv.model_version +=1
             pg_entropy = None

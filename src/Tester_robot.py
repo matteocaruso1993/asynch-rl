@@ -22,8 +22,8 @@ import os
 import asyncio
 
 # df loader
-net_version = 11
-iteration = 54
+net_version = 1
+iteration = 38
 
 # generate proper discretized bins structure
 ################
@@ -56,7 +56,7 @@ rl_env.load(iteration, load_memory = False)
 #rl_env.load(320)
 
 try:
-    rl_env.plot_training_log(1)
+    rl_env.plot_training_log(1, qv_loss_log = True, pg_loss_log = True)
 except Exception:
     print('incomplete data for plot generation')
 

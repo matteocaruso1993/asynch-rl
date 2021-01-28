@@ -38,12 +38,18 @@ class SimulationAgent:
     
     ##################################################################################
     def __init__(self,sim_agent_id, env = None, rl_mode = 'DQL', model_qv= None, model_pg = None, n_frames = 1, \
-                 net_name = 'no_name' ,epsilon = 0.9, ctrlr_probability = 0, \
-                 internal_memory_size = 100, save_movie = True, \
+                 net_name = 'no_name' ,epsilon = 0.9, ctrlr_probability = 0, save_movie = True, \
                  max_consecutive_env_fails = 3, max_steps_single_run = 200, show_rendering = True, \
-                 tot_iterations = 100, live_plot = False, verbosity = 0 , noise_sd = 0.05, \
-                 movie_frequency = 10, max_n_single_runs = 1000, save_sequences  = False):
+                 tot_iterations = 1000, live_plot = False, verbosity = 0 , noise_sd = 0.05, \
+                 movie_frequency = 10, max_n_single_runs = 1000, save_sequences  = False, \
+                 reward_history_span = 200):
+                # internal_memory_size = 100, 
+                
+        self.reward_history = []
+        self.reward_history_span = reward_history_span
         
+        self.qval_exploration = False
+        self.sim_single_trajectory = False
         self.noise_sd = noise_sd
         self.prob_correction = 0.2 # probability of "correction" of "non sense random inputs" generated
         
@@ -69,7 +75,7 @@ class SimulationAgent:
         
         #self.move_to_cuda = torch.cuda.is_available() and move_to_cuda
 
-        self.internal_memory_size = internal_memory_size
+        self.internal_memory_size = np.round(1.2*tot_iterations)
         self.internal_memory = ReplayMemory(size = self.internal_memory_size)
         
         # instantiate DQN (env is required for NN dimension)
@@ -114,6 +120,26 @@ class SimulationAgent:
     @max_steps_single_run.setter
     def max_steps_single_run(self,value):
         self._max_steps_single_run = np.maximum(value, self.env.get_max_iterations())
+        
+
+    ##################################################################################        
+    def get_recent_reward_average(self, span = None):
+        """ get average cum reward of last self.reward_history_span samples"""
+        if span is None:
+            span = self.reward_history_span
+
+        if len(self.reward_history) >= np.round(span*1.2):
+            recent_hist = self.reward_history[-span:]
+            return np.round(sum(recent_hist)/len(recent_hist),2)
+        else:
+            return np.nan
+        
+        
+    ##################################################################################        
+    def reset_agent_pg_optimizer(self):
+        """ reset agent PG optimizer  """
+        self.model_pg.initialize_optimizer()       
+        self.reward_history = []
         
     ##################################################################################        
     #initialize variables at the beginning of each run (to reset iterations) 
@@ -268,10 +294,15 @@ class SimulationAgent:
             loss_pg_i = 0
             prob_pract = prob + torch.rand(prob.shape)*1e-8
             entropy = torch.sum(-torch.log(prob_pract)*prob_pract)
-            advantage = reward + self.gamma * torch.max(self.model_qv(state_1.float()))*int(not done) \
-                                - torch.max(self.model_qv(state_0.float()))
             
-            target_entropy = self.max_entropy*( 0.1 + 0.5*self.epsilon )
+            if self.model_qv.model_version >=1:
+                with torch.no_grad():
+                    advantage = reward + self.gamma * torch.max(self.model_qv(state_1.float()))*int(not done) \
+                                        - torch.max(self.model_qv(state_0.float()))
+            else:
+                advantage = torch.tensor(reward)
+            
+            #target_entropy = self.max_entropy*( 0.1 + 0.5*self.epsilon )
             
             self.loss_policy += -advantage.cpu()*torch.log(prob_pract[:,action_idx]) \
                                 - self.beta_PG[0]*entropy \
@@ -447,7 +478,7 @@ class SimulationAgent:
             
             if self.verbosity > 0:
                 self.displayStatus()                    
-            self.trainVariablesUpdate(reward_np, done, force_stop, no_step = ('no step' in info) )
+            self.trainVariablesUpdate(reward_np, done, force_stop or self.sim_single_trajectory , no_step = ('no step' in info) )
             
             state = state_1
         
@@ -597,23 +628,26 @@ class SimulationAgent:
         # PG only uses greedy approach            
         if 'AC' in self.rl_mode:
             prob_distrib = self.model_pg.cpu()(state.float())
-            
+            qvals = self.model_qv.cpu()(state.float())
+
             if random.random() <= self.epsilon and not use_NN:
                 #action_index = torch.argmax(prob_distrib + self.noise_sd*torch.randn(output.shape))
-                try:
+                if random.random() <= 0.5 and self.qval_exploration:
+                    action_index = torch.argmax(qvals).unsqueeze(0).unsqueeze(0)
+                else:
+                    #try:
                     action_index = torch.multinomial(torch.clamp( (prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape)), 1e-10,1), 1, replacement=True)
-                except Exception:
-                    action_index = torch.argmax(prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape))
-                noise_added = True
+                    #except Exception:
+                    #    action_index = torch.argmax(prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape))
+                    noise_added = True
             elif test_qv:
-                qvals = self.model_qv.cpu()(state.float())
                 action_index = torch.argmax(qvals)
             else:
                 #action_index = torch.argmax(prob_distrib)
-                try:
-                    action_index = torch.multinomial(prob_distrib, 1, replacement=True)
-                except Exception:
-                    action_index = torch.argmax(prob_distrib)
+                #try:
+                action_index = torch.multinomial(prob_distrib, 1, replacement=True)
+                #except Exception:
+                #action_index = torch.argmax(prob_distrib)
                 
                 
         elif self.rl_mode == 'DQL':
@@ -648,6 +682,8 @@ class SimulationAgent:
             self.agent_run_variables['failed_iteration'] = False
             
             self.agent_run_variables['single_run'] +=1
+            
+            self.reward_history.append(self.agent_run_variables['cum_reward'])
             self.agent_run_variables['cum_reward'] = 0
 
             return single_run_log
