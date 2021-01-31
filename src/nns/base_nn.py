@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+
 from rl.utilities import check_WhileTrue_timeout, check_saved
     
 #%%
@@ -48,7 +49,7 @@ class nnBase(nn.Module):
         default_weights_dict = {new_list: .1 for new_list in range(1,11)} 
         """
         
-        allowed_keys = {'softmax':False, 'conv_no_grad':False} #,'BATCH_SIZE':200,'device': torch.device("cpu"), \
+        allowed_keys = {'softmax':False, 'conv_no_grad':False, 'gamma_scheduler' : 0.9, 'weight_decay' : 1e-3} #,'BATCH_SIZE':200,'device': torch.device("cpu"), \
                         #'optimizer' : default_optimizer , 'loss_function' : default_loss_function, \
                         #'weights_dict' : default_weights_dict }#, 'VAL_PCT':0.25 , \
                         
@@ -66,7 +67,8 @@ class nnBase(nn.Module):
 
     ##########################################################################
     def initialize_optimizer(self):
-        self.optimizer = optim.Adam(self.parameters(), lr= self.lr)
+        self.optimizer = optim.Adam(self.parameters(), lr= self.lr, weight_decay= self.weight_decay )
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma= self.gamma_scheduler)
 
     ##########################################################################
     def update_learning_rate(self, new_lr):

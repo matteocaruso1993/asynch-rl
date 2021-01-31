@@ -22,9 +22,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import torch
+from torch.nn.utils import clip_grad_value_ , clip_grad_norm_
 import asyncio
+import time
 
 from copy import deepcopy
+from rl.utilities import check_WhileTrue_timeout
 
 #%%
 # my libraries
@@ -44,6 +47,8 @@ class SimulationAgent:
                  movie_frequency = 10, max_n_single_runs = 1000, save_sequences  = False, \
                  reward_history_span = 200):
                 # internal_memory_size = 100, 
+                
+        self.gradient_clip_value = 1.0
                 
         self.reward_history = []
         self.reward_history_span = reward_history_span
@@ -183,6 +188,17 @@ class SimulationAgent:
     def setAttribute(self,attribute,value):
         if attribute in self.__dict__.keys():
             self.__dict__[attribute] = value
+            
+            
+    ##################################################################################        
+    def update_model_weights_only(self, external_model, model = 'model_pg'):
+        """ updates model_pg weights based on external model leaving the optimizer in its current state"""
+        
+        current_opt_state = self.model_pg.optimizer.state_dict()
+        self.__dict__[model] = external_model
+        self.model_pg.optimizer.load_state_dict(current_opt_state)
+
+
         
     ##################################################################################        
     def renderAnimation(self, action = 0):
@@ -316,9 +332,17 @@ class SimulationAgent:
             
             if done:
                 self.loss_policy.backward()
+                #print(f'clipping at {self.gradient_clip_value}')
+                clip_grad_norm_(self.model_pg.parameters(), max_norm= self.gradient_clip_value, norm_type=2)
+                
                 self.model_pg.optimizer.step()
+                
                 loss_pg_i = np.round(self.loss_policy.item(),3)
                 self.loss_policy = 0
+                
+                #print(f'LR: {self.model_pg.scheduler.get_lr()}')
+                
+                self.model_pg.scheduler.step()
                 self.model_pg.optimizer.zero_grad()   
                 
                 # check if model contains nan
@@ -405,7 +429,7 @@ class SimulationAgent:
         if self.update_policy_online:
             for k in theta_0.keys():
                 delta_theta[k] = self.model_pg.state_dict()[k]-theta_0[k]
-            pg_info = (delta_theta, np.average(pg_loss_hist) , np.average(entropy_hist), True )
+            pg_info = (delta_theta, np.average(pg_loss_hist) , np.average(entropy_hist), not np.isnan(loss_pg_i) )
         
         return self.simulation_log, self.agent_run_variables['single_run'], self.agent_run_variables['successful_runs'], pg_info #[0]
         # self.simulation_log contains duration and cumulative reward of every single-run
@@ -501,6 +525,9 @@ class SimulationAgent:
                         valid_model = False
                         break
             pg_info = (delta_theta, np.average(pg_loss_hist) , np.average(entropy_hist), valid_model )
+            
+            if not valid_model:
+                self.reset_agent_pg_optimizer()
         
         return self.simulation_log, self.agent_run_variables['single_run'], successful_runs , pg_info #[0]
         # self.simulation_log contains duration and cumulative reward of every single-run
@@ -631,37 +658,35 @@ class SimulationAgent:
             qvals = self.model_qv.cpu()(state.float())
 
             if random.random() <= self.epsilon and not use_NN:
-                #action_index = torch.argmax(prob_distrib + self.noise_sd*torch.randn(output.shape))
                 if random.random() <= 0.5 and self.qval_exploration:
                     action_index = torch.argmax(qvals).unsqueeze(0).unsqueeze(0)
                 else:
-                    #try:
-                    action_index = torch.multinomial(torch.clamp( (prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape)), 1e-10,1), 1, replacement=True)
-                    #except Exception:
-                    #    action_index = torch.argmax(prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape))
-                    noise_added = True
+                    try:
+                        action_index = torch.multinomial(torch.abs(torch.clamp( (prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape)), 1e-10,1)), 1, replacement=True)
+                        noise_added = True
+                    except Exception:
+                        action_index = torch.argmax(prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape))
+                    
             elif test_qv:
                 action_index = torch.argmax(qvals)
             else:
-                #action_index = torch.argmax(prob_distrib)
-                #try:
-                action_index = torch.multinomial(prob_distrib, 1, replacement=True)
-                #except Exception:
-                #action_index = torch.argmax(prob_distrib)
+                try:
+                    action_index = torch.multinomial(prob_distrib, 1, replacement=True)
+                except Exception:
+                    action_index = torch.argmax(prob_distrib)
+                    
                 
                 
         elif self.rl_mode == 'DQL':
             if use_controller and not use_NN:
                 action_index = torch.tensor(self.env.get_control_idx(discretized = True), dtype = torch.int8)
-                #source = 'ctrl'
             else:
                 if random.random() <= self.epsilon and not use_NN:
                     action_index = torch.randint(self.n_actions, torch.Size([]), dtype=torch.int8)
-                    #source = 'random'
+
                 else:
                     qvals = self.model_qv.cpu()(state.float())
                     action_index = torch.argmax(qvals)
-                    #source = 'qv'
             
         action[action_index] = 1
         

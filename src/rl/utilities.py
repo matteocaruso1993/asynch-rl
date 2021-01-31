@@ -138,10 +138,17 @@ def load_train_params(env_type, model_type, overwrite_params, net_version):
 
 ############################################################################
 import time
+import numpy as np
 
-def check_WhileTrue_timeout(time_in, t_max = 60):
-    if (time.time() - time_in) > t_max:
+def check_WhileTrue_timeout(time_in, t_max = 60, printout = False):
+    time_exp = np.round(time.time() - time_in,4)
+    if time_exp > t_max:
+        print(f'time expired: {time_exp}')
         return True
+    if printout:
+        if np.abs( time_exp - np.round(time_exp)) < 1e-3:
+            print(f'time expired: {np.round(time_exp)}')
+            time.sleep(2e-3)
     return False
     
 

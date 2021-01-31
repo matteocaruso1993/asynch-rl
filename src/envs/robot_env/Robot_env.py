@@ -208,13 +208,16 @@ class RobotEnv(gym.Env):
         #self.rewards[2] -> rotation_penalty
         
         
-        failure_penalty = self.rewards[1]*( 1 + 0.5*(dist_1/self.distance_init)**2 + 0.5*(1-self.duration/self.sim_length) )
+        final_distance_penalty = 0.5*np.clip((dist_1/(0.1+self.distance_init))**2,0,2)
+        survival_time_penalty = (1-(self.duration/self.sim_length)**2)
+        
+        failure_penalty = self.rewards[1]*( 1 + final_distance_penalty + survival_time_penalty )
         
         #cum_rotations = (self.rotation_counter/(2*np.pi))
         #rotations_penalty = self.rewards[2] * cum_rotations / (1+self.duration)
         
-        speed_penalty = 1-self.robot.current_speed['linear']['x']/self.max_v_x_delta
-        ang_speed_penalty = np.abs(self.robot.current_speed['angular']['z'])/self.max_v_rot_delta
+        speed_penalty = 1- dot_x/self.linear_max
+        ang_speed_penalty = np.abs(dot_orient)/self.angular_max
         
         # if pedestrian is hit
         if self.robot.check_pedestrians_collision(1):
@@ -245,7 +248,6 @@ class RobotEnv(gym.Env):
 
             #reward -= rotations_penalty
            
-            #print(f'final reward is {reward}')
             done = True
                         
         # if nothing major happened         

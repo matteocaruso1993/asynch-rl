@@ -43,18 +43,18 @@ parser.add_argument("-v", "--net-version", dest="net_version", type=int, default
                     help="net version used")
 
 #####
-parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int, default= 400,
+parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int, default= 500,
                     help="Max n. iterations each agent runs during simulation. Influences the level of exploration which is reached by PG algorithm")
 
 parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default=0, help = "task degree of difficulty")
 
-parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=120,
+parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=250,
                     help="Length of one successful run in seconds")
 
 parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.5,
                     help="Ratio of Memory renewed at each iteration")
 
-parser.add_argument("-lr", "--learning-rate", dest="learning_rate", nargs="*", type=float, default=[1e-4, 1e-4],
+parser.add_argument("-lr", "--learning-rate", dest="learning_rate", nargs="*", type=float, default=[1e-4, 1e-5],
                     help="NN learning rate")
 
 parser.add_argument("-e", "--epochs-training", dest="n_epochs", type=int, default=[500, 400],
@@ -66,7 +66,7 @@ parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size",  nargs="*"
 parser.add_argument("-y", "--epsilon", dest="epsilon", nargs=2, type=float, default=[0.9995 , 0.01],
                     help="two values: initial epsilon, final epsilon")
 
-parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, default=0.99,
+parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, default=0.9,
                     help="annealing factor of epsilon")
 
 parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=int, default=20,
@@ -86,18 +86,22 @@ parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC',
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.99, help="GAMMA parameter in QV learning")
 
-parser.add_argument("-b", "--beta", dest="beta", nargs=2, type=float, default=[1 , 1e-5], help="BETA parameter for entropy in PG learning")
+parser.add_argument("-b", "--beta", dest="beta", nargs=2, type=float, default=[1 , 1e-2], help="BETA parameter for entropy in PG learning")
 
-parser.add_argument("-nf", "--noise-factor", dest="noise_factor", type=float, default=0.01, help="influences the variance of noise added to the probability distribution")
+parser.add_argument("-nf", "--noise-factor", dest="noise_factor", type=float, default=0.1, help="influences the variance of noise added to the probability distribution")
 
-parser.add_argument("-st", "--single-trajectory", dest="sim_single_trajectory", type=bool, default=False, 
+parser.add_argument("-st", "--single-trajectory", dest="sim_single_trajectory", type=bool, default=True, 
                     help="pg coefficients are shared after very trajectory is completed")
 
-parser.add_argument("-rpi", "--agents-reset-per-iteration", dest="agents_reset_per_iteration", type=float, default=0.1, 
+parser.add_argument("-rpi", "--agents-reset-per-iteration", dest="agents_reset_per_iteration", type=float, default=0.5, 
                     help="every iteration the optimizers of the N_agents*rpi with the worst average cum-reward are resetted")
 
 parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=bool, default=True, 
                     help="latest QV model is always used for Advanatge calculation")
+
+parser.add_argument("-gc", "--gradient-control", dest="gradient_control", nargs=2, type=float, default=[1e-6, 0.5, 1e-3], 
+                    help="Gradient control parameters for PG learning. gc[0]: gradient clip value (norm 2), gc[1]: gradient scheduler decay rate, gc[2]: weight decay")
+
 
 parser.add_argument(
   "-rw", "--rewards",  nargs="*",  # 0 or more values expected => creates a list
@@ -118,7 +122,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
             memory_turnover_ratio = 0.1, val_frequency = 10, rewards = np.ones(4), reset_optimizer = False,
             pg_partial_update = False, n_frames = 4, rl_mode = 'DQL', beta = 0.001, gamma = 0.99, noise_factor = 0.01,\
                 sim_single_trajectory = False, continuous_qv_update = False, agents_reset_per_iteration = .1,\
-                    tot_iterations = 400, ):
+                    tot_iterations = 400, gradient_control = [0.01, 0.1]):
 
 
     function_inputs = locals().copy()
@@ -170,7 +174,8 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
                         difficulty = difficulty, learning_rate = learning_rate, sim_length_max = sim_length_max, \
                         memory_turnover_ratio = memory_turnover_ratio, val_frequency = val_frequency ,\
                         gamma = gamma, beta_PG = beta , noise_factor = args.noise_factor,\
-                        sim_single_trajectory = sim_single_trajectory, continuous_qv_update = continuous_qv_update)
+                        sim_single_trajectory = sim_single_trajectory, continuous_qv_update = continuous_qv_update,\
+                        gradient_control = gradient_control)
 
 
     rl_env.resume_epsilon = resume_epsilon
@@ -208,7 +213,7 @@ if __name__ == "__main__":
                rewards = args.rewards_list, reset_optimizer = args.reset_optimizer, rl_mode = args.rl_mode, \
                beta = args.beta, gamma = args.gamma, agents_reset_per_iteration = args.agents_reset_per_iteration, \
                sim_single_trajectory = args.sim_single_trajectory, continuous_qv_update = args.continuous_qv_update,\
-                   tot_iterations = args.tot_iterations)
+                   tot_iterations = args.tot_iterations, gradient_control = args.gradient_control )
 
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)

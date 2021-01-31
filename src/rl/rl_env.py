@@ -59,7 +59,10 @@ class Multiprocess_RL_Environment:
                  rewards = np.ones(5), validation_set_ratio = 4, env_options = {}, pg_partial_update = False, 
                  beta_PG = [1, 1] , n_epochs_PG = 100, batch_size_PG = 32, noise_factor = 1, \
                  sim_single_trajectory = False, continuous_qv_update = False, agents_reset_per_iteration = 0.1, \
-                 qval_exploration = False):
+                 qval_exploration = False, gradient_control = [0.01, 0.1, 1e-3]):
+        
+        self.gradient_clip_value = gradient_control[0] 
+        self.gradient_control = gradient_control[1:]
         
         self.qval_exploration = qval_exploration 
         self.agents_reset_per_iteration = agents_reset_per_iteration
@@ -283,8 +286,9 @@ class Multiprocess_RL_Environment:
         
         if self.net_type == 'ConvModel':
                 model = ConvModel(model_version = 0, net_type = self.net_type+str(self.net_version), lr= lr, \
-                                  n_actions = n_actions, channels_in = self.n_frames, N_in = self.N_in_model,
-                                  conv_no_grad = (pg_model and self.pg_partial_update), softmax = pg_model)
+                                  n_actions = n_actions, channels_in = self.n_frames, N_in = self.N_in_model, \
+                                  conv_no_grad = (pg_model and self.pg_partial_update), softmax = pg_model, \
+                                      gamma_scheduler = self.gradient_control[0], weight_decay = self.gradient_control[1])
                 # only for ConvModel in the PG case, it is allowed to "partially" update the model (convolutional layers are evaluated with "no_grad()")
         elif self.net_type == 'LinearModel': 
                 model = LinearModel(0, self.net_type+str(self.net_version), lr, n_actions, \
@@ -681,7 +685,16 @@ class Multiprocess_RL_Environment:
                     temp_entropy.append(pg_entropy_i)
                     for k in self.model_pg.state_dict().keys():
                         self.model_pg.state_dict()[k] += delta_theta_i[k]
-                    self.sim_agents_discr[0].setAttribute('model_pg',self.model_pg)
+                        
+                    self.sim_agents_discr[0].update_model_weights_only(self.model_pg )
+                    #self.sim_agents_discr[0].setAttribute('model_pg',self.model_pg)
+                    
+                    model_diff = 1
+                    time_in = time.time()
+                    while np.round(model_diff, 3) >= 0.001:
+                        model_diff = self.model_pg.compare_weights( self.sim_agents_discr[0].getAttributeValue('model_pg').state_dict()  )
+                        if check_WhileTrue_timeout(time_in, 10):
+                            raise('model in simulator different from current consensus model')
             
             total_log = np.append(total_log, partial_log, axis = 0)
             total_runs += single_runs
@@ -772,7 +785,10 @@ class Multiprocess_RL_Environment:
                                 temp_pg_loss.append(policy_loss_i)
                                 temp_entropy.append(pg_entropy_i)
                                 for k in self.model_pg.state_dict().keys():
-                                    self.model_pg.state_dict()[k] += delta_theta_i[k]
+                                    self.model_pg.state_dict()[k] += (self.n_agents_discr**(-1/3))*delta_theta_i[k]
+                                                                        
+                                    #print(f'delta mean          : {torch.mean(torch.abs(delta_theta_i[k])).item()}')
+                                    #print(f'delta sqrt(1/3) mean: {(self.n_agents_discr**(-1/3))*torch.mean(torch.abs(delta_theta_i[k])).item()}')
                         
                         task_lst[i] = None
                         total_log = np.append(total_log, partial_log, axis = 0)
@@ -796,15 +812,8 @@ class Multiprocess_RL_Environment:
                             qv_continuously_updated += 1
                         
                         if self.update_policy_online:
-                            agent.setAttribute.remote('model_pg',self.model_pg)
-                            
-                            # check model differences - REQUIRED to ensure synchronization before 
-                            model_diff = 1
-                            time_in = time.time()
-                            while np.round(model_diff, 3) >= 0.001:
-                                model_diff = self.model_pg.compare_weights( ray.get(agent.getAttributeValue.remote('model_pg')).state_dict()  )
-                                if check_WhileTrue_timeout(time_in, 5):
-                                    raise('model in simulator different from current consensus model')
+                            #agent.setAttribute.remote('model_pg',self.model_pg)
+                            agent.update_model_weights_only.remote(self.model_pg )
                         
                         task_lst[i] = agent.run.remote()
                     
