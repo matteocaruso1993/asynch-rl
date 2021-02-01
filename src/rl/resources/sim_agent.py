@@ -194,9 +194,12 @@ class SimulationAgent:
     def update_model_weights_only(self, external_model, model = 'model_pg'):
         """ updates model_pg weights based on external model leaving the optimizer in its current state"""
         
-        current_opt_state = self.model_pg.optimizer.state_dict()
-        self.__dict__[model] = external_model
-        self.model_pg.optimizer.load_state_dict(current_opt_state)
+        if self.model_pg.sgd_optim:
+            self.__dict__[model] = external_model
+        else:
+            current_opt_state = self.model_pg.optimizer.state_dict()
+            self.__dict__[model] = external_model
+            self.model_pg.optimizer.load_state_dict(current_opt_state)
 
 
         
@@ -249,7 +252,7 @@ class SimulationAgent:
             return states
         
     ##################################################################################
-    def reset_agent(self, pctg_ctrl = 0):
+    def reset_agent(self, pctg_ctrl = 0, evaluate = False):
         
         if self.save_sequences and self.env.env.get_complete_sequence() is not None:
             state_sequence, ctrl_sequence = self.env.env.get_complete_sequence()
@@ -260,7 +263,7 @@ class SimulationAgent:
                 self.states_full_sequences.append(state_sequence)
                 self.ctrl_full_sequences.append(ctrl_sequence)
         
-        state_obs = self.env.reset(save_history = (not self.agent_run_variables['single_run'] % self.movie_frequency) )
+        state_obs = self.env.reset(save_history = (not self.agent_run_variables['single_run'] % self.movie_frequency), evaluate = evaluate)
         
         if state_obs is None:
             # initial action is do nothing
@@ -333,7 +336,7 @@ class SimulationAgent:
             if done:
                 self.loss_policy.backward()
                 #print(f'clipping at {self.gradient_clip_value}')
-                clip_grad_norm_(self.model_pg.parameters(), max_norm= self.gradient_clip_value, norm_type=2)
+                #clip_grad_norm_(self.model_pg.parameters(), max_norm= self.gradient_clip_value, norm_type=2)
                 
                 self.model_pg.optimizer.step()
                 
@@ -342,7 +345,7 @@ class SimulationAgent:
                 
                 #print(f'LR: {self.model_pg.scheduler.get_lr()}')
                 
-                self.model_pg.scheduler.step()
+                #self.model_pg.scheduler.step()
                 self.model_pg.optimizer.zero_grad()   
                 
                 # check if model contains nan
@@ -397,7 +400,7 @@ class SimulationAgent:
                 loss_pg = 0
                 if self.agent_run_variables['single_run'] >= self.max_n_single_runs+1:
                     break
-                state, use_controller = self.reset_agent(pctg_ctrl)
+                state, use_controller = self.reset_agent(pctg_ctrl, evaluate = use_NN )
             
             action, action_index, noise_added, prob_distrib = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN, test_qv=test_qv )
             state_1, reward_np, done , info = self.stepAndRecord(state, action, action_index, noise_added)
@@ -435,7 +438,7 @@ class SimulationAgent:
         # self.simulation_log contains duration and cumulative reward of every single-run
 
     ##################################################################################
-    async def run(self, use_NN = False, test_qv = False):
+    async def run(self, use_NN = False, pctg_ctrl = 0, test_qv = False):
         
         force_stop = False
         pg_info = None
@@ -476,7 +479,7 @@ class SimulationAgent:
             if self.reset_simulation:
                 if self.agent_run_variables['single_run'] >= self.max_n_single_runs+1:
                     break
-                state, use_controller = self.reset_agent()
+                state, use_controller = self.reset_agent(pctg_ctrl, evaluate = use_NN )
             
             action, action_index, noise_added, prob_distrib = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN, test_qv=test_qv )
             state_1, reward_np, done , info = self.stepAndRecord(state, action, action_index, noise_added)
@@ -674,19 +677,27 @@ class SimulationAgent:
                     action_index = torch.multinomial(prob_distrib, 1, replacement=True)
                 except Exception:
                     action_index = torch.argmax(prob_distrib)
-                    
-                
                 
         elif self.rl_mode == 'DQL':
             if use_controller and not use_NN:
                 action_index = torch.tensor(self.env.get_control_idx(discretized = True), dtype = torch.int8)
+            elif use_NN:
+                qvals = self.model_qv.cpu()(state.float())
+                action_index = torch.argmax(qvals)
             else:
                 if random.random() <= self.epsilon and not use_NN:
                     action_index = torch.randint(self.n_actions, torch.Size([]), dtype=torch.int8)
-
                 else:
+                    # this function allows to randomly choose other good performing q_values
                     qvals = self.model_qv.cpu()(state.float())
-                    action_index = torch.argmax(qvals)
+                    if random.random() <= 0.75:
+                        _, indices = torch.sort(-qvals)
+                        p = np.zeros(indices.shape[1])
+                        for c,i in enumerate(indices.squeeze(0).numpy()):
+                            p[i] = 2.**(-c-1)
+                        action_index = torch.multinomial(torch.tensor(p), 1, replacement=True).squeeze(0)
+                    else:
+                        action_index = torch.argmax(qvals)
             
         action[action_index] = 1
         

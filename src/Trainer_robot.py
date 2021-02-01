@@ -24,7 +24,7 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 
-parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 100, help="number of training iterations")
+parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10, help="number of training iterations")
 
 parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=True,
                     help="ray_parallelize bool")
@@ -36,7 +36,7 @@ parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, def
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=80000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=7500,
                     help="Replay Memory Size")
 
 parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100,
@@ -54,7 +54,7 @@ parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int,
 parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.5,
                     help="Ratio of Memory renewed at each iteration")
 
-parser.add_argument("-lr", "--learning-rate", dest="learning_rate", nargs="*", type=float, default=[1e-4, 1e-5],
+parser.add_argument("-lr", "--learning-rate", dest="learning_rate", nargs="*", type=float, default=[1e-4, 1e-4],
                     help="NN learning rate")
 
 parser.add_argument("-e", "--epochs-training", dest="n_epochs", type=int, default=[500, 400],
@@ -93,7 +93,7 @@ parser.add_argument("-nf", "--noise-factor", dest="noise_factor", type=float, de
 parser.add_argument("-st", "--single-trajectory", dest="sim_single_trajectory", type=bool, default=True, 
                     help="pg coefficients are shared after very trajectory is completed")
 
-parser.add_argument("-rpi", "--agents-reset-per-iteration", dest="agents_reset_per_iteration", type=float, default=0.5, 
+parser.add_argument("-rpi", "--agents-reset-per-iteration", dest="agents_reset_per_iteration", type=float, default=0.25, 
                     help="every iteration the optimizers of the N_agents*rpi with the worst average cum-reward are resetted")
 
 parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=bool, default=True, 

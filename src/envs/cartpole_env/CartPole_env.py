@@ -11,20 +11,23 @@ from .InvertedPendulum import InvertedPendulum
 import gym
 from gym import spaces
 import numpy as np
+import time
 
 #%%
 
+DEBUG = False
+
 class CartPoleEnv(gym.Env):
     
-    def __init__(self, sim_length_max = 100, difficulty = 0):
+    def __init__(self, sim_length_max = 40, difficulty = 0):
         # cartpole params
         
         self.env_type = 'CartPole'
         
-        self.done_reward = [-100, -20, 10]
+        self.done_reward = [100, 20, 10]
         
         #self.weight = [0.1, 2, .25]  # tracking error, vertical angle, changes in control action
-        self.weight = [0.05, 2, .05]  # tracking error, vertical angle, changes in control action
+        self.weight = [0.05, 0.85, .1]  # tracking error, vertical angle, changes in control action
         
         self.sim_length_max = sim_length_max # max simulation length (in seconds)
         self.dt = 0.05
@@ -76,9 +79,15 @@ class CartPoleEnv(gym.Env):
 
     #####################################################################################################            
     # this function returns a traditional control input to be used instead of the ML one
-    def get_controller_input(self):
+    def get_controller_input(self, discretized = False, bins = 10):
         self.cartpole.computeControlSignals(self.state[:-1],self.state[-1])
-        return self.cartpole.get_ctrl_signal()
+        ctrl_signal = self.cartpole.get_ctrl_signal()
+        if not discretized:
+            return ctrl_signal
+        else:
+            ctrl_space = np.linspace(-self.max_force, self.max_force, bins+1)
+            idx = np.argmin(np.abs(ctrl_space - ctrl_signal))
+            return ctrl_space[idx]
 
 
     #####################################################################################################            
@@ -91,6 +100,7 @@ class CartPoleEnv(gym.Env):
 
     #####################################################################################################            
     def step(self,action, *args):
+
         
         info = {'outcome' : None}
         
@@ -110,22 +120,30 @@ class CartPoleEnv(gym.Env):
         self.state = np.append(state_4, self.x_target)
         self.cartpole.store_results(state_4, self.x_target, action)
 
-        
+        duration_prize = np.clip(2*self.duration/self.sim_length_max, 0, 1)
         #evaluate rewards
         if  np.abs(self.state[2]) > np.pi/2:
             done = True
-            reward = self.done_reward[0] # 50   # 
+            reward = -self.done_reward[0]*(1-0.5*duration_prize) # 50   # 
             info['outcome'] = 'lost'
         
-        elif np.abs(self.state[0]-self.x_target) > self.max_distance:
+        elif self.duration/self.sim_length_max > 1/4 and np.abs(self.state[0]-self.x_target) > self.max_distance:
             done = True
-            reward = self.done_reward[1]
+            reward = self.done_reward[1]*(1-0.5*duration_prize)
             info['outcome'] = 'lost'
             
         else:
             #print(f'current time = {self.duration}, max time = {self.sim_length_max}')
-            ctrl_penalty = self.weight[2]*np.diff(self.cartpole.ctrl_inputs[-2:])**2
-            reward = np.maximum(0 , 1+self.duration -( self.weight[0]*(self.state[0]-self.state[4])**2 + self.weight[1]*self.state[2]**2 + ctrl_penalty[0]) ) 
+            target_penalty = ((self.state[0]-self.state[4])/self.max_state[0])**2
+            ctrl_penalty = ((np.diff(self.cartpole.ctrl_inputs[-2:])[-1]/(2*self.max_force))**2)[0]
+            pole_angle_penalty = np.minimum(1,(3*self.state[2]/self.max_state[2])**(2) ) # np.minimum(1,(3*x)**2)
+            
+            if DEBUG:
+                print('')
+                print(f'action : {action}')
+                print(f'target: {np.round(target_penalty,4)}, angle: {np.round(pole_angle_penalty,4)}, ctrl: {np.round(ctrl_penalty,4)}')
+            
+            reward = 1 -( self.weight[0]*target_penalty + self.weight[1]*pole_angle_penalty + self.weight[2]*ctrl_penalty) 
             #print(reward)
             # if this becomes negative there miht be an incentive to stop the simulation early!
             if self.duration >= self.sim_length_max:
@@ -141,7 +159,13 @@ class CartPoleEnv(gym.Env):
             self.stored_states_sequence = np.append(self.cartpole.solution, self.cartpole.target_pos[:,np.newaxis], axis=1)
             self.stored_ctrl_sequence = self.cartpole.ctrl_inputs
         
-        return self.state, reward, done, info
+            if DEBUG:
+                print(f'final reward fallen pole: {reward}')
+                print(f'duration/sim_max : {self.duration/self.sim_length_max}') 
+
+        #time.sleep(0.5)
+        #print(self.state/self.max_state)
+        return self.state/self.max_state, reward, done, info
 
 
     #####################################################################################################
@@ -170,13 +194,19 @@ class CartPoleEnv(gym.Env):
 
         
     #####################################################################################################
-    def reset(self, save_history = False):
+    def reset(self, save_history = False, evaluate = False):
                 
         self.duration = 0
         self.x_target = 0
-        self.state = np.array([0,0,0.05*np.random.randn(),0,0])
+        
+        if evaluate:
+            self.state = np.array([0,0,0.05*np.random.randn(),0,0])
+        else:
+            self.state =self.max_state*0.5*(2*np.random.rand(5)-1)
 
         self.reset_update_storage(save_history = save_history)
+        
+        return self.state/self.max_state
 
     #####################################################################################################
     def reset_update_storage(self, save_history = False):

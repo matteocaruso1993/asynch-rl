@@ -52,11 +52,11 @@ class InvertedPendulum():
         self.friction_max = (self.m + self.M)*1
 
         # map generation
-        self.theta_max = 0.9*(np.pi/2)
-        self.dot_theta_max = 2
+        self.theta_max = 1.5*(np.pi/2)
+        self.dot_theta_max = 4
 
         # anim generation
-        self.x_max = 5
+        self.x_max = 10
         self.dot_x_max = 4
 
 

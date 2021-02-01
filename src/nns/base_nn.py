@@ -49,7 +49,8 @@ class nnBase(nn.Module):
         default_weights_dict = {new_list: .1 for new_list in range(1,11)} 
         """
         
-        allowed_keys = {'softmax':False, 'conv_no_grad':False, 'gamma_scheduler' : 0.9, 'weight_decay' : 1e-3} #,'BATCH_SIZE':200,'device': torch.device("cpu"), \
+        allowed_keys = {'softmax':False, 'conv_no_grad':False} #, 'gamma_scheduler' : 0.9, \
+                        #'sgd_optim': False , 'weight_decay' : 0} #,'BATCH_SIZE':200,'device': torch.device("cpu"), \
                         #'optimizer' : default_optimizer , 'loss_function' : default_loss_function, \
                         #'weights_dict' : default_weights_dict }#, 'VAL_PCT':0.25 , \
                         
@@ -67,8 +68,13 @@ class nnBase(nn.Module):
 
     ##########################################################################
     def initialize_optimizer(self):
-        self.optimizer = optim.Adam(self.parameters(), lr= self.lr, weight_decay= self.weight_decay )
-        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma= self.gamma_scheduler)
+        """
+        if self.sgd_optim:
+            self.optimizer = optim.SGD(self.parameters(), lr= self.lr, momentum = 0.9) #, weight_decay= self.weight_decay )
+        else:
+        """
+        self.optimizer = optim.Adam(self.parameters(), lr= self.lr) #, weight_decay= self.weight_decay )
+            #self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma= self.gamma_scheduler)
 
     ##########################################################################
     def update_learning_rate(self, new_lr):
