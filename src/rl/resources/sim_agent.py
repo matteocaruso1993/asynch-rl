@@ -194,12 +194,12 @@ class SimulationAgent:
     def update_model_weights_only(self, external_model, model = 'model_pg'):
         """ updates model_pg weights based on external model leaving the optimizer in its current state"""
         
-        if self.model_pg.sgd_optim:
-            self.__dict__[model] = external_model
-        else:
-            current_opt_state = self.model_pg.optimizer.state_dict()
-            self.__dict__[model] = external_model
-            self.model_pg.optimizer.load_state_dict(current_opt_state)
+        #if self.model_pg.sgd_optim:
+        #    self.__dict__[model] = external_model
+        #else:
+        current_opt_state = self.model_pg.optimizer.state_dict()
+        self.__dict__[model] = external_model
+        self.model_pg.optimizer.load_state_dict(current_opt_state)
 
 
         
@@ -304,10 +304,65 @@ class SimulationAgent:
         p = 1/self.n_actions*torch.ones((1,self.n_actions))
         self.max_entropy = -torch.sum(torch.log(p)*p).item() 
         
-         
+    ##################################################################################
+    def initialize_pg_lists(self):
+        self.traj_rewards = []
+        self.traj_state_value = []
+        self.traj_log_prob = []
+        self.traj_entropy = []
+        self.advantage_loss = 0
+        self.loss_policy = 0
+        self.state_sequences = []
 
     ##################################################################################
     def pg_update_online(self, reward, state_0, state_1, prob, action_idx, done, valid):
+        
+        if valid:
+            loss_pg_i = 0
+            loss_qv_i = 0
+            
+            advantage = torch.tensor(0)
+            prob_pract = prob #+ torch.rand(prob.shape)*1e-8
+            entropy = torch.sum(-torch.log(prob_pract)*prob_pract)
+            
+            self.traj_rewards.append(reward)
+            with torch.no_grad():
+                #self.traj_state_value.append(torch.max(self.model_qv(state_0.float())))
+                self.traj_state_value.append(self.model_qv(state_0.float()))
+            self.traj_log_prob.append(torch.log(prob_pract[:,action_idx]))
+            self.traj_entropy.append(entropy)
+            self.state_sequences.append(state_0) 
+            
+            if done:
+                R = 0
+                for i in range(len(self.traj_rewards)):
+                    R = self.traj_rewards[-1-i] + self.gamma* R
+                    advantage = R - self.traj_state_value[-1-i]
+                    self.loss_policy += -advantage*self.traj_log_prob[-1-i] - self.beta_PG[0]*self.traj_entropy[-1-i]
+                    #self.advantage_loss += (  R - torch.max(self.model_qv(self.state_sequences[-1-i].float())) )**2
+                    self.advantage_loss += (  R - self.model_qv(self.state_sequences[-1-i].float()) )**2
+                    total_loss = self.advantage_loss + self.loss_policy
+                
+                total_loss.backward()
+                self.model_pg.optimizer.step()
+                self.model_qv.optimizer.step()
+
+                loss_pg_i = np.round(self.loss_policy.item(),3)
+                loss_qv_i = np.round(self.advantage_loss.item(),3)
+                
+                self.model_pg.optimizer.zero_grad()   
+                self.model_qv.optimizer.zero_grad()   
+                self.initialize_pg_lists()
+
+            return loss_pg_i, entropy.item(), loss_qv_i
+
+        else:
+            self.loss_policy = 0
+            self.model_pg.optimizer.zero_grad()
+            return np.nan, np.nan, np.nan
+
+    ##################################################################################
+    def pg_update_online_old(self, reward, state_0, state_1, prob, action_idx, done, valid):
         
         if valid:
             loss_pg_i = 0
@@ -353,7 +408,7 @@ class SimulationAgent:
                     if torch.isnan(v).any():
                         print('nan tensor after update')
                         return np.nan, np.nan, np.nan
-                    
+                                        
             #print(entropy.item())
 
             return loss_pg_i, entropy.item(), advantage.item()
@@ -362,6 +417,7 @@ class SimulationAgent:
             self.loss_policy = 0
             self.model_pg.optimizer.zero_grad()
             return np.nan, np.nan, np.nan
+
             
         
     ##################################################################################
@@ -374,6 +430,7 @@ class SimulationAgent:
         advantage_hist = []
         
         if self.update_policy_online:
+            self.initialize_pg_lists()
             delta_theta = {}
             theta_0 = deepcopy(self.model_pg.state_dict())
 
@@ -394,8 +451,10 @@ class SimulationAgent:
         if self.update_policy_online:
             self.model_pg.optimizer.zero_grad()
         
-        while not self.stop_run:
-
+        done = False
+        
+        while not (self.stop_run or self.sim_single_trajectory and done):
+            
             if self.reset_simulation:
                 loss_pg = 0
                 if self.agent_run_variables['single_run'] >= self.max_n_single_runs+1:
@@ -432,7 +491,7 @@ class SimulationAgent:
         if self.update_policy_online:
             for k in theta_0.keys():
                 delta_theta[k] = self.model_pg.state_dict()[k]-theta_0[k]
-            pg_info = (delta_theta, np.average(pg_loss_hist) , np.average(entropy_hist), not np.isnan(loss_pg_i) )
+            pg_info = (delta_theta, np.average(pg_loss_hist) , np.average(entropy_hist),np.average(advantage_hist), not np.isnan(loss_pg_i) )
         
         return self.simulation_log, self.agent_run_variables['single_run'], self.agent_run_variables['successful_runs'], pg_info #[0]
         # self.simulation_log contains duration and cumulative reward of every single-run
@@ -447,10 +506,13 @@ class SimulationAgent:
         advantage_hist = []
         
         if self.update_policy_online and 'AC' in self.rl_mode :
+            self.initialize_pg_lists()
             # check if model contains nan
             for k,v in self.model_pg.state_dict().items():
                 if torch.isnan(v).any():
-                    raise('nan tensor from start')
+                    print('nan tensor from start')
+                    return None, None, None, (None, None,None, False)
+                    
             loss_pg = 0
             enthropy = 0
             delta_theta = {}
@@ -471,8 +533,9 @@ class SimulationAgent:
         self.reset_simulation = True
         self.stop_run = False
         successful_runs = 0
+        done = False
         
-        while not self.stop_run:
+        while not (self.stop_run or self.sim_single_trajectory and done):
             
             await asyncio.sleep(0.00001)
 
@@ -505,7 +568,7 @@ class SimulationAgent:
             
             if self.verbosity > 0:
                 self.displayStatus()                    
-            self.trainVariablesUpdate(reward_np, done, force_stop or self.sim_single_trajectory , no_step = ('no step' in info) )
+            self.trainVariablesUpdate(reward_np, done, force_stop , no_step = ('no step' in info) )
             
             state = state_1
         
@@ -658,25 +721,33 @@ class SimulationAgent:
         # PG only uses greedy approach            
         if 'AC' in self.rl_mode:
             prob_distrib = self.model_pg.cpu()(state.float())
-            qvals = self.model_qv.cpu()(state.float())
+            #qvals = self.model_qv.cpu()(state.float())
 
-            if random.random() <= self.epsilon and not use_NN:
-                if random.random() <= 0.5 and self.qval_exploration:
-                    action_index = torch.argmax(qvals).unsqueeze(0).unsqueeze(0)
-                else:
-                    try:
-                        action_index = torch.multinomial(torch.abs(torch.clamp( (prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape)), 1e-10,1)), 1, replacement=True)
-                        noise_added = True
-                    except Exception:
-                        action_index = torch.argmax(prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape))
-                    
+            """
             elif test_qv:
                 action_index = torch.argmax(qvals)
+            elif random.random() <= self.epsilon and self.qval_exploration:
+                action_index = prob_action_idx_qval(qvals).unsqueeze(0).unsqueeze(0)
+                #action_index = torch.argmax(qvals).unsqueeze(0).unsqueeze(0)
+            """
+
+            if use_NN:
+                action_index = torch.argmax(prob_distrib)
             else:
                 try:
                     action_index = torch.multinomial(prob_distrib, 1, replacement=True)
                 except Exception:
                     action_index = torch.argmax(prob_distrib)
+                    print('torch.multinomial failed')
+                
+                """
+                    try:
+                        action_index = torch.multinomial(torch.abs(torch.clamp( (prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape)), 1e-10,1)), 1, replacement=True)
+                        noise_added = True
+                    except Exception:
+                        action_index = torch.argmax(prob_distrib + self.noise_sd*torch.randn(prob_distrib.shape))
+                        print('torch.multinomial failed')
+                  """  
                 
         elif self.rl_mode == 'DQL':
             if use_controller and not use_NN:
@@ -690,18 +761,19 @@ class SimulationAgent:
                 else:
                     # this function allows to randomly choose other good performing q_values
                     qvals = self.model_qv.cpu()(state.float())
-                    if random.random() <= 0.75:
-                        _, indices = torch.sort(-qvals)
-                        p = np.zeros(indices.shape[1])
-                        for c,i in enumerate(indices.squeeze(0).numpy()):
-                            p[i] = 2.**(-c-1)
-                        action_index = torch.multinomial(torch.tensor(p), 1, replacement=True).squeeze(0)
-                    else:
-                        action_index = torch.argmax(qvals)
+                    #if random.random() <= 0.75:
+                    #else:
+                    action_index = prob_action_idx_qval(qvals)     
+                    #    action_index = torch.argmax(qvals)
             
         action[action_index] = 1
         
+        #if prob_distrib.shape[0]<16:
+        #    stophere = 1
+        
         return action, action_index, noise_added, (prob_distrib if self.update_policy_online else None )
+
+
             
     ##################################################################################
     def trainVariablesUpdate(self, reward_np = 0, done = False, force_stop = False, reset_variables = False, no_step = False):
@@ -760,6 +832,15 @@ class SimulationAgent:
                 print(f'agent = {self.sim_agent_id}, iteration = {self.agent_run_variables["iteration"]}, completed = {round(perc_completed,1)}%')
             else:
                 print(f"agent = {self.sim_agent_id}, iteration = {self.agent_run_variables['iteration']}, completed = {round(perc_completed,1)}%, loss = {np.round(loss_np,2)}, epsilon = {round(self.epsilon,2)}") 
+
+
+def prob_action_idx_qval(qvals):
+    _, indices = torch.sort(-qvals)
+    p = np.zeros(indices.shape[1])
+    for c,i in enumerate(indices.squeeze(0).numpy()):
+        p[i] = 2.**(-c-1)
+    return torch.multinomial(torch.tensor(p), 1, replacement=True).squeeze(0)
+
 
 
 #%%

@@ -32,7 +32,7 @@ parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10
 parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
 
-parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=20,
+parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=4,
                     help="Number of agents to be used")
 
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
@@ -42,20 +42,20 @@ parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, 
                     help="Replay Memory Size")
 
 # following params can be left as default
-parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int, default= 400,
+parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int, default= 700,
                     help="Max n. iterations each agent runs during simulation. Influences the level of exploration which is reached by PG algorithm")
 
 parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default=0, help = "task degree of difficulty")
 
-parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.2,
+parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.25,
                     help="Ratio of Memory renewed at each iteration")
 
-parser.add_argument("-lr", "--learning-rate", dest="learning_rate",  nargs="*", type=float, default=[1e-4, 1e-4],
+parser.add_argument("-lr", "--learning-rate", dest="learning_rate",  nargs="*", type=float, default=[1e-3, 1e-3],
                     help="NN learning rate [QV, PG]. If parallelized, lr[QV] is ignored. If scalar, lr[QV] = lr[PG] = lr")
 
 parser.add_argument(
   "-e", "--epochs-training",  nargs="*",  # 0 or more values expected => creates a list
-  dest = "n_epochs", type=int, default=  [500, 400],  # default if nothing is provided
+  dest = "n_epochs", type=int, default=  [400, 400],  # default if nothing is provided
   help="Number of epochs per training iteration [QV, PG]. If parallelized, e[QV] is ignored. If scalar, e[QV] = e[PG] = e"
 )
 
@@ -68,7 +68,7 @@ parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size",  nargs="*"
 parser.add_argument("-y", "--epsilon", dest="epsilon", nargs=2, type=float, default=[0.999 , 0.2],
                     help="two values: initial epsilon, final epsilon")
 
-parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, default=0.95,
+parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, default=0.99,
                     help="annealing factor of epsilon")
 
 parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=int, default=5, #10,
@@ -77,19 +77,19 @@ parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=
 parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=bool, default=False,
                     help="reset optimizer")
 
-parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='DQL',
+parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC',
                     help="RL mode (AC, DQL, 'staticAC')")
 
-parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.99, help="GAMMA parameter in QV learning")
+parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.95, help="GAMMA parameter in QV learning")
 
-parser.add_argument("-b", "--beta", dest="beta", type=float, nargs=2, default=[.1, 1e-6], help="BETA parameter for entropy in PG learning")
+parser.add_argument("-b", "--beta", dest="beta", type=float, nargs=2, default=[0.1, 1e-4], help="BETA parameter for entropy in PG learning")
 
-parser.add_argument("-nf", "--noise-factor", dest="noise_factor", type=float, default=0.01, help="influences the variance of noise added to the probability distribution")
+parser.add_argument("-nf", "--noise-factor", dest="noise_factor", type=float, default=0.001, help="influences the variance of noise added to the probability distribution")
 
 parser.add_argument("-st", "--single-trajectory", dest="sim_single_trajectory", type=bool, default=False, 
                     help="pg coefficients are shared after very trajectory is completed")
 
-parser.add_argument("-rpi", "--agents-reset-per-iteration", dest="agents_reset_per_iteration", type=float, default=0.25, 
+parser.add_argument("-rpi", "--agents-reset-per-iteration", dest="agents_reset_per_iteration", type=float, default=0, 
                     help="every iteration the optimizers of the N_agents*rpi with the worst average cum-reward are resetted")
 
 parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=bool, default=False, 
@@ -98,8 +98,12 @@ parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_q
 parser.add_argument("-qx", "--qval-exploration", dest="qval_exploration", type=bool, default=True, 
                     help="in AC setting, uses QV in half of the cases for exploration/piloted bootstrapping")
 
-parser.add_argument("-dab", "--discrete-action-bins", dest="discrete_action_bins",  type=int, default=8, 
+parser.add_argument("-dab", "--discrete-action-bins", dest="discrete_action_bins",  type=int, default=2, 
                     help="discrete action bins (n_actions = dab+1)")
+
+parser.add_argument("-pga", "--pg_agent-contribution-coeff", dest="pg_agent_contribution_coeff", type=float, default=0.25, 
+                    help="in multiagent AC setting, determines contribution of single agent to coefficients update (pga == 0 --> 1/n*delta_Theta, pga == 1 --> delta_Theta)")
+
 
 
 # env specific parameters
@@ -132,7 +136,7 @@ n_agents = 2*num_cpus -2
 def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
         load_iteration = -1, agents_number = n_agents, learning_rate= 0.001 , \
         n_epochs = [400, 100], replay_memory_size = 5000, epsilon = [.9, 0.1], ctrlr_probability = 0,  \
-        epsilon_annealing_factor = 0.95,  mini_batch_size = [64, 32] , \
+        epsilon_annealing_factor = 0.95,  mini_batch_size = [64, 32] , pg_agent_contribution_coeff = 0.5, \
         memory_turnover_ratio = 0.1, val_frequency = 10, layers_width= (100,100), reset_optimizer = False, rl_mode = 'AC', \
         gamma = 0.99, beta = 0.001 , difficulty = 0, sim_length_max = 100, noise_factor = 0.01,\
                 sim_single_trajectory = False, continuous_qv_update = False, agents_reset_per_iteration = 1,\
@@ -197,7 +201,7 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
                                          difficulty = difficulty, learning_rate = learning_rate, sim_length_max = sim_length_max, 
                                          tot_iterations = tot_iterations, memory_turnover_ratio = memory_turnover_ratio, \
                                          gamma = gamma, beta_PG = beta , noise_factor = args.noise_factor,\
-                                         val_frequency = val_frequency, \
+                                         val_frequency = val_frequency, pg_agent_contribution_coeff = pg_agent_contribution_coeff, \
                                          sim_single_trajectory = sim_single_trajectory, continuous_qv_update = continuous_qv_update, \
                                          agents_reset_per_iteration = agents_reset_per_iteration, qval_exploration = qval_exploration)
 
@@ -237,7 +241,7 @@ if __name__ == "__main__":
                 gamma = args.gamma, beta = args.beta, agents_reset_per_iteration = args.agents_reset_per_iteration, \
                sim_single_trajectory = args.sim_single_trajectory, continuous_qv_update = args.continuous_qv_update,\
                    tot_iterations = args.tot_iterations, qval_exploration = args.qval_exploration, \
-                       discrete_action_bins = args.discrete_action_bins)
+                       discrete_action_bins = args.discrete_action_bins, pg_agent_contribution_coeff = args.pg_agent_contribution_coeff)
     
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)

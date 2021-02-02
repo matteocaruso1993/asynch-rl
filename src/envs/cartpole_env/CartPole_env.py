@@ -13,13 +13,22 @@ from gym import spaces
 import numpy as np
 import time
 
+# for AC training
+from nns.custom_networks import LinearModel
+import torch
+import torch.nn as nn
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+
+
+
 #%%
 
 DEBUG = False
 
 class CartPoleEnv(gym.Env):
     
-    def __init__(self, sim_length_max = 40, difficulty = 0):
+    def __init__(self, sim_length_max = 30, difficulty = 0):
         # cartpole params
         
         self.env_type = 'CartPole'
@@ -113,7 +122,18 @@ class CartPoleEnv(gym.Env):
         if self.cartpole.state_archive is not None:
             if self.cartpole.state_archive[-1,2] != self.state[2]:
                 stophere = 1
-        """    
+        """
+        
+        """
+        control_sign_penalty = 0
+        if np.abs(2*self.state[2]+self.state[3]) > 0.5:
+            control_sign_penalty = (int(np.sign(2*self.state[2]+self.state[3])*np.sign(action) > 0)*\
+                                    np.abs(2*self.state[2]+self.state[3])*np.abs(action)/self.max_force)[0]
+            #print(self.state[2],self.state[3],control_sign_penalty)
+            #time.sleep(0.5)
+        """
+
+        
         state_4 = self.cartpole.step_dt(self.dt, self.state[:-1], action, hold_integrate = True, reset_run =reset_run)
         
        
@@ -138,12 +158,13 @@ class CartPoleEnv(gym.Env):
             ctrl_penalty = ((np.diff(self.cartpole.ctrl_inputs[-2:])[-1]/(2*self.max_force))**2)[0]
             pole_angle_penalty = np.minimum(1,(3*self.state[2]/self.max_state[2])**(2) ) # np.minimum(1,(3*x)**2)
             
+            
             if DEBUG:
                 print('')
                 print(f'action : {action}')
                 print(f'target: {np.round(target_penalty,4)}, angle: {np.round(pole_angle_penalty,4)}, ctrl: {np.round(ctrl_penalty,4)}')
-            
-            reward = 1 -( self.weight[0]*target_penalty + self.weight[1]*pole_angle_penalty + self.weight[2]*ctrl_penalty) 
+            # np.clip((10-self.duration),0,10) +
+            reward =  1-( self.weight[0]*target_penalty + self.weight[1]*pole_angle_penalty + self.weight[2]*ctrl_penalty) #- control_sign_penalty
             #print(reward)
             # if this becomes negative there miht be an incentive to stop the simulation early!
             if self.duration >= self.sim_length_max:
@@ -234,4 +255,135 @@ class CartPoleEnv(gym.Env):
 
 
 #%%
+
+
+if __name__ == "__main__":
+    
+    continue_training = False
+    
+    # hyperparams
+    tot_iter = 15000    
+    
+    gamma = 0.95
+    beta = 0.1
+
+    loss_qv_i = 0
+    loss_pg_i = 0
+
+
+    n_iter = 200 # display
+
+    n_actions = 3
+    
+    prob_even = 1/n_actions*torch.ones(n_actions)
+    entropy_max = np.round(torch.sum(-torch.log(prob_even)*prob_even).item(),3)
+    game = CartPoleEnv()
+    action_pool = np.linspace(-1,1,n_actions)*game.max_force
+
+    if not continue_training:
+    
+        actor =  LinearModel(0, 'LinearModel0', 0.001, n_actions , 5, *[10,10], softmax=True ) 
+        critic = LinearModel(1, 'LinearModel1', 0.001, 1, 5, *[10,10] ) 
+    
+        reward_history =[]
+        loss_hist = []
+        loss_qv_hist = []
+        duration_hist = []
+        entropy_history = []
+    
+    for iteration in tqdm(range(tot_iter)):
+        
+        done = False
+        
+        state = game.reset()
+        
+        cum_reward = 0
+        loss_policy = 0
+        advantage_loss = 0
+        tot_rethrows = 0
+
+        actor.optimizer.zero_grad()
+        critic.optimizer.zero_grad()
+        
+        traj_entropy = []
+        traj_rewards = []
+        traj_state_val = []
+        traj_log_prob = []
+        state_sequences = []
+        
+        while not done:
+            
+            state_in = torch.tensor(state).unsqueeze(0)
+            state_sequences.append(state_in)
+            
+            with torch.no_grad():
+                state_val = critic(state_in.float())
+            
+            prob = actor(state_in.float())
+                
+            entropy = torch.sum(-torch.log(prob)*prob)
+            
+            action_idx = torch.multinomial(prob , 1, replacement=True).item()
+            action = np.array([action_pool[action_idx]])
+            
+            state_1, reward, done, info = game.step(action)
+            
+            cum_reward += reward
+            
+            traj_log_prob.append(torch.log(prob)[:,action_idx])
+            traj_state_val.append(state_val)
+            traj_rewards.append(reward)
+            traj_entropy.append(entropy)
+                  
+            state = state_1
+ 
+        R = 0
+        for i in range(len(traj_rewards)):
+            R = traj_rewards[-1-i] + gamma* R
+            advantage = R - traj_state_val[-1-i]
+            loss_policy += -advantage*traj_log_prob[-1-i] - beta*traj_entropy[-1-i]
+            advantage_loss += (  R - critic( state_sequences[-1-i].float()) )**2          
+ 
+        total_loss = loss_policy + advantage_loss
+     
+        total_loss.backward()
+        actor.optimizer.step()
+        critic.optimizer.step()
+ 
+        duration_hist.append(len(traj_rewards))       
+ 
+        loss_pg_i = np.round(loss_policy.item(),3)
+        loss_qv_i = np.round(advantage_loss.item(),3)
+
+        loss_hist.append(loss_pg_i)
+        loss_qv_hist.append(loss_qv_i)
+
+        reward_history.append(cum_reward)
+        entropy_history.append( round(torch.mean(torch.cat([t.unsqueeze(0) for t in traj_entropy])).item(),2) )
+
+        if iteration> 0 and not iteration%n_iter:
+            print(f'last {n_iter} averages')
+            
+            print(f'loss Actor {round( sum(abs(np.array(loss_hist[-n_iter:])))/n_iter )}')
+            print(f'loss Critic {round( sum(loss_qv_hist[-n_iter:])/n_iter )}')
+            print(f'entropy {round( 100*sum(entropy_history[-n_iter:])/entropy_max/n_iter,2)}%')
+            print(f'cum reward {round( sum(reward_history[-n_iter:])/n_iter , 2)}')
+            print(f'duration {round(sum( duration_hist[-n_iter:]) / n_iter,2 )}')        
+
+    fig0, ax0 = plt.subplots(3,1)
+    
+    ax0[0].plot(loss_qv_hist)
+    ax0[1].plot(loss_hist)
+    ax0[2].plot(entropy_history)
+
+
+    fig, ax = plt.subplots(2,1)
+    N = 100
+
+    #ax[1].plot(reward_history)
+    #ax[0].plot(np.zeros(len(reward_history)))
+    ax[0].plot(reward_history)
+    #ax[0].plot(np.convolve(reward_history, np.ones(N)/N, mode='full')[int(N/2):-int(N/2)+1])
+    #ax[0].plot(0.5*np.ones(len(reward_history)))
+    ax[1].plot(duration_hist)
 

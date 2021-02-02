@@ -74,7 +74,7 @@ parser.add_argument("-y", "--epsilon", dest="epsilon", nargs=2, type=float, defa
 parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, default=0.9,
                     help="annealing factor of epsilon")
 
-parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=int, default=5, #10,
+parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=int, default=1, #10,
                     help="model is validated every -vf iterations")
 
 parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=bool, default=False,
@@ -85,7 +85,7 @@ parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC',
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.99, help="GAMMA parameter in QV learning")
 
-parser.add_argument("-b", "--beta",  nargs="*", dest="beta", type=float, default=[0.05 , 1e-5] , \
+parser.add_argument("-b", "--beta",  nargs="*", dest="beta", type=float, default=[1 , 0] , \
                     help="BETA parameter for entropy in PG learning. b[0] determines speed of convergence, b[1] residual entropy to avoid determinism")
 
 parser.add_argument("-nf", "--noise-factor", dest="noise_factor", type=float, default=0.01, help="influences the variance of noise added to the probability distribution")
@@ -93,7 +93,7 @@ parser.add_argument("-nf", "--noise-factor", dest="noise_factor", type=float, de
 parser.add_argument("-st", "--single-trajectory", dest="sim_single_trajectory", type=bool, default=False, 
                     help="pg coefficients are shared after very trajectory is completed")
 
-parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=bool, default=True, 
+parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=bool, default=False, 
                     help="latest QV model is always used for Advanatge calculation")
 
 parser.add_argument("-rpi", "--agents-reset-per-iteration", dest="agents_reset_per_iteration", type=int, default=2, 
@@ -187,7 +187,7 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
                                          learning_rate = learning_rate, agents_reset_per_iteration=agents_reset_per_iteration, \
                                          memory_turnover_ratio = memory_turnover_ratio, val_frequency = val_frequency ,\
                                          layers_width = layers_width, env_options = env_options, \
-                                         gamma = gamma, beta_PG = beta, validation_set_ratio = 1,\
+                                         gamma = gamma, beta_PG = beta, \
                                          noise_factor = noise_factor, \
                                          sim_single_trajectory = sim_single_trajectory, continuous_qv_update = continuous_qv_update)
         
