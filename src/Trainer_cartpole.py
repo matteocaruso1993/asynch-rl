@@ -24,7 +24,7 @@ from argparse import ArgumentParser
 parser = ArgumentParser()
 
 #following params always to be declared
-parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100,
+parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=104,
                     help="net version used")
 
 parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 100, help="number of training iterations")
@@ -78,11 +78,11 @@ parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=boo
                     help="reset optimizer")
 
 parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC',
-                    help="RL mode (AC, DQL, 'staticAC')")
+                    help="RL mode (AC, DQL, parallelAC)")
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.95, help="GAMMA parameter in QV learning")
 
-parser.add_argument("-b", "--beta", dest="beta", type=float, nargs=2, default=[0.1, 1e-4], help="BETA parameter for entropy in PG learning")
+parser.add_argument("-b", "--beta", dest="beta", type=float, default= 0.1 , help="BETA parameter for entropy in PG learning")
 
 parser.add_argument("-nf", "--noise-factor", dest="noise_factor", type=float, default=0.001, help="influences the variance of noise added to the probability distribution")
 
@@ -98,7 +98,7 @@ parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_q
 parser.add_argument("-qx", "--qval-exploration", dest="qval_exploration", type=bool, default=True, 
                     help="in AC setting, uses QV in half of the cases for exploration/piloted bootstrapping")
 
-parser.add_argument("-dab", "--discrete-action-bins", dest="discrete_action_bins",  type=int, default=2, 
+parser.add_argument("-dab", "--discrete-action-bins", dest="discrete_action_bins",  type=int, default= 16, 
                     help="discrete action bins (n_actions = dab+1)")
 
 parser.add_argument("-pga", "--pg_agent-contribution-coeff", dest="pg_agent_contribution_coeff", type=float, default=0.25, 
@@ -114,7 +114,7 @@ parser.add_argument("-pu", "--pg-partial-update", dest="pg_partial_update", type
 """
 parser.add_argument(
   "-ll", "--layers-list",  nargs="*",  # 0 or more values expected => creates a list
-  dest = "layers_list", type=int, default=[40, 40, 10],  # default if nothing is provided
+  dest = "layers_list", type=int, default=[60, 60, 20],  # default if nothing is provided
 )
 
 

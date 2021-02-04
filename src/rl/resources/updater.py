@@ -38,7 +38,6 @@ class RL_Updater():
         self.n_epochs_PG   = None # 100
         self.batch_size_PG = None # 32
         
-        self.update_policy_online = None
 
         # following attributes are in common with rl_env and will be updated externally
         self.net_name = None
@@ -60,13 +59,16 @@ class RL_Updater():
     #################################################
     def save_model(self, path, model_name):
         self.model_qv.save_net_params(path, model_name)
-        if self.rl_mode == 'AC' and not self.update_policy_online:
+        """
+        if 'AC' in self.rl_mode :
             self.model_pg.save_net_params(path, model_name+'_policy')
-        
+        """
         with open(os.path.join(path,'train_log.txt'), 'a+') as f:
-                f.writelines(model_name + "\n")
-                if self.rl_mode == 'AC':
-                    f.writelines(model_name+'_policy'+ "\n")
+            f.writelines(model_name + "\n")
+            """
+            if self.rl_mode == 'AC':
+                f.writelines(model_name+'_policy'+ "\n")
+            """
         
     ##################################################################################        
     # required to check if model is inherited
@@ -115,7 +117,8 @@ class RL_Updater():
             self.model_qv.load_net_params(self.storage_path,self.net_name, self.device, reset_optimizer = reset_optimizer)
         else:
             self.model_qv.init_weights()
-
+        
+        """
         # load pg model
         if self.rl_mode == 'AC':
             self.model_pg = model_pg #self.rl_env.generate_model(pg_model=True)
@@ -125,7 +128,7 @@ class RL_Updater():
                 self.model_pg.load_net_params(self.storage_path,self.net_name+'_policy', self.device, reset_optimizer = reset_optimizer)
             except Exception:
                 raise('Existing PG model not found!')
-    
+        """
     
     #################################################
     def update_DeepRL(self, net = 'state_value', policy_memory = None):
