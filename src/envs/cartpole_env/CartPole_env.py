@@ -13,13 +13,6 @@ from gym import spaces
 import numpy as np
 import time
 
-# for AC training
-from nns.custom_networks import LinearModel
-import torch
-import torch.nn as nn
-import matplotlib.pyplot as plt
-from tqdm import tqdm
-
 
 
 #%%
@@ -387,27 +380,30 @@ if __name__ == "__main__":
     ax[1].plot(duration_hist)
 """
 
+
+
+
 #%%
 
+"""
 
 if __name__ == "__main__":
     
-    continue_training = True
+    continue_training = False
     
     # hyperparams
-    tot_iter = 5000    
+    tot_iter = 15000    
     
     gamma = 0.95
-    beta = 1
-    
-    sm = nn.Softmax(dim = 1)
+    beta = 0.1
 
     loss_qv_i = 0
     loss_pg_i = 0
 
+
     n_iter = 200 # display
 
-    n_actions = 17
+    n_actions = 3
     
     prob_even = 1/n_actions*torch.ones(n_actions)
     entropy_max = np.round(torch.sum(-torch.log(prob_even)*prob_even).item(),3)
@@ -416,9 +412,8 @@ if __name__ == "__main__":
 
     if not continue_training:
     
-        #actor =  LinearModel(0, 'LinearModel0', 0.001, n_actions , 5, *[10,10], softmax=True ) 
-        #critic = LinearModel(1, 'LinearModel1', 0.001, 1, 5, *[10,10] ) 
-        model =  LinearModel(0, 'LinearModel0', 0.0005, n_actions+1 , 5, *[500,500]) 
+        actor =  LinearModel(0, 'LinearModel0', 0.001, n_actions , 5, *[10,10], softmax=True ) 
+        critic = LinearModel(1, 'LinearModel1', 0.001, 1, 5, *[10,10] ) 
     
         reward_history =[]
         loss_hist = []
@@ -437,9 +432,8 @@ if __name__ == "__main__":
         advantage_loss = 0
         tot_rethrows = 0
 
-        #actor.optimizer.zero_grad()
-        #critic.optimizer.zero_grad()
-        model.optimizer.zero_grad()
+        actor.optimizer.zero_grad()
+        critic.optimizer.zero_grad()
         
         traj_entropy = []
         traj_rewards = []
@@ -453,17 +447,13 @@ if __name__ == "__main__":
             state_sequences.append(state_in)
             
             with torch.no_grad():
-                state_val = model(state_in.float())[:,-1]
+                state_val = critic(state_in.float())
             
-            prob = sm(model(state_in.float())[:,:-1])
+            prob = actor(state_in.float())
                 
             entropy = torch.sum(-torch.log(prob)*prob)
             
-            try:
-                action_idx = torch.multinomial(prob , 1, replacement=True).item()
-            except Exception:
-                action_idx = torch.argmax(prob).item()
-                
+            action_idx = torch.multinomial(prob , 1, replacement=True).item()
             action = np.array([action_pool[action_idx]])
             
             state_1, reward, done, info = game.step(action)
@@ -482,13 +472,13 @@ if __name__ == "__main__":
             R = traj_rewards[-1-i] + gamma* R
             advantage = R - traj_state_val[-1-i]
             loss_policy += -advantage*traj_log_prob[-1-i] - beta*traj_entropy[-1-i]
-            advantage_loss += (  R - model( state_sequences[-1-i].float())[:,-1] )**2          
+            advantage_loss += (  R - critic( state_sequences[-1-i].float()) )**2          
  
         total_loss = loss_policy + advantage_loss
      
         total_loss.backward()
-        model.optimizer.step()
-        #critic.optimizer.step()
+        actor.optimizer.step()
+        critic.optimizer.step()
  
         duration_hist.append(len(traj_rewards))       
  
@@ -527,3 +517,4 @@ if __name__ == "__main__":
     #ax[0].plot(0.5*np.ones(len(reward_history)))
     ax[1].plot(duration_hist)
 
+"""
