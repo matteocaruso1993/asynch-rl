@@ -3,14 +3,14 @@
 """
 Created on Fri Feb  5 15:55:47 2021
 
-@author: rodpod21
+@author: Enrico Regolin
 """
 
 # parallel AC tester
 
 import numpy as np
 import time
-from  CartPole_env import CartPoleEnv
+from  envs.cartpole_env.CartPole_env import CartPoleEnv
 
 from copy import deepcopy
 # for AC training
@@ -52,7 +52,7 @@ def main(n_agents = 4, generate_plots = False, save_data = True, tot_iterations 
     t0 = time.time()
     #continue_training = False
     
-    n_agents = 4
+    #n_agents = 4
     
     # hyperparams
     n_epochs = int(np.round(tot_iterations/n_agents))    

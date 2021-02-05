@@ -7,7 +7,7 @@ Created on Wed Oct 21 16:29:34 2020
 
 #%%
 
-from envs.cartpole_env.InvertedPendulum import InvertedPendulum
+from .InvertedPendulum import InvertedPendulum
 import gym
 from gym import spaces
 import numpy as np
