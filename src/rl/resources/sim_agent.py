@@ -46,25 +46,17 @@ class SimulationAgent:
                  tot_iterations = 1000, live_plot = False, verbosity = 0 , noise_sd = 0.05, \
                  movie_frequency = 10, max_n_single_runs = 1000, save_sequences  = False, \
                  reward_history_span = 200):
-                # internal_memory_size = 100, 
-                
-        self.gradient_clip_value = 1.0
-        
-        self.sm = torch.nn.Softmax(dim = 1)
                 
         self.reward_history = []
         self.reward_history_span = reward_history_span
         
-        self.qval_exploration = False
-        self.sim_single_trajectory = False
-        self.noise_sd = noise_sd
         self.prob_correction = 0.2 # probability of "correction" of "non sense random inputs" generated
         
         self.beta_PG = 1 
         self.gamma = 0.99
         
 
-        self.rl_mode = rl_mode if 'AC' not in rl_mode else 'AC'
+        self.rl_mode = rl_mode
         
         self.save_sequences  = save_sequences
         self.reset_full_sequences()
@@ -319,7 +311,7 @@ class SimulationAgent:
 
 
 ##################################################################################
-    def pg_update_online(self, reward, state_0, state_1, prob, action_idx, done, valid):
+    def pg_calculation(self, reward, state_0, state_1, prob, action_idx, done, valid):
         
         if valid:
             loss_pg_i = 0
@@ -343,73 +335,26 @@ class SimulationAgent:
                     advantage = R - self.traj_state_value[-1-i]
                     self.loss_policy += -advantage*self.traj_log_prob[-1-i] - self.beta_PG*self.traj_entropy[-1-i]
                     #self.advantage_loss += (  R - torch.max(self.model_qv(self.state_sequences[-1-i].float())) )**2
-                    self.advantage_loss += (  R - self.model_v(self.state_sequences[-1-i].float()) )**2
+                    state_value = self.model_v(self.state_sequences[-1-i].float())
+                    self.advantage_loss += (  R -  state_value )**2
+                    if self.rl_mode == 'parallelAC':
+                        with torch.no_grad():
+                            max_qvalue = torch.max(self.model_qv(self.state_sequences[-1-i].float()))
+                        self.advantage_loss += ( max_qvalue -  state_value )**2
                     total_loss = self.advantage_loss + self.loss_policy
                 
                 total_loss.backward()
-                self.model_pg.optimizer.step()
-                self.model_v.optimizer.step()
 
                 loss_pg_i = np.round(self.loss_policy.item(),3)
                 loss_qv_i = np.round(self.advantage_loss.item(),3)
-                
-                self.model_pg.optimizer.zero_grad()   
-                self.model_v.optimizer.zero_grad()   
                 self.initialize_pg_lists()
 
             return loss_pg_i, entropy.item(), loss_qv_i
 
         else:
             self.loss_policy = 0
-            self.model_pg.optimizer.zero_grad()
-            self.model_v.optimizer.zero_grad()
             return np.nan, np.nan, np.nan
 
-    ##################################################################################
-    def pg_update_online_single_net(self, reward, state_0, state_1, prob, action_idx, done, valid):
-        
-        if valid:
-            loss_pg_i = 0
-            loss_qv_i = 0
-            
-            #advantage = torch.tensor(0)
-            entropy = torch.sum(-torch.log(prob)*prob)
-            
-            self.traj_rewards.append(reward)
-            with torch.no_grad():
-                self.traj_state_value.append(self.model_pg(state_0.float())[:,-1])
-            self.traj_log_prob.append(torch.log(prob[:,action_idx]))
-            self.traj_entropy.append(entropy)
-            self.state_sequences.append(state_0) 
-            
-            if done:
-                R = 0
-                for i in range(len(self.traj_rewards)):
-                    R = self.traj_rewards[-1-i] + self.gamma* R
-                    advantage = R - self.traj_state_value[-1-i]
-                    self.loss_policy += -advantage*self.traj_log_prob[-1-i] - self.beta_PG*self.traj_entropy[-1-i]
-                    #self.advantage_loss += (  R - torch.max(self.model_qv(self.state_sequences[-1-i].float())) )**2
-                    self.advantage_loss += (  R - self.model_pg(self.state_sequences[-1-i].float())[:,-1] )**2
-                    total_loss = self.advantage_loss + self.loss_policy
-                
-                total_loss.backward()
-                self.model_pg.optimizer.step()
-                #self.model_qv.optimizer.step()
-
-                loss_pg_i = np.round(self.loss_policy.item(),3)
-                loss_qv_i = np.round(self.advantage_loss.item(),3)
-                
-                self.model_pg.optimizer.zero_grad()   
-                #self.model_qv.optimizer.zero_grad()   
-                self.initialize_pg_lists()
-
-            return loss_pg_i, entropy.item(), loss_qv_i
-
-        else:
-            self.loss_policy = 0
-            self.model_pg.optimizer.zero_grad()
-            return np.nan, np.nan, np.nan
-            
         
     ##################################################################################
     def run_synch(self, use_NN = False, pctg_ctrl = 0, test_qv = False):
@@ -421,11 +366,9 @@ class SimulationAgent:
         advantage_hist = []
         
         if 'AC' in self.rl_mode:
+            self.model_pg.optimizer.zero_grad()
+            self.model_v.optimizer.zero_grad()
             self.initialize_pg_lists()
-            delta_theta = {}
-            delta_theta_v ={}
-            theta_0   = deepcopy(self.model_pg.state_dict())
-            theta_v_0 = deepcopy(self.model_v.state_dict())
 
         self.simulation_log = None
         self.run_variables_init()
@@ -440,14 +383,9 @@ class SimulationAgent:
                 
         self.reset_simulation = True
         self.stop_run = False
-        
-        if 'AC' in self.rl_mode:
-            self.model_pg.optimizer.zero_grad()
-            self.model_v.optimizer.zero_grad()
-        
         done = False
         
-        while not (self.stop_run or self.sim_single_trajectory and done):
+        while not (self.stop_run or ( 'AC' in self.rl_mode and done) ):
             
             if self.reset_simulation:
                 loss_pg = 0
@@ -462,7 +400,7 @@ class SimulationAgent:
                 self.agent_run_variables['successful_runs'] += 1
                 
             if 'AC' in self.rl_mode:
-                loss_pg_i, entropy_i, advantage_i = self.pg_update_online(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
+                loss_pg_i, entropy_i, advantage_i = self.pg_calculation(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
                 loss_pg += loss_pg_i
                 force_stop = np.isnan(loss_pg_i)
                 entropy_hist.append(entropy_i)
@@ -483,15 +421,18 @@ class SimulationAgent:
         plt.close(fig_film)
         
         if 'AC' in self.rl_mode:
-            for k in theta_0.keys():
-                delta_theta[k] = self.model_pg.state_dict()[k]-theta_0[k]
-            for k in theta_v_0.keys():
-                delta_theta_v[k] = self.model_v.state_dict()[k]-theta_v_0[k]
-                
-            pg_info = (delta_theta, delta_theta_v , np.average(pg_loss_hist) , np.average(entropy_hist),np.average(advantage_hist), not np.isnan(loss_pg_i) )
-        
-        return self.simulation_log, self.agent_run_variables['single_run'], self.agent_run_variables['successful_runs'], pg_info #[0]
+            grad_dict_pg = {}
+            grad_dict_v = {}
+            for name, param in self.model_pg.named_parameters():
+                grad_dict_pg[name] = param.grad.clone()
+            for name, param in self.model_v.named_parameters():
+                grad_dict_v[name] = param.grad.clone()
+            pg_info = (grad_dict_pg, grad_dict_v, np.average(pg_loss_hist) , \
+                       np.average(entropy_hist),np.average(advantage_hist), True )
+
+        return self.simulation_log, self.agent_run_variables['single_run'], self.agent_run_variables['successful_runs'], self.internal_memory.fill_ratio,  pg_info #[0]
         # self.simulation_log contains duration and cumulative reward of every single-run
+
 
     ##################################################################################
     async def run(self, use_NN = False, pctg_ctrl = 0, test_qv = False):
@@ -508,14 +449,11 @@ class SimulationAgent:
             for k,v in self.model_pg.state_dict().items():
                 if torch.isnan(v).any():
                     print('nan tensor from start')
-                    return None, None, None, (None, None,None, None,None, False)
+                    return None, None, None, None, (None, None,None, None,None, False)
                     
             loss_pg = 0
             enthropy = 0
-            delta_theta = {}
-            delta_theta_v = {}
-            theta_0 = deepcopy(self.model_pg.state_dict())
-            theta_v_0= deepcopy(self.model_v.state_dict())
+
         
         self.simulation_log = None
         self.run_variables_init()
@@ -534,7 +472,7 @@ class SimulationAgent:
         successful_runs = 0
         done = False
         
-        while not (self.stop_run or self.sim_single_trajectory and done):
+        while not (self.stop_run or ( 'AC' in self.rl_mode  and done) ):
             
             await asyncio.sleep(0.00001)
 
@@ -550,7 +488,7 @@ class SimulationAgent:
                 successful_runs += 1
             
             if 'AC' in self.rl_mode:
-                loss_pg_i, entropy_i, advantage_i = self.pg_update_online(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
+                loss_pg_i, entropy_i, advantage_i = self.pg_calculation(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
                 loss_pg += loss_pg_i
                 force_stop = np.isnan(loss_pg_i)
                 entropy_hist.append(entropy_i)
@@ -576,21 +514,16 @@ class SimulationAgent:
                 valid_model = False
             else:
                 valid_model = True
-                for k in theta_v_0.keys():
-                    delta_theta_v[k] = self.model_v.state_dict()[k]-theta_v_0[k]
-                for k in theta_0.keys():
-                    delta_theta[k] = self.model_pg.state_dict()[k]-theta_0[k]
-                    if torch.isnan(delta_theta[k]).any():
-                        print('invalid model')
-                        valid_model = False
-                        break
-            pg_info = (delta_theta, delta_theta_v, np.average(pg_loss_hist) , np.average(entropy_hist),np.average(advantage_hist), valid_model )
-
-            
-            if not valid_model:
-                self.reset_agent_pg_optimizer()
+                grad_dict_pg = {}
+                grad_dict_v = {}
+                for name, param in self.model_pg.named_parameters():
+                    grad_dict_pg[name] = param.grad.clone()
+                for name, param in self.model_v.named_parameters():
+                    grad_dict_v[name] = param.grad.clone()
+                pg_info = (grad_dict_pg, grad_dict_v, np.average(pg_loss_hist) , \
+                           np.average(entropy_hist),np.average(advantage_hist), valid_model )
         
-        return self.simulation_log, self.agent_run_variables['single_run'], successful_runs , pg_info #[0]
+        return self.simulation_log, self.agent_run_variables['single_run'], successful_runs ,self.internal_memory.fill_ratio, pg_info #[0]
         # self.simulation_log contains duration and cumulative reward of every single-run
         
     ################################################################################

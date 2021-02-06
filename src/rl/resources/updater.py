@@ -29,15 +29,16 @@ class RL_Updater():
         
         
         # internal initializations
-        self.PG_update_failed_once = False
+        #self.PG_update_failed_once = False
         self.memory_pool = None
         #self.nn_updating = False
 
+        """
         # these will have to be initialized from RL_env
         self.beta_PG       = None # 0.01
         self.n_epochs_PG   = None # 100
         self.batch_size_PG = None # 32
-        
+        """
 
         # following attributes are in common with rl_env and will be updated externally
         self.net_name = None
@@ -139,16 +140,18 @@ class RL_Updater():
         total_loss = []
         total_mismatch = 0
             
-        if net == 'state_value':
+        #if net == 'state_value':
 
-            for epoch in tqdm(range(self.n_epochs)):
+        for epoch in tqdm(range(self.n_epochs)):
 
-                loss = self.qValue_loss_update(*self.memory_pool.extractMinibatch()[:-1])
-                total_loss.append(loss.cpu().item())
-                
-            self.model_qv.model_version +=1
-            pg_entropy = None
+            loss = self.qValue_loss_update(*self.memory_pool.extractMinibatch()[:-1])
+            total_loss.append(loss.cpu().item())
+            
+        self.model_qv.model_version +=1
 
+        return total_loss
+        
+        """
         elif net == 'policy' and policy_memory is not None :
             
             state_dict_0 = deepcopy(self.model_pg.state_dict()) #.copy()
@@ -172,12 +175,45 @@ class RL_Updater():
 
         else:
             raise('Undefined Net-type')
+        """
+
+
+    #################################################
+    def qValue_loss_update(self, state_batch, action_batch, reward_batch, state_1_batch, done_batch):
         
-        #self.nn_updating = False
-        return total_loss, pg_entropy
+        if self.move_to_cuda:  # put on GPU if CUDA is available
+            state_batch = state_batch.cuda()
+            action_batch = action_batch.cuda()
+            reward_batch = reward_batch.cuda()
+            state_1_batch = state_1_batch.cuda()
+
+        # get output for the next state
+        with torch.no_grad():
+            output_1_batch = self.model_qv(state_1_batch.float())
+        # set y_j to r_j for terminal state, otherwise to r_j + gamma*max(Q)
+        y_batch = torch.cat(tuple(reward_batch[i] if done_batch[i]  #minibatch[i][4]
+                                  else reward_batch[i] + self.gamma * torch.max(output_1_batch[i])
+                                  for i in range(len(reward_batch))))
+        # extract Q-value
+        # calculates Q value corresponding to all actions, then selects those corresponding to the actions taken
+        q_value = torch.sum(self.model_qv(state_batch.float()) * action_batch, dim=1)
+        
+        self.model_qv.optimizer.zero_grad()
+        y_batch = y_batch.detach()
+        loss_qval = self.model_qv.criterion_MSE(q_value, y_batch)
+        loss_qval.backward()
+        self.model_qv.optimizer.step()  
+        
+        return loss_qval
+
+
+def extract_tensor_batch(t, batch_size):
+    # extracs batch from first dimension (only works for 2D tensors)
+    idx = torch.randperm(t.nelement())
+    return t.view(-1)[idx][:batch_size].view(batch_size,1)
     
 
-    
+    """
     #################################################
     def policy_loss_update(self, state_batch, action_batch, reward_batch, state_1_batch, actual_idxs_batch):
         
@@ -220,14 +256,6 @@ class RL_Updater():
             print('WARNING: selected action mismatch detected')
             valid_rows   = (action_batch == action_batch_grad).all(dim = 1)
             invalid_rows = (action_batch != action_batch_grad).any(dim = 1)
-
-            """ # this was a test to "verify" that mismatch is compatible with a numerical error
-            # max prob index            
-            print(prob_distribs_batch[invalid_rows]) #  , torch.arange(prob_distribs_batch.size(1)) ]
-            print( torch.argmax(prob_distribs_batch[invalid_rows], dim = 1) )
-            # actual action index
-            print( torch.argmax(action_batch[invalid_rows], dim = 1) )
-            """
             
             loss_vector =  -torch.log(prob_action_batch[valid_rows])*advantage[valid_rows] + self.beta_PG*entropy[valid_rows]
             n_invalid = torch.sum(invalid_rows).item()
@@ -271,38 +299,5 @@ class RL_Updater():
                 loss_policy = torch.mean(torch.cat(losses))
         
         return loss_policy.item(), n_invalid, torch.mean(entropy).item()
+    """    
     
-    
-    #################################################
-    def qValue_loss_update(self, state_batch, action_batch, reward_batch, state_1_batch, done_batch):
-        
-        if self.move_to_cuda:  # put on GPU if CUDA is available
-            state_batch = state_batch.cuda()
-            action_batch = action_batch.cuda()
-            reward_batch = reward_batch.cuda()
-            state_1_batch = state_1_batch.cuda()
-
-        # get output for the next state
-        with torch.no_grad():
-            output_1_batch = self.model_qv(state_1_batch.float())
-        # set y_j to r_j for terminal state, otherwise to r_j + gamma*max(Q)
-        y_batch = torch.cat(tuple(reward_batch[i] if done_batch[i]  #minibatch[i][4]
-                                  else reward_batch[i] + self.gamma * torch.max(output_1_batch[i])
-                                  for i in range(len(reward_batch))))
-        # extract Q-value
-        # calculates Q value corresponding to all actions, then selects those corresponding to the actions taken
-        q_value = torch.sum(self.model_qv(state_batch.float()) * action_batch, dim=1)
-        
-        self.model_qv.optimizer.zero_grad()
-        y_batch = y_batch.detach()
-        loss_qval = self.model_qv.criterion_MSE(q_value, y_batch)
-        loss_qval.backward()
-        self.model_qv.optimizer.step()  
-        
-        return loss_qval
-
-
-def extract_tensor_batch(t, batch_size):
-    # extracs batch from first dimension (only works for 2D tensors)
-    idx = torch.randperm(t.nelement())
-    return t.view(-1)[idx][:batch_size].view(batch_size,1)

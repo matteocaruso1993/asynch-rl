@@ -13,7 +13,7 @@ import time
 from  envs.cartpole_env.CartPole_env import CartPoleEnv
 
 from copy import deepcopy
-# for AC training
+
 from nns.custom_networks import LinearModel
 import torch
 import torch.nn as nn
@@ -25,34 +25,18 @@ from tqdm import tqdm
 from argparse import ArgumentParser
 
 parser = ArgumentParser()
-
-#following params always to be declared
-parser.add_argument("-n", "--n-agents", dest="n_agents", type=int, default=1,
-                    help="number of agents")
-
-parser.add_argument("-s", "--save-data", dest="save_data", type=bool, default=True,
-                    help="Save sim results")
-
-parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int, default=25000,
-                    help="totl number of iterations")
-
-parser.add_argument("-p", "--generate-plots", dest="generate_plots", type=bool, default=False,
-                    help="generate plots")
+parser.add_argument("-n", "--n-agents", dest="n_agents", type=int, default=4, help="number of agents")
+parser.add_argument("-s", "--save-data", dest="save_data", type=bool, default=False, help="Save sim results")
+parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int, default=5000, help="totl number of iterations")
+parser.add_argument("-p", "--generate-plots", dest="generate_plots", type=bool, default=False, help="generate plots")
 
 args = parser.parse_args()
-
 #####
 
 
 def main(n_agents = 4, generate_plots = False, save_data = True, tot_iterations = 25000):
 
-    
-    #n_agents_vector = [1,2,3,4,5,6,8,10,12,15,20,25,30,40,50,100]
-    
     t0 = time.time()
-    #continue_training = False
-    
-    #n_agents = 4
     
     # hyperparams
     n_epochs = int(np.round(tot_iterations/n_agents))    
@@ -75,25 +59,10 @@ def main(n_agents = 4, generate_plots = False, save_data = True, tot_iterations 
     game = CartPoleEnv()
     action_pool = np.linspace(-1,1,n_actions)*game.max_force
     
-    #if not continue_training:
     
     # initialize model
     ACTOR =  LinearModel(-1, 'LinearModel0', lr, n_actions , 5, *[50,50], softmax=True ) 
     CRITIC = LinearModel(-1, 'LinearModel1', lr, 1, 5, *[50,50] ) 
-    #ACTOR.optimizer = torch.optim.SGD(ACTOR.parameters(), lr=lr)
-    #CRITIC.optimizer = torch.optim.SGD(CRITIC.parameters(), lr=lr)
-    #MODEL = LinearModel(0, 'LinearModel0', 0.0005, n_actions+1 , 5, *[100,100])
-    ACTOR.init_weights()
-    CRITIC.init_weights()
-    
-    state = game.reset()
-    state_in = torch.tensor(state).unsqueeze(0)
-    a = ACTOR(state_in.float())
-    b = CRITIC(state_in.float())
-    fake_loss = torch.sum(a)**2 +torch.sum(b)**2
-    fake_loss.backward()
-    ACTOR.optimizer.zero_grad()
-    CRITIC.optimizer.zero_grad()
 
     reward_history =[]
     loss_hist = []
@@ -110,7 +79,6 @@ def main(n_agents = 4, generate_plots = False, save_data = True, tot_iterations 
     duration_iter = []
     entropy_iter = []
     
-    
     for epoch in range(n_epochs):
     
         #clone models
@@ -123,7 +91,6 @@ def main(n_agents = 4, generate_plots = False, save_data = True, tot_iterations 
             crt.load_state_dict(CRITIC.state_dict())
             actors.append(deepcopy(act))
             critics.append(deepcopy(crt))
-        
     
         for n in range(n_agents):
            
@@ -186,7 +153,6 @@ def main(n_agents = 4, generate_plots = False, save_data = True, tot_iterations 
             total_loss.backward() # here we have accumulated the gradients in the model
     
     
-    
             duration_iter.append(len(traj_rewards))       
      
             loss_pg_i = np.round(loss_policy.item(),3)
@@ -199,6 +165,7 @@ def main(n_agents = 4, generate_plots = False, save_data = True, tot_iterations 
             entropy_iter.append( round(torch.mean(torch.cat([t.unsqueeze(0) for t in traj_entropy])).item(),2) )
     
         
+        # transfer the gradients to the main model
         for actor in actors:
             for net1,net2 in zip(actor.named_parameters(),ACTOR.named_parameters()):
                 net2[1].grad += net1[1].grad.clone()/n_agents
@@ -206,15 +173,14 @@ def main(n_agents = 4, generate_plots = False, save_data = True, tot_iterations 
         for critic in critics:
             for net1,net2 in zip(critic.named_parameters(),CRITIC.named_parameters()):
                 net2[1].grad += net1[1].grad.clone()/n_agents
-                            
          
-        # here we have transferred the gradients to the main model
+        # update models
         ACTOR.optimizer.step()
         ACTOR.optimizer.zero_grad()
-    
         CRITIC.optimizer.step()
         CRITIC.optimizer.zero_grad()
-    
+        
+        # display intermediate results
         if epoch >0 and not epoch%(int(display_iter/n_agents)):
             duration_hist.append(np.average(np.array(duration_iter)))       
             loss_hist.append(np.average(np.array(loss_pg_iter)))
@@ -261,41 +227,31 @@ def main(n_agents = 4, generate_plots = False, save_data = True, tot_iterations 
         file_name = 'AC_test_' + str(n_agents) + '_agents.npy'
         with open(file_name, 'wb') as f:
             np.save(f, results_array)
-    
-    
+
+
+    # render plots    
     if generate_plots:
     
         sim_length = time.time()-t0
-        #print(f'total duration: {np.round(sim_length,2)}s')
         
         fig0, ax0 = plt.subplots(3,1)    
-        
         ax0[0].plot(loss_qv_hist)
         ax0[0].legend(['qv loss'])
         ax0[1].plot(loss_hist)
         ax0[1].legend(['pg loss'])
         ax0[2].plot(entropy_history)
         ax0[2].legend(['entropy'])
-        
         fig0.suptitle(f'N agents: {n_agents}, sim length: {np.round(sim_length,2)}s', fontsize=14)
         
         fig, ax = plt.subplots(2,1)
-        N = 100
-        
-        #ax[1].plot(reward_history)
-        #ax[0].plot(np.zeros(len(reward_history)))
         ax[0].plot(reward_history)
         ax[0].legend(['average reward'])
-        #ax[0].plot(np.convolve(reward_history, np.ones(N)/N, mode='full')[int(N/2):-int(N/2)+1])
-        #ax[0].plot(0.5*np.ones(len(reward_history)))
         ax[1].plot(duration_hist)
         ax[1].legend(['average duration'])
-        
         fig.suptitle(f'N agents: {n_agents}, sim length: {np.round(sim_length,2)}s', fontsize=14)
         
         
 ############################################################################
-
 
 if __name__ == "__main__":
     

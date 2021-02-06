@@ -24,21 +24,20 @@ from argparse import ArgumentParser
 parser = ArgumentParser()
 
 #following params always to be declared
-parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=104,
-                    help="net version used")
+parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100, help="net version used")
 
-parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 100, help="number of training iterations")
+parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10, help="number of training iterations")
 
 parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
 
-parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=4,
+parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=10,
                     help="Number of agents to be used")
 
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 20000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 50000,
                     help="Replay Memory Size")
 
 # following params can be left as default
@@ -54,15 +53,15 @@ parser.add_argument("-lr", "--learning-rate", dest="learning_rate",  nargs="*", 
                     help="NN learning rate [QV, PG]. If parallelized, lr[QV] is ignored. If scalar, lr[QV] = lr[PG] = lr")
 
 parser.add_argument(
-  "-e", "--epochs-training",  nargs="*",  # 0 or more values expected => creates a list
-  dest = "n_epochs", type=int, default=  [400, 400],  # default if nothing is provided
-  help="Number of epochs per training iteration [QV, PG]. If parallelized, e[QV] is ignored. If scalar, e[QV] = e[PG] = e"
+  "-e", "--epochs-training",  # 0 or more values expected => creates a list
+  dest = "n_epochs", type=int, default=  200,  # default if nothing is provided
+  help="Number of epochs per QV training iteration. In  parallelAC it is the minimum number of epochs (otherwise it ends when memory is filled)"
 )
 
 parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=30,
                     help="Length of one successful run in seconds")
 
-parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size",  nargs="*", type=int, default=[512, 256],
+parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size",  type=int, default= 512,
                     help="Size of the minibatches used for training [QV, PG]")
 
 parser.add_argument("-y", "--epsilon", dest="epsilon", nargs=2, type=float, default=[0.999 , 0.2],
@@ -77,33 +76,18 @@ parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=
 parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=bool, default=False,
                     help="reset optimizer")
 
-parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC',
+parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='parallelAC',
                     help="RL mode (AC, DQL, parallelAC)")
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.95, help="GAMMA parameter in QV learning")
 
 parser.add_argument("-b", "--beta", dest="beta", type=float, default= 0.1 , help="BETA parameter for entropy in PG learning")
 
-parser.add_argument("-nf", "--noise-factor", dest="noise_factor", type=float, default=0.001, help="influences the variance of noise added to the probability distribution")
-
-parser.add_argument("-st", "--single-trajectory", dest="sim_single_trajectory", type=bool, default=False, 
-                    help="pg coefficients are shared after very trajectory is completed")
-
-parser.add_argument("-rpi", "--agents-reset-per-iteration", dest="agents_reset_per_iteration", type=float, default=0, 
-                    help="every iteration the optimizers of the N_agents*rpi with the worst average cum-reward are resetted")
-
-parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=bool, default=False, 
+parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=bool, default= False, 
                     help="latest QV model is always used for Advanatge calculation")
-
-parser.add_argument("-qx", "--qval-exploration", dest="qval_exploration", type=bool, default=True, 
-                    help="in AC setting, uses QV in half of the cases for exploration/piloted bootstrapping")
 
 parser.add_argument("-dab", "--discrete-action-bins", dest="discrete_action_bins",  type=int, default= 16, 
                     help="discrete action bins (n_actions = dab+1)")
-
-parser.add_argument("-pga", "--pg_agent-contribution-coeff", dest="pg_agent_contribution_coeff", type=float, default=0.25, 
-                    help="in multiagent AC setting, determines contribution of single agent to coefficients update (pga == 0 --> 1/n*delta_Theta, pga == 1 --> delta_Theta)")
-
 
 
 # env specific parameters
@@ -135,12 +119,11 @@ n_agents = 2*num_cpus -2
 
 def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
         load_iteration = -1, agents_number = n_agents, learning_rate= 0.001 , \
-        n_epochs = [400, 100], replay_memory_size = 5000, epsilon = [.9, 0.1], ctrlr_probability = 0,  \
-        epsilon_annealing_factor = 0.95,  mini_batch_size = [64, 32] , pg_agent_contribution_coeff = 0.5, \
+        n_epochs = 400 , replay_memory_size = 5000, epsilon = [.9, 0.1], ctrlr_probability = 0,  \
+        epsilon_annealing_factor = 0.95,  mini_batch_size = 64 , pg_agent_contribution_coeff = 0.5, \
         memory_turnover_ratio = 0.1, val_frequency = 10, layers_width= (100,100), reset_optimizer = False, rl_mode = 'AC', \
-        gamma = 0.99, beta = 0.001 , difficulty = 0, sim_length_max = 100, noise_factor = 0.01,\
-                sim_single_trajectory = False, continuous_qv_update = False, agents_reset_per_iteration = 1,\
-                    tot_iterations = 400, qval_exploration = False, rewards = [1,1,1,1], discrete_action_bins = 8):
+        gamma = 0.99, beta = 0.001 , difficulty = 0, sim_length_max = 100, \
+        continuous_qv_update = False, tot_iterations = 400, rewards = [1,1,1,1], discrete_action_bins = 8):
 
 
     
@@ -175,16 +158,6 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
             print('ray not active')
         ray.init()
         
-        
-    if np.isscalar(n_epochs) :
-        n_epochs = np.array([n_epochs,n_epochs])
-    elif len(n_epochs) == 1:
-        n_epochs = np.array([ n_epochs[0] , n_epochs[0] ])
-        
-    if np.isscalar(mini_batch_size):
-        mini_batch_size = np.array([mini_batch_size,mini_batch_size])
-    elif len(mini_batch_size) == 1:
-        mini_batch_size = np.array([ mini_batch_size[0] , mini_batch_size[0] ])
 
     env_options = {}
     
@@ -193,17 +166,13 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
     
     rl_env = Multiprocess_RL_Environment('CartPole', 'LinearModel', net_version,rl_mode = rl_mode , n_agents = agents_number, \
                                          ray_parallelize=ray_parallelize, move_to_cuda=True, n_frames = 1, \
-                                         replay_memory_size = replay_memory_size, \
-                                         N_epochs = n_epochs[0], n_epochs_PG = n_epochs[1], \
-                                         epsilon = epsilon[0] , epsilon_min = epsilon[1] , rewards = rewards, \
-                                         mini_batch_size = mini_batch_size[0], batch_size_PG = mini_batch_size[1], \
+                                         replay_memory_size = replay_memory_size, mini_batch_size = mini_batch_size, \
+                                         N_epochs = n_epochs, epsilon = epsilon[0] , epsilon_min = epsilon[1] , rewards = rewards, \
                                          epsilon_annealing_factor=epsilon_annealing_factor, discr_env_bins = discrete_action_bins , \
                                          difficulty = difficulty, learning_rate = learning_rate, sim_length_max = sim_length_max, 
                                          tot_iterations = tot_iterations, memory_turnover_ratio = memory_turnover_ratio, \
-                                         gamma = gamma, beta_PG = beta , noise_factor = args.noise_factor,\
-                                         val_frequency = val_frequency, pg_agent_contribution_coeff = pg_agent_contribution_coeff, \
-                                         sim_single_trajectory = sim_single_trajectory, continuous_qv_update = continuous_qv_update, \
-                                         agents_reset_per_iteration = agents_reset_per_iteration, qval_exploration = qval_exploration)
+                                         gamma = gamma, beta_PG = beta , val_frequency = val_frequency, \
+                                         continuous_qv_update = continuous_qv_update)
 
     rl_env.resume_epsilon = resume_epsilon
 
@@ -238,10 +207,8 @@ if __name__ == "__main__":
                 sim_length_max = args.sim_length_max, difficulty = args.difficulty, \
                 memory_turnover_ratio = args.memory_turnover_ratio, val_frequency = args.val_frequency, \
                 layers_width= args.layers_list, reset_optimizer = args.reset_optimizer, rl_mode = args.rl_mode, \
-                gamma = args.gamma, beta = args.beta, agents_reset_per_iteration = args.agents_reset_per_iteration, \
-               sim_single_trajectory = args.sim_single_trajectory, continuous_qv_update = args.continuous_qv_update,\
-                   tot_iterations = args.tot_iterations, qval_exploration = args.qval_exploration, \
-                       discrete_action_bins = args.discrete_action_bins, pg_agent_contribution_coeff = args.pg_agent_contribution_coeff)
+                gamma = args.gamma, beta = args.beta, continuous_qv_update = args.continuous_qv_update,\
+                   tot_iterations = args.tot_iterations, discrete_action_bins = args.discrete_action_bins)
     
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)

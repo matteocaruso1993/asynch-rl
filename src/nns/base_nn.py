@@ -40,19 +40,7 @@ class nnBase(nn.Module):
     def complete_initialization(self, kwargs):
 
         self.update_NN_structure()
-        
-        """
-        ## HERE WE DEAL WITH ADDITIONAL (OPTIONAL) ARGUMENTS
-        # lr = optimizer learning rate
-        default_optimizer = optim.Adam(self.parameters(),self.lr)
-        default_loss_function = nn.MSELoss()  #this might be made changable in the future 
-        default_weights_dict = {new_list: .1 for new_list in range(1,11)} 
-        """
-        
-        allowed_keys = {'softmax':False, 'conv_no_grad':False} #, 'gamma_scheduler' : 0.9, \
-                        #'sgd_optim': False , 'weight_decay' : 0} #,'BATCH_SIZE':200,'device': torch.device("cpu"), \
-                        #'optimizer' : default_optimizer , 'loss_function' : default_loss_function, \
-                        #'weights_dict' : default_weights_dict }#, 'VAL_PCT':0.25 , \
+        allowed_keys = {'softmax':False, 'conv_no_grad':False} 
                         
         # initialize all allowed keys
         self.__dict__.update((key, allowed_keys[key]) for key in allowed_keys)
@@ -64,15 +52,15 @@ class nnBase(nn.Module):
         
         # initialize mean squared error loss
         self.criterion_MSE = nn.MSELoss()
+        
+        # initialize random weights and zero gradient
+        self.init_weights()
+        self.init_gradient()
 
 
     ##########################################################################
     def initialize_optimizer(self):
-        """
-        if self.sgd_optim:
-            self.optimizer = optim.SGD(self.parameters(), lr= self.lr, momentum = 0.9) #, weight_decay= self.weight_decay )
-        else:
-        """
+
         self.optimizer = optim.Adam(self.parameters(), lr= self.lr) #, weight_decay= self.weight_decay )
             #self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma= self.gamma_scheduler)
 
@@ -95,7 +83,17 @@ class nnBase(nn.Module):
         if type(self) == nn.Conv1d or type(self) == nn.Conv2d or type(self) == nn.Linear:
             nn.init.uniform(self.weight, -0.01, 0.01)
             self.bias.data.fill_(0.01)
-    
+            
+    ##################################################################################
+    def init_gradient(self):
+        """ initializes net gradient to zero (to allow adding external gradients to it)"""
+        l = torch.sum(self.forward(torch.randn(self.get_net_input_shape()).float()))**2
+        l.backward()
+        self.optimizer.zero_grad()
+        
+    ##########################################################################        
+    def get_net_input_shape(self):
+        pass
     
     ##########################################################################
     # save the network parameters and the training history
@@ -116,14 +114,6 @@ class nnBase(nn.Module):
             },filename_pt)
         
         check_saved(filename_pt)
-
-        """
-        while not os.path.isfile(filename_pt):
-            if 'time_in' not in locals():
-                time_in = time.time()
-            if check_WhileTrue_timeout(time_in, t_max = 10):
-                raise('ABORTED: Saving model takes too long!!')
-        """
         
         
     ##########################################################################
@@ -178,6 +168,7 @@ class nnBase(nn.Module):
         self.to(device)  # required step when loading a model on a GPU (even if it was also trained on a GPU)
         
         self.initialize_optimizer()
+        self.init_gradient()
         
         if not reset_optimizer:
             self.optimizer.load_state_dict(opt_state)
@@ -207,7 +198,6 @@ class nnBase(nn.Module):
             average_diff = np.average(np.array(diff_list ))
 
         return average_diff
-
 
 
 ##########################################################################

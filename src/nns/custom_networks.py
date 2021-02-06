@@ -146,6 +146,12 @@ class LinearModel(nnBase):
         # this should always be run in the child classes after initialization
         self.complete_initialization(kwargs)
     
+    
+    ##########################################################################        
+    def get_net_input_shape(self):
+        return (1, 1 , self.n_inputs )
+
+    
     ##########################################################################
     ## HERE WE re-DEFINE THE LAYERS when needed        
     def update_NN_structure(self):
@@ -232,6 +238,12 @@ class ConvModel(nnBase):
 
         # this should always be run in the child classes after initialization
         self.complete_initialization(kwargs)
+        
+
+    ##########################################################################        
+    def get_net_input_shape(self):
+        return (1, self.channels_in, sum(self.N_in) )
+
         
     ##########################################################################
     def update_NN_structure(self):
@@ -370,6 +382,5 @@ class ConvModel(nnBase):
 model = ConvModel('ConvModel', n_actions = 49 )
 
 
-test_tensor = torch.rand(32,4,165)
-
-out = model(test_tensor)
+#test_tensor = torch.rand(32,4,165)
+#out = model(test_tensor)
