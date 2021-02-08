@@ -282,11 +282,7 @@ class ConvModel(nnBase):
     ##########################################################################
     def forward(self,x):
         
-        if self.conv_no_grad:
-            with torch.no_grad():
-                x = self.conv_forward(x)
-        else:
-            x = self.conv_forward(x)
+        x = self.conv_forward(x)
 
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
@@ -365,6 +361,8 @@ class ConvModel(nnBase):
     def compare_weights(self, state_dict_1, state_dict_0 = None):
         
         average_diff = super().compare_weights(state_dict_1, state_dict_0)
+        
+        """
         if average_diff > 0 and self.conv_no_grad:
             
             if not identical_state_dicts(state_dict_0.pop(self.independent_weights), state_dict_1.pop(self.independent_weights)):
@@ -372,7 +370,8 @@ class ConvModel(nnBase):
                 
             average_diff = np.average(np.array( [torch.mean(torch.abs(v0[1] - v1[1])).item()  \
                             for v0,v1 in zip(state_dict_0(self.independent_weights).items(), state_dict_1(self.independent_weights).items())  ]))
-                
+        """
+        
         return average_diff
 
     

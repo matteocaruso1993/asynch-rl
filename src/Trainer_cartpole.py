@@ -3,7 +3,7 @@
 """
 Created on Tue Oct 27 10:11:08 2020
 
-@author: rodpod21
+@author: Enrico Regolin
 """
 
 from rl.rl_env import Multiprocess_RL_Environment
@@ -16,19 +16,19 @@ import ray
 import os
 import numpy as np
 
-
 #####
 from argparse import ArgumentParser
-
 
 parser = ArgumentParser()
 
 #following params always to be declared
+parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='parallelAC', help="RL mode (AC, DQL, parallelAC)")
+
 parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100, help="net version used")
 
 parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10, help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=True,
                     help="ray_parallelize bool")
 
 parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=10,
@@ -42,7 +42,7 @@ parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, 
 
 # following params can be left as default
 parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int, default= 700,
-                    help="Max n. iterations each agent runs during simulation. Influences the level of exploration which is reached by PG algorithm")
+                    help="Max n. iterations each agent runs during simulation")
 
 parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default=0, help = "task degree of difficulty")
 
@@ -52,11 +52,8 @@ parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_rati
 parser.add_argument("-lr", "--learning-rate", dest="learning_rate",  nargs="*", type=float, default=[1e-3, 1e-3],
                     help="NN learning rate [QV, PG]. If parallelized, lr[QV] is ignored. If scalar, lr[QV] = lr[PG] = lr")
 
-parser.add_argument(
-  "-e", "--epochs-training",  # 0 or more values expected => creates a list
-  dest = "n_epochs", type=int, default=  200,  # default if nothing is provided
-  help="Number of epochs per QV training iteration. In  parallelAC it is the minimum number of epochs (otherwise it ends when memory is filled)"
-)
+parser.add_argument(  "-e", "--epochs-training",  dest = "n_epochs", type=int, default=  200,  
+                        help="Number of epochs (minimum N. if parallel) per QV training iteration" )
 
 parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=30,
                     help="Length of one successful run in seconds")
@@ -76,37 +73,22 @@ parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=
 parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=bool, default=False,
                     help="reset optimizer")
 
-parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='parallelAC',
-                    help="RL mode (AC, DQL, parallelAC)")
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.95, help="GAMMA parameter in QV learning")
 
 parser.add_argument("-b", "--beta", dest="beta", type=float, default= 0.1 , help="BETA parameter for entropy in PG learning")
 
-parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=bool, default= False, 
+parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=bool, default= True, 
                     help="latest QV model is always used for Advanatge calculation")
 
 parser.add_argument("-dab", "--discrete-action-bins", dest="discrete_action_bins",  type=int, default= 16, 
                     help="discrete action bins (n_actions = dab+1)")
 
-
 # env specific parameters
 
-"""
-parser.add_argument("-pu", "--pg-partial-update", dest="pg_partial_update", type=bool, default=False,
-                    help="Flag to update only partially the PG model (non updated layers are shared with QV model)")
-"""
-parser.add_argument(
-  "-ll", "--layers-list",  nargs="*",  # 0 or more values expected => creates a list
-  dest = "layers_list", type=int, default=[60, 60, 20],  # default if nothing is provided
-)
+parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[60, 60, 20] )
 
-
-parser.add_argument(
-  "-rw", "--rewards",  nargs="*",  # 0 or more values expected => creates a list
-  dest = "rewards_list", type=int, default=[100, 20, 10],  # default if nothing is provided
-)
-
+parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=int, default=[100, 20, 10] )
 
 args = parser.parse_args()
 
@@ -124,8 +106,6 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
         memory_turnover_ratio = 0.1, val_frequency = 10, layers_width= (100,100), reset_optimizer = False, rl_mode = 'AC', \
         gamma = 0.99, beta = 0.001 , difficulty = 0, sim_length_max = 100, \
         continuous_qv_update = False, tot_iterations = 400, rewards = [1,1,1,1], discrete_action_bins = 8):
-
-
     
 
     function_inputs = locals().copy()

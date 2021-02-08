@@ -28,11 +28,6 @@ class Ray_SimulationAgent(SimulationAgent):
 class Ray_RL_Updater(RL_Updater):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
-        """ remove
-        print(f'ray.get_gpu_ids(): {ray.get_gpu_ids()}')
-        print(f'CUDA_VISIBLE_DEVICES: {os.environ["CUDA_VISIBLE_DEVICES"]}')
-        """
 
 
     async def update_DQN_asynch(self):
@@ -73,4 +68,6 @@ class Ray_RL_Updater(RL_Updater):
         """method to extract current QV model version during update process (to speed up PG training)"""
         return self.model_qv
     
-
+    async def update_model_v(self, model_v):
+        """method to update model v"""
+        self.model_v = model_v

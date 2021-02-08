@@ -56,20 +56,18 @@ class Multiprocess_RL_Environment:
                  replay_memory_size = 10000, mini_batch_size = 512, sim_length_max = 100, \
                  ctrlr_prob_annealing_factor = .9,  ctrlr_probability = 0, difficulty = 0, \
                  memory_turnover_ratio = 0.2, val_frequency = 10, bashplot = False, layers_width= (5,5), \
-                 rewards = np.ones(5), env_options = {}, pg_partial_update = False, 
+                 rewards = np.ones(5), env_options = {}, share_conv_layers = False, 
                  beta_PG = 1 , continuous_qv_update = False):
         
-        self.continuous_qv_update = continuous_qv_update
-
-        self.save_memory = False
-        self.one_vs_one = False
         
+        self.continuous_qv_update = continuous_qv_update
+        self.one_vs_one = False
         self.unstable_model = [False, False] # current model [0] and previous iteration [1] instability check. if occurrs in consecutive tries, update is aborted
         
         ####################### net/environment initialization
         # check if env/net types make sense
         allowed_envs = ['RobotEnv', 'CartPole', 'Platoon', 'Chess', 'Connect4', 'DicePoker']
-        allowed_nets = ['ConvModel', 'LinearModel'] #, 'LinearModel0', 'LinearModel1', 'LinearModel2', 'LinearModel3', 'LinearModel4']
+        allowed_nets = ['ConvModel', 'LinearModel'] 
         allowed_rl_modes = ['DQL', 'AC', 'parallelAC']
         
         self.net_version = net_version
@@ -107,7 +105,7 @@ class Multiprocess_RL_Environment:
         self.val_frequency = val_frequency
         self.ray_parallelize = ray_parallelize
         self.resume_epsilon = False
-        self.pg_partial_update = pg_partial_update
+        self.share_conv_layers = share_conv_layers
         
         ####################### storage options        
         # storage path changes for every model
@@ -205,13 +203,9 @@ class Multiprocess_RL_Environment:
 
         if self.rl_mode != 'AC':
             self.model_qv = self.generate_model('qv')
-            #self.model_qv.init_weights()
         if self.rl_mode != 'DQL':
             self.model_pg = self.generate_model('pg')
-            #self.model_pg.init_weights()
             self.model_v = self.generate_model('v')
-            #self.model_v.init_weights()
-
         
         # in one vs. one the environment requires the (latest) model to work
         if self.one_vs_one:
@@ -273,8 +267,9 @@ class Multiprocess_RL_Environment:
         
         if self.net_type == 'ConvModel':
                 model = ConvModel(model_version = 0, net_type = self.net_type+str(self.net_version), lr= lr, \
-                                  n_actions = n_actions, channels_in = self.n_frames, N_in = self.N_in_model, \
-                                  conv_no_grad = ((model_type == 'pg') and self.pg_partial_update), softmax = (model_type == 'pg') ) 
+                                  n_actions = n_actions if not (model_type == 'v') else 1, channels_in = self.n_frames, N_in = self.N_in_model, \
+                                   softmax = (model_type == 'pg') ) 
+                # conv_no_grad = ((model_type == 'pg') and self.share_conv_layers),
                 # only for ConvModel in the PG case, it is allowed to "partially" update the model (convolutional layers are evaluated with "no_grad()")
         elif self.net_type == 'LinearModel': 
                 #n_actions
@@ -360,7 +355,7 @@ class Multiprocess_RL_Environment:
         
     ##################################################################################
     def updateEpsilon(self, eps = -1):
-
+        """ epsilon is updated at each iteration (effective for DQL only)"""
         if eps > 1 or eps <= 0:
             new_eps = np.round(self.epsilon*self.epsilon_annealing_factor, 3)
         else:
@@ -401,6 +396,7 @@ class Multiprocess_RL_Environment:
             
     ##################################################################################
     def load(self, training_session_number = -1, load_memory = False):
+        """ load data to resume training """
  
         # first check if the folder/training log exists (otherwise start from scratch)
         # (otherwise none of the rest occurs)
@@ -552,7 +548,7 @@ class Multiprocess_RL_Environment:
                 self.model_pg.load_net_params(self.storage_path,self.net_name + '_policy', device_cpu)
                 self.model_v.load_net_params(self.storage_path,self.net_name + '_state_value', device_cpu)
             """
-                if self.pg_partial_update:
+                if self.share_conv_layers:
                     self.model_pg.load_conv_params(self.storage_path,self.net_name, device_cpu)
             """
         return True
@@ -631,18 +627,23 @@ class Multiprocess_RL_Environment:
         initial_pg_weights = initial_v_weights = initial_qv_weights = None
         if 'AC' in self.rl_mode:
             initial_pg_weights = deepcopy(self.model_pg.cpu().state_dict())     
-            initial_v_weights = deepcopy(self.model_v.cpu().state_dict())     
+            initial_v_weights = deepcopy(self.model_v.cpu().state_dict())   
 
         total_log = np.zeros((1,2),dtype = np.float)
         total_runs = 0
         unstable_model = False
         qv_update_launched = False        
-
         
         # QV update launch on GPU
         if self.memory_stored is not None and not memory_fill_only and self.rl_mode != 'AC':
-            if self.memory_stored.isFull():
-                initial_qv_weights = deepcopy(self.nn_updater.getAttributeValue('model_qv').cpu().state_dict())     
+            if self.nn_updater.hasMemoryPool():
+                """
+                if self.rl_mode == 'parallelAC':
+                    self.nn_updater.setAttribute('model_v', deepcopy(self.model_v) )
+                    if self.move_to_cuda:
+                        self.nn_updater.move_models_to_cuda()
+                """
+                initial_qv_weights = deepcopy(self.nn_updater.getAttributeValue('model_qv')).cpu().state_dict()     
                 self.qval_loss_hist_iteration = self.nn_updater.update_DeepRL()
                 qv_update_launched = False        
         
@@ -669,12 +670,32 @@ class Multiprocess_RL_Environment:
                     for net1,net2 in zip( grad_dict_v.items() , self.model_v.named_parameters() ):
                         net2[1].grad += net1[1].clone()
                         
-                    # update common model
+                    # update common model (in caso of common layers gradients are transferred)
+                    if self.share_conv_layers:
+                        for net1,net2 in zip( self.model_pg.named_parameters() , self.model_v.named_parameters() ):
+                            if net1[0] not in self.model_pg.independent_weights:
+                                net1[1].grad /= 2
+                                net1[1].grad += net2[1].grad.clone()/ 2
+                                net2[1].grad *= 0
+                    
                     self.model_pg.optimizer.step()
                     self.model_v.optimizer.step()
                     self.model_pg.optimizer.zero_grad()
                     self.model_v.optimizer.zero_grad()
-                    
+
+                    if self.share_conv_layers:
+                        for k,v in self.model_pg.state_dict().items():
+                            if k not in self.model_pg.independent_weights:
+                                self.model_v.state_dict()[k] *= 0
+                                self.model_v.state_dict()[k] += self.model_pg.state_dict()[k]
+                        
+                        """
+                        # 1. filter out unnecessary keys
+                        shared_weights_dict = {k : v for k, v in self.model_pg.state_dict().items() if k not in self.model_pg.independent_weights}
+                        # 2. overwrite entries in the existing state dict
+                        self.model_v.state_dict().update(shared_weights_dict)
+                        """
+                        
                     self.sim_agents_discr[0].setAttribute('model_pg',self.model_pg)
                     self.sim_agents_discr[0].setAttribute('model_v',self.model_v)
             
@@ -695,7 +716,7 @@ class Multiprocess_RL_Environment:
                         temp_entropy= temp_entropy, temp_advantage = temp_advantage)
 
     ##################################################################################
-    def runAC_Parallelized(self, memory_fill_only = False):
+    def runAC_Parallelized(self):
         """ parallelized implementation of single iteration"""
         
         # initial weights used for checks
@@ -719,23 +740,24 @@ class Multiprocess_RL_Environment:
         while True:
             
             # 1) start qv update based on existing memory stored
-            if not memory_fill_only and self.rl_mode != 'AC' and not qv_update_launched:
+            if self.rl_mode != 'AC' and not qv_update_launched:
                 if ray.get(self.nn_updater.hasMemoryPool.remote()) :
                     # this check is required to ensure nn_udater has finished loading the memory 
-                    initial_qv_weights = deepcopy(ray.get(self.nn_updater.getAttributeValue.remote('model_qv')).cpu().state_dict())     
+                    #initial_qv_weights = deepcopy(ray.get(self.nn_updater.getAttributeValue.remote('model_qv')).cpu().state_dict())     
+                    initial_qv_weights = deepcopy(ray.get(self.nn_updater.getAttributeValue.remote('model_qv'))).cpu().state_dict()
                     updating_process = self.nn_updater.update_DQN_asynch.remote()
                     qv_update_launched = True
 
             if self.continuous_qv_update and qv_update_launched:
-                self.model_qv = ray.get(self.nn_updater.get_current_QV_model.remote()).cpu()
+                model_qv_weights = ray.get(self.nn_updater.get_current_QV_model.remote()).cpu().state_dict()
 
             if not self.unstable_model[0]:
                 # 2) start parallel simulations
                 for i, agent in enumerate(self.sim_agents_discr):
                     agent.setAttribute.remote('model_pg',self.model_pg)
                     agent.setAttribute.remote('model_v',self.model_v)
-                    if self.continuous_qv_update:
-                        agent.setAttribute.remote('model_qv', self.model_qv )
+                    if self.continuous_qv_update and qv_update_launched:
+                        agent.update_model_weights_only.remote(model_qv_weights, 'model_qv')
                     task_lst[i] = agent.run.remote()
     
                 while any(tsk is not None for tsk in task_lst):
@@ -772,10 +794,26 @@ class Multiprocess_RL_Environment:
                                 
             # update models
             if not self.unstable_model[0]:
+                
+                # update common model (in caso of common layers gradients are transferred)
+                if self.share_conv_layers:
+                    for net1,net2 in zip( self.model_pg.named_parameters() , self.model_v.named_parameters() ):
+                        if net1[0] not in self.model_pg.independent_weights:
+                            net1[1].grad /= 2
+                            net1[1].grad += net2[1].grad.clone()/ 2
+                            net2[1].grad *= 0
+                
                 self.model_pg.optimizer.step()
                 self.model_v.optimizer.step()
                 self.model_pg.optimizer.zero_grad()
                 self.model_v.optimizer.zero_grad()
+
+                if self.share_conv_layers:
+                    for k,v in self.model_pg.state_dict().items():
+                        if k not in self.model_pg.independent_weights:
+                            self.model_v.state_dict()[k] *= 0
+                            self.model_v.state_dict()[k] += self.model_pg.state_dict()[k]
+
                 
                 for k,v in self.model_pg.state_dict().items():
                     if torch.isnan(v).any():
@@ -783,6 +821,11 @@ class Multiprocess_RL_Environment:
                 for k,v in self.model_v.state_dict().items():
                     if torch.isnan(v).any():
                         self.unstable_model[0] = True
+            
+            """
+            if self.continuous_qv_update and qv_update_launched:
+                self.nn_updater.update_model_v.remote( deepcopy(self.model_v).cuda() )
+            """
             
             # if memory is full inform qv update it can stop
             if self.shared_memory.isFull() or self.unstable_model[0]:
@@ -803,12 +846,11 @@ class Multiprocess_RL_Environment:
                 self.unstable_model = [False, True]
             else:
                 raise('Consecutive Issues during PG model update. Simulation interrupted')
-
-        if not memory_fill_only:        
-            self.post_iteration_routine(initial_qv_weights = initial_qv_weights, \
-                        initial_pg_weights = initial_pg_weights, initial_v_weights= initial_v_weights, \
-                        total_runs= total_runs, total_log= total_log, temp_pg_loss= temp_pg_loss, \
-                        temp_entropy= temp_entropy, temp_advantage = temp_advantage)
+   
+        self.post_iteration_routine(initial_qv_weights = initial_qv_weights, \
+                    initial_pg_weights = initial_pg_weights, initial_v_weights= initial_v_weights, \
+                    total_runs= total_runs, total_log= total_log, temp_pg_loss= temp_pg_loss, \
+                    temp_entropy= temp_entropy, temp_advantage = temp_advantage)
 
 
     ##################################################################################
@@ -831,7 +873,7 @@ class Multiprocess_RL_Environment:
                     initial_qv_weights = deepcopy(ray.get(self.nn_updater.getAttributeValue.remote('model_qv')).cpu().state_dict())     
                     updating_process = self.nn_updater.update_DQN_asynch.remote()
                     qv_update_launched = True
-               
+                
             # 2) start parallel simulations
             for i, agent in enumerate(self.sim_agents_discr):
                 # 2.1) get info from complete processes
@@ -853,8 +895,8 @@ class Multiprocess_RL_Environment:
                     
                     if not self.shared_memory.isPartiallyFull(min_fill):
                         if self.continuous_qv_update and qv_update_launched:
-                            self.model_qv = ray.get(self.nn_updater.get_current_QV_model.remote()).cpu()
-                            agent.setAttribute.remote('model_qv', self.model_qv )
+                            model_qv_weights = ray.get(self.nn_updater.get_current_QV_model.remote()).cpu().state_dict()
+                            agent.update_model_weights_only.remote(model_qv_weights, 'model_qv')
                         task_lst[i] = agent.run.remote()
                     
             # if memory is (almost) full and task list empty, inform qv update it can stop
@@ -881,8 +923,11 @@ class Multiprocess_RL_Environment:
             average_qval_loss = np.round(np.average(self.qval_loss_hist_iteration), 3)
             print(f'QV. loss = {average_qval_loss}')
             # 2) show model differences
-            current_model_qv = ray.get(self.nn_updater.get_current_QV_model.remote()).cpu()
-            model_qv_diff = self.model_qv.compare_weights(initial_qv_weights , current_model_qv.state_dict() )
+            if self.ray_parallelize:
+                current_qv_weights = deepcopy(ray.get(self.nn_updater.get_current_QV_model.remote())).cpu().state_dict()
+            else:
+                current_qv_weights = deepcopy(self.nn_updater.model_qv).cpu().state_dict()
+            model_qv_diff = self.model_qv.compare_weights(initial_qv_weights , current_qv_weights )
             print(f'model QV update : {np.round(model_qv_diff,5)}')
             
         if initial_pg_weights is not None:
@@ -929,7 +974,7 @@ class Multiprocess_RL_Environment:
         while not self.shared_memory.isFull():
             progress(round(1000*self.shared_memory.fill_ratio), 1000 , 'Fill memory')
             
-            partial_log, single_runs, successful_runs, _ = self.sim_agents_discr[0].run_synch(use_NN = True)
+            partial_log, single_runs, successful_runs, _ , _ = self.sim_agents_discr[0].run_synch(use_NN = True)
             # partial log: steps_since_start, cum_reward
             
             total_log = np.append(total_log, partial_log, axis = 0)
@@ -958,7 +1003,7 @@ class Multiprocess_RL_Environment:
                 [agents_lst.append(agent.run.remote(use_NN = True)) for i, agent in enumerate(self.sim_agents_discr)]
                 for agnt in agents_lst:
                     #for each single run, partial log includes: 1) steps since start 2) cumulative reward
-                    partial_log, single_runs, successful_runs, _  = ray.get(agnt)
+                    partial_log, single_runs, successful_runs, _ , _ = ray.get(agnt)
                     total_log = np.append(total_log, partial_log, axis = 0)
                     total_runs += single_runs
                     tot_successful_runs += successful_runs
@@ -1046,10 +1091,6 @@ class Multiprocess_RL_Environment:
                     self.validation_serialized()
                 print('end of validation cycle')
                 print('###################################################################')
-
-        # save memory to reload for next iteration
-        if self.save_memory:
-            self.memory_stored.save(self.storage_path,self.net_name)
 
 
     ##################################################################################
@@ -1200,7 +1241,7 @@ class Multiprocess_RL_Environment:
                 self.runQV_Parallelized()
             else:
                 self.runAC_Parallelized()
-            
+        
         # we update the name in order to save it
         self.training_session_number +=1        
         self.update_net_name()
@@ -1265,10 +1306,9 @@ class Multiprocess_RL_Environment:
         ax4_1 = fig_1.add_subplot(414)
         ax4_1.plot(self.log_df.iloc[init_epoch:][indicators[4]])
         ax4_1.legend([indicators[4]])
-   
     
         if 'AC' in self.rl_mode:
-            
+
             fig_2, ax2 = plt.subplots(5,1)
 
             ax2[0].plot(self.global_pg_loss)

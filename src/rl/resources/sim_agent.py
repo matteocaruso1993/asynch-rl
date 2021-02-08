@@ -2,7 +2,7 @@
 """
 Created on Tue Sep  8 14:23:05 2020
 
-@author: enric
+@author: Enrico Regolin
 """
 
 # Importing the libraries
@@ -11,9 +11,12 @@ import sys
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
+"""
 csfp = os.path.abspath(os.path.dirname(__file__))
 if csfp not in sys.path:
     sys.path.insert(0, csfp)
+"""
+
     
 from pathlib import Path as createPath
 #%%
@@ -27,25 +30,23 @@ import asyncio
 import time
 
 from copy import deepcopy
-from rl.utilities import check_WhileTrue_timeout
 
 #%%
 # my libraries
-from .memory import ReplayMemory
+from rl.resources.memory import ReplayMemory
+#from rl.utilities import check_WhileTrue_timeout
 
 #%%
-
 DEBUG = False
 
 class SimulationAgent:
     
     ##################################################################################
     def __init__(self,sim_agent_id, env = None, rl_mode = 'DQL', model_qv= None, model_pg = None,model_v = None,\
-                 n_frames = 1, net_name = 'no_name' ,epsilon = 0.9, ctrlr_probability = 0, save_movie = True, \
+                 n_frames = 1, net_name = 'no_name' ,epsilon = 0.9, ctrlr_probability = 0, save_movie = False, \
                  max_consecutive_env_fails = 3, max_steps_single_run = 200, show_rendering = True, \
                  tot_iterations = 1000, live_plot = False, verbosity = 0 , noise_sd = 0.05, \
-                 movie_frequency = 10, max_n_single_runs = 1000, save_sequences  = False, \
-                 reward_history_span = 200):
+                 movie_frequency = 10, max_n_single_runs = 1000, save_sequences  = False, reward_history_span = 200):
                 
         self.reward_history = []
         self.reward_history_span = reward_history_span
@@ -54,7 +55,6 @@ class SimulationAgent:
         
         self.beta_PG = 1 
         self.gamma = 0.99
-        
 
         self.rl_mode = rl_mode
         
@@ -80,7 +80,6 @@ class SimulationAgent:
         self.env = env
         
         self.n_actions = self.env.get_actions_structure()
-        self.calculate_max_entropy()
         
         #(self.env.n_bins_act+1)**(self.env.act_shape[0])  # n_actions depends strictly on the type of environment
         
@@ -121,25 +120,6 @@ class SimulationAgent:
     def max_steps_single_run(self,value):
         self._max_steps_single_run = np.maximum(value, self.env.get_max_iterations())
         
-
-    ##################################################################################        
-    def get_recent_reward_average(self, span = None):
-        """ get average cum reward of last self.reward_history_span samples"""
-        if span is None:
-            span = self.reward_history_span
-
-        if len(self.reward_history) >= np.round(span*1.2):
-            recent_hist = self.reward_history[-span:]
-            return np.round(sum(recent_hist)/len(recent_hist),2)
-        else:
-            return np.nan
-        
-        
-    ##################################################################################        
-    def reset_agent_pg_optimizer(self):
-        """ reset agent PG optimizer  """
-        self.model_pg.initialize_optimizer()       
-        self.reward_history = []
         
     ##################################################################################        
     #initialize variables at the beginning of each run (to reset iterations) 
@@ -157,10 +137,12 @@ class SimulationAgent:
             failed_iteration = False,
             successful_runs = 0)
 
+    """
     ##################################################################################        
     # required since ray wrapper doesn't allow accessing attributes
     def hasInternalMemoryInfo(self, threshold = 0):
         return self.internal_memory.fill_ratio >= threshold
+    """
 
     ##################################################################################        
     # required since ray wrapper doesn't allow accessing attributes
@@ -186,17 +168,11 @@ class SimulationAgent:
             
             
     ##################################################################################        
-    def update_model_weights_only(self, external_model, model = 'model_pg'):
+    def update_model_weights_only(self, model_weights, model = 'model_qv'):
         """ updates model_pg weights based on external model leaving the optimizer in its current state"""
-        
-        #if self.model_pg.sgd_optim:
-        #    self.__dict__[model] = external_model
-        #else:
-        current_opt_state = self.model_pg.optimizer.state_dict()
-        self.__dict__[model] = external_model
-        self.model_pg.optimizer.load_state_dict(current_opt_state)
-
-
+        for k,v in model_weights.items():
+            self.__dict__[model].state_dict()[k] *= 0
+            self.__dict__[model].state_dict()[k] += v
         
     ##################################################################################        
     def renderAnimation(self, action = 0):
@@ -267,9 +243,7 @@ class SimulationAgent:
             state_obs, reward, done, info = self.env.action(action)
             
         state_obs_tensor = torch.from_numpy(state_obs).unsqueeze(0)  #added here
-        
         # n_channels consecutive "images" of the state are used by the NN to predict --> we build the channels here (second to last dimension)
-        # make it dependant on n_frames
         #state = torch.cat((state_obs_tensor, state_obs_tensor, state_obs_tensor, state_obs_tensor))  #.unsqueeze(0)
         if self.n_frames >1:
             state = state_obs_tensor.repeat(self.n_frames,1).unsqueeze(0)
@@ -294,10 +268,6 @@ class SimulationAgent:
             else:
                 self.simulation_log = np.append(self.simulation_log, single_run_log, axis = 0)
                 
-    ##################################################################################        
-    def calculate_max_entropy(self):
-        p = 1/self.n_actions*torch.ones((1,self.n_actions))
-        self.max_entropy = -torch.sum(torch.log(p)*p).item() 
         
     ##################################################################################
     def initialize_pg_lists(self):
@@ -309,22 +279,21 @@ class SimulationAgent:
         self.loss_policy = 0
         self.state_sequences = []
 
-
-##################################################################################
+    
+    ##################################################################################
     def pg_calculation(self, reward, state_0, state_1, prob, action_idx, done, valid):
-        
+        """ core of PG functionality. here gradients are calculated (model update occurs in rl_env)"""
         if valid:
             loss_pg_i = 0
             loss_qv_i = 0
             
             advantage = torch.tensor(0)
-            prob_pract = prob #+ torch.rand(prob.shape)*1e-8
-            entropy = torch.sum(-torch.log(prob_pract)*prob_pract)
+            entropy = torch.sum(-torch.log(prob)*prob)
             
             self.traj_rewards.append(reward)
             with torch.no_grad():
                 self.traj_state_value.append(self.model_v(state_0.float()))
-            self.traj_log_prob.append(torch.log(prob_pract[:,action_idx]))
+            self.traj_log_prob.append(torch.log(prob[:,action_idx]))
             self.traj_entropy.append(entropy)
             self.state_sequences.append(state_0) 
             
@@ -355,24 +324,20 @@ class SimulationAgent:
             self.loss_policy = 0
             return np.nan, np.nan, np.nan
 
-        
     ##################################################################################
-    def run_synch(self, use_NN = False, pctg_ctrl = 0, test_qv = False):
-
-        force_stop = False
-        pg_info = None
-        pg_loss_hist = []
-        entropy_hist = []
-        advantage_hist = []
+    def initialize_run(self):
+        """ initialize sim run environment"""
         
         if 'AC' in self.rl_mode:
+            # check if model contains nan
+            for k,v in self.model_pg.state_dict().items():
+                if torch.isnan(v).any():
+                    print('nan tensor from start')
+                    return None, None, None, None, (None, None,None, None,None, False)
             self.model_pg.optimizer.zero_grad()
             self.model_v.optimizer.zero_grad()
             self.initialize_pg_lists()
 
-        self.simulation_log = None
-        self.run_variables_init()
-        
         # initialize environment
         fig_film = None
         if self.show_rendering:
@@ -383,52 +348,90 @@ class SimulationAgent:
                 
         self.reset_simulation = True
         self.stop_run = False
+        self.simulation_log = None
+        self.run_variables_init()
+        
+        force_stop = False
+        self.pg_loss_hist = []
+        self.entropy_hist = []
+        self.advantage_hist = []
         done = False
         
-        while not (self.stop_run or ( 'AC' in self.rl_mode and done) ):
+        return force_stop, done, fig_film
+
+
+    ##################################################################################
+    def sim_routine(self, state, loss_pg , use_controller, use_NN, test_qv):
+        """ single iteration routine for env simulation"""
+        
+        force_stop = False
+        
+        action, action_index, noise_added, prob_distrib = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN, test_qv=test_qv )
+        state_1, reward_np, done , info = self.stepAndRecord(state, action, action_index, noise_added)
+        
+        if use_NN and (info['outcome'] is not None) and (info['outcome'] != 'fail') and (info['outcome'] != 'opponent'):
+            self.agent_run_variables['successful_runs'] += 1
             
+        if 'AC' in self.rl_mode:
+            loss_pg_i, entropy_i, advantage_i = self.pg_calculation(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
+            loss_pg += loss_pg_i
+            force_stop = np.isnan(loss_pg_i)
+            self.entropy_hist.append(entropy_i)
+            self.advantage_hist.append(advantage_i)
+            if done:
+                self.pg_loss_hist.append(loss_pg)
+        
+        if self.verbosity > 0:
+            self.displayStatus()                    
+        self.trainVariablesUpdate(reward_np, done, force_stop, no_step = ('no step' in info) )
+        
+        state = state_1
+
+        return done, state, force_stop  , loss_pg    
+
+
+    ##################################################################################
+    def extract_gradients(self, force_stop):
+        """ extract gradients from PG and V model to be shared with main model for update"""
+        
+        pg_info = None
+        if 'AC' in self.rl_mode:
+            if force_stop:
+                pg_info = (None,None,None,None,None,False)
+            else:
+                grad_dict_pg = {}
+                grad_dict_v = {}
+                for name, param in self.model_pg.named_parameters():
+                    grad_dict_pg[name] = param.grad.clone()
+                for name, param in self.model_v.named_parameters():
+                    grad_dict_v[name] = param.grad.clone()
+                pg_info = (grad_dict_pg, grad_dict_v, np.average(self.pg_loss_hist) , \
+                           np.average(self.entropy_hist),np.average(self.advantage_hist), True )
+        return pg_info
+
+
+    ##################################################################################
+    def run_synch(self, use_NN = False, pctg_ctrl = 0, test_qv = False):
+        """synchronous implementation of sim-run """
+        
+        force_stop, done, fig_film = self.initialize_run()
+        
+        while not (self.stop_run or ( 'AC' in self.rl_mode and done) ):
+                
             if self.reset_simulation:
                 loss_pg = 0
                 if self.agent_run_variables['single_run'] >= self.max_n_single_runs+1:
                     break
                 state, use_controller = self.reset_agent(pctg_ctrl, evaluate = use_NN )
-            
-            action, action_index, noise_added, prob_distrib = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN, test_qv=test_qv )
-            state_1, reward_np, done , info = self.stepAndRecord(state, action, action_index, noise_added)
-            
-            if use_NN and (info['outcome'] is not None) and (info['outcome'] != 'fail') and (info['outcome'] != 'opponent'):
-                self.agent_run_variables['successful_runs'] += 1
-                
-            if 'AC' in self.rl_mode:
-                loss_pg_i, entropy_i, advantage_i = self.pg_calculation(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
-                loss_pg += loss_pg_i
-                force_stop = np.isnan(loss_pg_i)
-                entropy_hist.append(entropy_i)
-                advantage_hist.append(advantage_i)
-                if done:
-                    pg_loss_hist.append(loss_pg)
-            
-            if self.verbosity > 0:
-                self.displayStatus()                    
-            self.trainVariablesUpdate(reward_np, done, force_stop, no_step = ('no step' in info) )
-            
-            state = state_1
-        
+           
+            done, state, force_stop  , loss_pg = self.sim_routine(state, loss_pg , use_controller, use_NN, test_qv)
+
         single_run_log = self.trainVariablesUpdate(reset_variables = True)
         self.update_sim_log(single_run_log)
-
         self.endOfRunRoutine(fig_film = fig_film)
         plt.close(fig_film)
         
-        if 'AC' in self.rl_mode:
-            grad_dict_pg = {}
-            grad_dict_v = {}
-            for name, param in self.model_pg.named_parameters():
-                grad_dict_pg[name] = param.grad.clone()
-            for name, param in self.model_v.named_parameters():
-                grad_dict_v[name] = param.grad.clone()
-            pg_info = (grad_dict_pg, grad_dict_v, np.average(pg_loss_hist) , \
-                       np.average(entropy_hist),np.average(advantage_hist), True )
+        pg_info = self.extract_gradients(force_stop)
 
         return self.simulation_log, self.agent_run_variables['single_run'], self.agent_run_variables['successful_runs'], self.internal_memory.fill_ratio,  pg_info #[0]
         # self.simulation_log contains duration and cumulative reward of every single-run
@@ -436,95 +439,35 @@ class SimulationAgent:
 
     ##################################################################################
     async def run(self, use_NN = False, pctg_ctrl = 0, test_qv = False):
+        """synchronous implementation of sim-run """
         
-        force_stop = False
-        pg_info = None
-        pg_loss_hist = []
-        entropy_hist = []
-        advantage_hist = []
-        
-        if 'AC' in self.rl_mode :
-            self.initialize_pg_lists()
-            # check if model contains nan
-            for k,v in self.model_pg.state_dict().items():
-                if torch.isnan(v).any():
-                    print('nan tensor from start')
-                    return None, None, None, None, (None, None,None, None,None, False)
-                    
-            loss_pg = 0
-            enthropy = 0
-
-        
-        self.simulation_log = None
-        self.run_variables_init()
-        
+        force_stop, done, fig_film = self.initialize_run()
         self.is_running = True
-        # initialize environment
-        fig_film = None
-        if self.show_rendering:
-            self.ims = []
-            fig_film = plt.figure()
-            if self.live_plot:
-                self.env.render_mode = 'plot'
-                
-        self.reset_simulation = True
-        self.stop_run = False
-        successful_runs = 0
-        done = False
         
-        while not (self.stop_run or ( 'AC' in self.rl_mode  and done) ):
+        while not (self.stop_run or ( 'AC' in self.rl_mode and done) ):
             
             await asyncio.sleep(0.00001)
-
+                
             if self.reset_simulation:
+                loss_pg = 0
                 if self.agent_run_variables['single_run'] >= self.max_n_single_runs+1:
                     break
                 state, use_controller = self.reset_agent(pctg_ctrl, evaluate = use_NN )
-            
-            action, action_index, noise_added, prob_distrib = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN, test_qv=test_qv )
-            state_1, reward_np, done , info = self.stepAndRecord(state, action, action_index, noise_added)
-            
-            if use_NN and info['outcome']=='finalized':
-                successful_runs += 1
-            
-            if 'AC' in self.rl_mode:
-                loss_pg_i, entropy_i, advantage_i = self.pg_calculation(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
-                loss_pg += loss_pg_i
-                force_stop = np.isnan(loss_pg_i)
-                entropy_hist.append(entropy_i)
-                advantage_hist.append(advantage_i)
-                if done:
-                    pg_loss_hist.append(loss_pg)
-            
-            if self.verbosity > 0:
-                self.displayStatus()                    
-            self.trainVariablesUpdate(reward_np, done, force_stop , no_step = ('no step' in info) )
-            
-            state = state_1
-        
+           
+            done, state, force_stop  , loss_pg = self.sim_routine(state, loss_pg , use_controller, use_NN, test_qv)
+
         single_run_log = self.trainVariablesUpdate(reset_variables = True)
         self.update_sim_log(single_run_log)
-
         self.endOfRunRoutine(fig_film = fig_film)
-        self.is_running = False
         plt.close(fig_film)
         
-        if 'AC' in self.rl_mode:
-            if force_stop:
-                valid_model = False
-            else:
-                valid_model = True
-                grad_dict_pg = {}
-                grad_dict_v = {}
-                for name, param in self.model_pg.named_parameters():
-                    grad_dict_pg[name] = param.grad.clone()
-                for name, param in self.model_v.named_parameters():
-                    grad_dict_v[name] = param.grad.clone()
-                pg_info = (grad_dict_pg, grad_dict_v, np.average(pg_loss_hist) , \
-                           np.average(entropy_hist),np.average(advantage_hist), valid_model )
-        
-        return self.simulation_log, self.agent_run_variables['single_run'], successful_runs ,self.internal_memory.fill_ratio, pg_info #[0]
+        pg_info = self.extract_gradients(force_stop)
+        self.is_running = False
+
+        return self.simulation_log, self.agent_run_variables['single_run'], self.agent_run_variables['successful_runs'], self.internal_memory.fill_ratio,  pg_info #[0]
         # self.simulation_log contains duration and cumulative reward of every single-run
+
+
         
     ################################################################################
     def emptyLocalMemory(self, capacity_threshold = 0.5):
@@ -532,6 +475,7 @@ class SimulationAgent:
             return self.internal_memory.getMemoryAndEmpty()
         else:
             return []
+        
         
     ################################################################################
     def stepAndRecord(self,state, action,action_index, noise_added):
@@ -678,7 +622,6 @@ class SimulationAgent:
         
         return action, action_index, noise_added, (prob_distrib if 'AC' in self.rl_mode else None )
 
-
             
     ##################################################################################
     def trainVariablesUpdate(self, reward_np = 0, done = False, force_stop = False, reset_variables = False, no_step = False):
@@ -717,14 +660,7 @@ class SimulationAgent:
             # update of reset_simulation and stop_run
             if self.agent_run_variables['failed_iteration'] or done or self.agent_run_variables['steps_since_start'] > self.max_steps_single_run +1 :  # (+1 is added to be able to verify the condition in the next step)
                 self.reset_simulation = True
-            #else:
-            #    print("sim goes on")
-                                
-                """
-                print(f'failed iteration: {self.agent_run_variables["failed_iteration"]}')
-                print(f'done: {done}')
-                print(f'too many steps: {self.agent_run_variables["steps_since_start"] > self.max_steps_single_run +1}')
-                """
+
                 if self.agent_run_variables['consecutive_fails'] >= self.max_consecutive_env_fails or self.agent_run_variables['iteration'] >= self.tot_iterations or force_stop:
                     self.stop_run = True
         pass
@@ -746,10 +682,8 @@ def prob_action_idx_qval(qvals):
         p[i] = 2.**(-c-1)
     return torch.multinomial(torch.tensor(p), 1, replacement=True).squeeze(0)
 
-
-
 #%%
-
+"""
 from envs.gymstyle_envs import discr_GymStyle_Platoon
 from nns.custom_networks import LinearModel
 
@@ -768,18 +702,18 @@ if __name__ == "__main__":
     agent.tot_iterations = 200
     agent.run_synch(pctg_ctrl=1)
     agent.env.env.plot_graphs()
-    
+"""
 
 #%%
-"""
-from envs.gymstyle_envs import GymStyle_Robot
+
+from envs.gymstyle_envs import discr_GymStyle_Robot
 from nns.custom_networks import ConvModel
 
 if __name__ == "__main__":
     #env = SimulationAgent(0, env = GymStyle_Robot(n_bins_act=2), model = ConvModel())
-    gym_env = GymStyle_Robot(n_bins_act=2)
+    gym_env = discr_GymStyle_Robot(n_bins_act=2)
     
-    agent = SimulationAgent(0, env=gym_env, n_frames=4  , model = ConvModel() )
+    agent = SimulationAgent(0, env=gym_env, n_frames=4  , model_qv = ConvModel() )
     agent.max_steps_single_run = 50
     
     
@@ -787,7 +721,7 @@ if __name__ == "__main__":
     agent.movie_frequency = 1
     agent.tot_iterations = 100
     agent.run_synch()
-"""
+
 
 #%%
 

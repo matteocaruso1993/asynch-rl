@@ -40,7 +40,7 @@ class nnBase(nn.Module):
     def complete_initialization(self, kwargs):
 
         self.update_NN_structure()
-        allowed_keys = {'softmax':False, 'conv_no_grad':False} 
+        allowed_keys = {'softmax':False} 
                         
         # initialize all allowed keys
         self.__dict__.update((key, allowed_keys[key]) for key in allowed_keys)
