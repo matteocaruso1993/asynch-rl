@@ -187,11 +187,7 @@ class Multiprocess_RL_Environment:
         
         # added after configuration save (these attributes can't be saved in JSON format)
         self.env_discr = self.generateDiscrActSpace_GymStyleEnv()
-        
-        if 'AC' in self.rl_mode:
-            self.span_eval_for_reset = int(np.round(100*self.memory_turnover_size/(self.n_agents_discr*self.env_discr.env.get_max_iterations())))
-            print(f'last N sequences evaluated for average cum reward: {self.span_eval_for_reset}')
-        
+               
         # this env can be used as reference and to get topologic information, but is not used for simulations!
         #(those are inside each agent)
         self.n_actions_discr = self.env_discr.get_actions_structure()

@@ -13,9 +13,6 @@ from rl.utilities import clear_pycache, store_train_params, load_train_params
 
 
 import sys
-import warnings
-warnings.simplefilter("ignore")
-
 import psutil
 import time
 import os
@@ -30,19 +27,19 @@ parser = ArgumentParser()
 
 parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='parallelAC', help="RL mode (AC, DQL, parallelAC)")
 
-parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 2, help="number of training iterations")
+parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 500 , help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=True,
                     help="ray_parallelize bool")
 
-parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=4,
+parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=40,
                     help="Number of agents to be used")
 
 
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=7500,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=10000,
                     help="Replay Memory Size")
 
 parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100,
@@ -57,7 +54,7 @@ parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default=
 parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=250,
                     help="Length of one successful run in seconds")
 
-parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.5,
+parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.25,
                     help="Ratio of Memory renewed at each iteration")
 
 parser.add_argument("-lr", "--learning-rate", dest="learning_rate", nargs="*", type=float, default=[1e-4, 1e-4],
