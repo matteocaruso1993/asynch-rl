@@ -223,7 +223,7 @@ class SimulationAgent:
             return states
         
     ##################################################################################
-    def reset_agent(self, pctg_ctrl = 0, evaluate = False):
+    def reset_agent(self, pctg_ctrl = 0, evaluate = False, info = None):
         
         if self.save_sequences and self.env.env.get_complete_sequence() is not None:
             state_sequence, ctrl_sequence = self.env.env.get_complete_sequence()
@@ -242,15 +242,9 @@ class SimulationAgent:
             action[round((self.n_actions-1)/2)] = 1
             state_obs, reward, done, info = self.env.action(action)
             
-        state_obs_tensor = torch.from_numpy(state_obs).unsqueeze(0)  #added here
-        # n_channels consecutive "images" of the state are used by the NN to predict --> we build the channels here (second to last dimension)
-        #state = torch.cat((state_obs_tensor, state_obs_tensor, state_obs_tensor, state_obs_tensor))  #.unsqueeze(0)
-        if self.n_frames >1:
-            state = state_obs_tensor.repeat(self.n_frames,1).unsqueeze(0)
-        else:
-            state = state_obs_tensor
+        state = self.env.get_net_input(state_obs, reset = True)
         
-        single_run_log = self.trainVariablesUpdate(reset_variables = True)
+        single_run_log = self.trainVariablesUpdate(reset_variables = True, info = info)
         self.update_sim_log(single_run_log)
         self.reset_simulation = False
         
@@ -281,18 +275,24 @@ class SimulationAgent:
 
     
     ##################################################################################
-    def pg_calculation(self, reward, state_0, state_1, prob, action_idx, done, valid):
+    def pg_calculation(self, reward, state_0, prob, action_idx, done, valid):
         """ core of PG functionality. here gradients are calculated (model update occurs in rl_env)"""
         if valid:
             loss_pg_i = 0
-            loss_qv_i = 0
+            loss_v_i = 0
             
             advantage = torch.tensor(0)
             entropy = torch.sum(-torch.log(prob)*prob)
             
             self.traj_rewards.append(reward)
-            with torch.no_grad():
-                self.traj_state_value.append(self.model_v(state_0.float()))
+            
+            if self.rl_mode == 'AC':
+                with torch.no_grad():
+                    self.traj_state_value.append(self.model_v(state_0))
+            elif self.rl_mode == 'parallelAC':
+                with torch.no_grad():
+                    self.traj_state_value.append(torch.max(self.model_qv(state_0)))
+                    
             self.traj_log_prob.append(torch.log(prob[:,action_idx]))
             self.traj_entropy.append(entropy)
             self.state_sequences.append(state_0) 
@@ -304,21 +304,21 @@ class SimulationAgent:
                     advantage = R - self.traj_state_value[-1-i]
                     self.loss_policy += -advantage*self.traj_log_prob[-1-i] - self.beta_PG*self.traj_entropy[-1-i]
                     #self.advantage_loss += (  R - torch.max(self.model_qv(self.state_sequences[-1-i].float())) )**2
-                    state_value = self.model_v(self.state_sequences[-1-i].float())
-                    self.advantage_loss += (  R -  state_value )**2
-                    if self.rl_mode == 'parallelAC':
-                        with torch.no_grad():
-                            max_qvalue = torch.max(self.model_qv(self.state_sequences[-1-i].float()))
-                        self.advantage_loss += ( max_qvalue -  state_value )**2
+                    if self.rl_mode == 'AC':
+                        state_value = self.model_v(self.state_sequences[-1-i]) #.float())
+                        self.advantage_loss += (  R -  state_value )**2
+                       
                     total_loss = self.advantage_loss + self.loss_policy
                 
                 total_loss.backward()
 
                 loss_pg_i = np.round(self.loss_policy.item(),3)
-                loss_qv_i = np.round(self.advantage_loss.item(),3)
+                if self.rl_mode == 'AC':
+                    loss_v_i = np.round(self.advantage_loss.item(),3)
+                    
                 self.initialize_pg_lists()
 
-            return loss_pg_i, entropy.item(), loss_qv_i
+            return loss_pg_i, entropy.item(), loss_v_i
 
         else:
             self.loss_policy = 0
@@ -373,7 +373,7 @@ class SimulationAgent:
             self.agent_run_variables['successful_runs'] += 1
             
         if 'AC' in self.rl_mode:
-            loss_pg_i, entropy_i, advantage_i = self.pg_calculation(reward_np, state, state_1, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
+            loss_pg_i, entropy_i, advantage_i = self.pg_calculation(reward_np, state, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
             loss_pg += loss_pg_i
             force_stop = np.isnan(loss_pg_i)
             self.entropy_hist.append(entropy_i)
@@ -387,7 +387,7 @@ class SimulationAgent:
         
         state = state_1
 
-        return done, state, force_stop  , loss_pg    
+        return done, state, force_stop  , loss_pg, info
 
 
     ##################################################################################
@@ -403,8 +403,9 @@ class SimulationAgent:
                 grad_dict_v = {}
                 for name, param in self.model_pg.named_parameters():
                     grad_dict_pg[name] = param.grad.clone()
-                for name, param in self.model_v.named_parameters():
-                    grad_dict_v[name] = param.grad.clone()
+                if self.rl_mode == 'AC':
+                    for name, param in self.model_v.named_parameters():
+                        grad_dict_v[name] = param.grad.clone()
                 pg_info = (grad_dict_pg, grad_dict_v, np.average(self.pg_loss_hist) , \
                            np.average(self.entropy_hist),np.average(self.advantage_hist), True )
         return pg_info
@@ -415,6 +416,7 @@ class SimulationAgent:
         """synchronous implementation of sim-run """
         
         force_stop, done, fig_film = self.initialize_run()
+        info = {}
         
         while not (self.stop_run or ( 'AC' in self.rl_mode and done) ):
                 
@@ -422,11 +424,11 @@ class SimulationAgent:
                 loss_pg = 0
                 if self.agent_run_variables['single_run'] >= self.max_n_single_runs+1:
                     break
-                state, use_controller = self.reset_agent(pctg_ctrl, evaluate = use_NN )
+                state, use_controller = self.reset_agent(pctg_ctrl, evaluate = use_NN , info = info)
            
-            done, state, force_stop  , loss_pg = self.sim_routine(state, loss_pg , use_controller, use_NN, test_qv)
+            done, state, force_stop  , loss_pg, info = self.sim_routine(state, loss_pg , use_controller, use_NN, test_qv)
 
-        single_run_log = self.trainVariablesUpdate(reset_variables = True)
+        single_run_log = self.trainVariablesUpdate(reset_variables = True, info = info)
         self.update_sim_log(single_run_log)
         self.endOfRunRoutine(fig_film = fig_film)
         plt.close(fig_film)
@@ -442,6 +444,7 @@ class SimulationAgent:
         """synchronous implementation of sim-run """
         
         force_stop, done, fig_film = self.initialize_run()
+        info = {}
         self.is_running = True
         
         while not (self.stop_run or ( 'AC' in self.rl_mode and done) ):
@@ -454,9 +457,9 @@ class SimulationAgent:
                     break
                 state, use_controller = self.reset_agent(pctg_ctrl, evaluate = use_NN )
            
-            done, state, force_stop  , loss_pg = self.sim_routine(state, loss_pg , use_controller, use_NN, test_qv)
+            done, state, force_stop  , loss_pg, info = self.sim_routine(state, loss_pg , use_controller, use_NN, test_qv)
 
-        single_run_log = self.trainVariablesUpdate(reset_variables = True)
+        single_run_log = self.trainVariablesUpdate(reset_variables = True, info = info)
         self.update_sim_log(single_run_log)
         self.endOfRunRoutine(fig_film = fig_film)
         plt.close(fig_film)
@@ -484,8 +487,7 @@ class SimulationAgent:
         try:
             # in case of infeasibility issues, random_gen allows a feasible input to be re-generated inside the environment, to accelerate the learning process
             action_bool_array = action.detach().numpy()
-            random_gen = (np.random.random() < self.prob_correction and noise_added )
-            state_obs_1, reward_np, done, info = self.env.action(action_bool_array, random_gen = random_gen )
+            state_obs_1, reward_np, done, info = self.env.action(action_bool_array)
             if 'move changed' in info:
                 action = 0*action
                 action_index = self.env.get_action_idx(info['move changed'])
@@ -506,12 +508,8 @@ class SimulationAgent:
 
             self.renderAnimation(action)
             ## restructure new data
-            state_obs_1_tensor = torch.from_numpy(state_obs_1)
             
-            if self.n_frames > 1:
-                state_1 = torch.cat((state.squeeze(0)[1:, :], state_obs_1_tensor.unsqueeze(0))).unsqueeze(0)
-            else:
-                state_1 = state_obs_1_tensor.unsqueeze(0)
+            state_1 = self.env.get_net_input(state_obs_1, state_tensor_z1 = state )
 
             action = action.unsqueeze(0)
             reward = torch.from_numpy(np.array([reward_np], dtype=np.float32)).unsqueeze(0)
@@ -592,7 +590,7 @@ class SimulationAgent:
         action = torch.zeros([self.n_actions], dtype=torch.bool)
         # PG only uses greedy approach            
         if 'AC' in self.rl_mode:
-            prob_distrib = self.model_pg.cpu()(state.float())
+            prob_distrib = self.model_pg.cpu()(state)
             #qvals = self.model_qv.cpu()(state.float())
 
             if use_NN:
@@ -608,14 +606,14 @@ class SimulationAgent:
             if use_controller and not use_NN:
                 action_index = torch.tensor(self.env.get_control_idx(discretized = True), dtype = torch.int8)
             elif use_NN:
-                qvals = self.model_qv.cpu()(state.float())
+                qvals = self.model_qv.cpu()(state)
                 action_index = torch.argmax(qvals)
             else:
                 if random.random() <= self.epsilon and not use_NN:
                     action_index = torch.randint(self.n_actions, torch.Size([]), dtype=torch.int8)
                 else:
                     # this function allows to randomly choose other good performing q_values
-                    qvals = self.model_qv.cpu()(state.float())
+                    qvals = self.model_qv.cpu()(state)
                     action_index = prob_action_idx_qval(qvals)     
             
         action[action_index] = 1
@@ -624,13 +622,22 @@ class SimulationAgent:
 
             
     ##################################################################################
-    def trainVariablesUpdate(self, reward_np = 0, done = False, force_stop = False, reset_variables = False, no_step = False):
+    def trainVariablesUpdate(self, reward_np = 0, done = False, force_stop = False, \
+                             reset_variables = False, no_step = False, info = None):
         # output is the model output given a certain state in
         
         if reset_variables:
 
             if self.agent_run_variables['single_run']>0: 
-                single_run_log = np.array([self.agent_run_variables['steps_since_start'] , self.agent_run_variables['cum_reward'] ] )[np.newaxis,:]
+                cum_reward_data = self.agent_run_variables['cum_reward']
+                if self.env.env_type == 'Frx' and self.agent_run_variables['steps_since_start']>0:
+                    if info is not None:
+                        cum_reward_data = info['return'][0]
+                        #print(f'single run return: {cum_reward_data}')
+                    else:
+                        cum_reward_data = 0
+                single_run_log = np.array([self.agent_run_variables['steps_since_start'] , cum_reward_data ] )[np.newaxis,:]
+                    
             else:
                 single_run_log = None                
 

@@ -1,5 +1,6 @@
 import gym
 import numpy as np
+import torch
 
 from gym.spaces import Box, Discrete
 
@@ -80,6 +81,12 @@ class DiscretizedActionWrapper(gym.ActionWrapper):
             arg = [self.val_bins_act[i] for i in range(self.act_space_dim)]
             xx_out = np.meshgrid(*arg)
             self.act_nD_flattened = np.stack(([xx.flatten() for xx in xx_out ]))
+            
+    ###################################################
+    # default
+    def get_net_input(self, state_obs, **kwargs):
+        """ returns input suitable to be fed to the proper Network architecture """
+        return torch.from_numpy(state_obs).unsqueeze(0).unsqueeze(0).float()
 
     ###################################################    
     def get_actions_structure(self):

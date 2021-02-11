@@ -87,9 +87,15 @@ class nnBase(nn.Module):
     ##################################################################################
     def init_gradient(self):
         """ initializes net gradient to zero (to allow adding external gradients to it)"""
-        l = torch.sum(self.forward(torch.randn(self.get_net_input_shape()).float()))**2
+        l = torch.sum(self.forward(self.build_generic_input()).float())**2
         l.backward()
         self.optimizer.zero_grad()
+        
+        
+    ##########################################################################        
+    def build_generic_input(self):
+        return torch.randn(self.get_net_input_shape())
+        
         
     ##########################################################################        
     def get_net_input_shape(self):

@@ -128,10 +128,26 @@ class ReplayMemory():
 
 
 def unpack_batch(batch):
-    state_batch   = torch.cat(tuple(element[0] for element in batch))
+    
+    states_0_tuple = tuple(element[0] for element in batch)
+    states_1_tuple = tuple(element[3] for element in batch)
+    
+    if isinstance(states_0_tuple[0],tuple):
+        states_0_batch_list = []
+        states_1_batch_list = []
+        for i in range(len(states_0_tuple[0])):
+            states_0_batch_list.append( torch.cat(tuple( it[i] for it in states_0_tuple  )) )
+            states_1_batch_list.append( torch.cat(tuple( it[i] for it in states_1_tuple  )) )
+            
+        state_batch   = tuple(states_0_batch_list)
+        state_1_batch   = tuple(states_1_batch_list)
+    else:
+        state_batch   = torch.cat(states_0_tuple)
+        state_1_batch   = torch.cat(states_1_tuple)
+        
     action_batch  = torch.cat(tuple(element[1] for element in batch))
     reward_batch  = torch.cat(tuple(element[2] for element in batch))
-    state_1_batch = torch.cat(tuple(element[3] for element in batch))
+
     done_batch = (tuple(element[4] for element in batch) )
     action_idx_batch = (tuple(element[5] for element in batch) )
 
