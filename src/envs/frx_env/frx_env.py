@@ -59,7 +59,7 @@ class FrxTrdr(gym.Env):
         self.print_out = print_out
         self.rewards = rewards
         
-        self.action_space = spaces.Box(low=np.array([0]), high=np.array([self.n_actions]))  
+        self.action_space = spaces.Box(low=np.array([-1, 0]), high=np.array([1 , self.n_actions-1 ]))  
         
         # 'operations', 'proportional', 'combined'
         self.fees_type = fees_type
@@ -204,11 +204,16 @@ class FrxTrdr(gym.Env):
         done = False
         info={}
         reward = 0
+        action = action.astype(np.int8)
         
-        if np.abs(self.coeff[action]) > 0:
-            self.close_positions(short = self.coeff[action]<0)
-            if np.abs(self.coeff[action]) >= 0.01:
-                self.open_position(self.coeff[action])
+        # action[0] -> -1 (close shorts), 0 (do nothing), 1 (close longs)
+        # self.coeff[action[1]] -> -x (open short position), 0 (do nothing), x (open long position position)
+        
+        if np.abs(action[0]) > 0:
+            self.close_positions(short = action[0]<0)
+
+        if np.abs(self.coeff[action[1]]) >= 0.01:
+            self.open_position(self.coeff[action[1]])
 
         self.current_idx +=1
         self.session_length += 1
@@ -230,10 +235,6 @@ class FrxTrdr(gym.Env):
             #reward =   np.sign(final_return)*(100*final_return)**2
             info['steps'] = self.session_length
             info['return'] = final_return
-        #else:
-            #reward = self.coeff[action] * (self.price-previous_price)/previous_price * self.lot_size/ self.initial_account
-            #print(reward)
-
        
         return self.get_obs(decimals_dict) , reward[0] if isinstance(reward,np.ndarray) else reward, done, info
     

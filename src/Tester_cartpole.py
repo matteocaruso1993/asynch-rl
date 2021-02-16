@@ -23,14 +23,14 @@ import os
 import asyncio
 
 # df loader
-net_version = 1
-iteration = 200
+net_version = 305
+iteration = -1
 
 # generate proper discretized bins structure
 ################
 env_type = 'CartPole' 
 model_type = 'LinearModel'
-overwrite_params = ['layers_width', 'rl_mode']
+overwrite_params = ['layers_width', 'rl_mode','discrete_action_bins']
 
 my_dict = load_train_params(env_type, model_type, overwrite_params, net_version)
 for i,par in enumerate(overwrite_params):
@@ -40,7 +40,7 @@ del( overwrite_params, my_dict)
 ################
 
 rl_env = Multiprocess_RL_Environment(env_type, model_type, net_version,rl_mode = rl_mode, ray_parallelize=False,  \
-                                     move_to_cuda=False, discr_env_bins=8, n_frames = 0, show_rendering = False) #, \
+                                     move_to_cuda=False, discr_env_bins=discrete_action_bins, n_frames = 0, show_rendering = False) #, \
                                       #replay_memory_size = 500, N_epochs = 100)
 
 
@@ -91,7 +91,7 @@ agent.tot_iterations = 400
 agent.max_n_single_runs = 10
 
 
-sim_log, single_runs , successful_runs, pg_info= agent.run_synch(use_NN = True, test_qv = True)
+sim_log, single_runs , successful_runs,_, pg_info= agent.run_synch(use_NN = True, test_qv = False)
 
 agent.env.env.cartpole.plot_graphs(dt=agent.env.env.dt, save = False, no_norm = False, ml_ctrl = True)
 #agent.env.env.plot_graphs()

@@ -111,24 +111,8 @@ class CartPoleEnv(gym.Env):
             reset_run = True
         else:
             reset_run = False
-        """            
-        if self.cartpole.state_archive is not None:
-            if self.cartpole.state_archive[-1,2] != self.state[2]:
-                stophere = 1
-        """
-        
-        """
-        control_sign_penalty = 0
-        if np.abs(2*self.state[2]+self.state[3]) > 0.5:
-            control_sign_penalty = (int(np.sign(2*self.state[2]+self.state[3])*np.sign(action) > 0)*\
-                                    np.abs(2*self.state[2]+self.state[3])*np.abs(action)/self.max_force)[0]
-            #print(self.state[2],self.state[3],control_sign_penalty)
-            #time.sleep(0.5)
-        """
-
         
         state_4 = self.cartpole.step_dt(self.dt, self.state[:-1], action, hold_integrate = True, reset_run =reset_run)
-        
        
         self.state = np.append(state_4, self.x_target)
         self.cartpole.store_results(state_4, self.x_target, action)
@@ -142,12 +126,14 @@ class CartPoleEnv(gym.Env):
         
         elif self.duration/self.sim_length_max > 1/4 and np.abs(self.state[0]-self.x_target) > self.max_distance:
             done = True
-            reward = self.done_reward[1]*(1-0.5*duration_prize)
+            reward = -self.done_reward[1]*(1 - 0.5*duration_prize + np.average(np.array(self.target_dist_hist)) )
             info['outcome'] = 'lost'
             
         else:
             #print(f'current time = {self.duration}, max time = {self.sim_length_max}')
-            target_penalty = ((self.state[0]-self.state[4])/self.max_state[0])**2
+            target_penalty = np.abs(self.state[0]-self.state[4])/self.max_state[0]
+            self.target_dist_hist.append(target_penalty)
+            
             ctrl_penalty = ((np.diff(self.cartpole.ctrl_inputs[-2:])[-1]/(2*self.max_force))**2)[0]
             pole_angle_penalty = np.minimum(1,(3*self.state[2]/self.max_state[2])**(2) ) # np.minimum(1,(3*x)**2)
             
@@ -161,7 +147,7 @@ class CartPoleEnv(gym.Env):
             #print(reward)
             # if this becomes negative there miht be an incentive to stop the simulation early!
             if self.duration >= self.sim_length_max:
-                reward += self.done_reward[2]
+                reward += self.done_reward[2] * (1 - np.average(np.array(self.target_dist_hist)) )
                 done = True
                 info['outcome'] = 'success'
             else:
@@ -212,6 +198,7 @@ class CartPoleEnv(gym.Env):
                 
         self.duration = 0
         self.x_target = 0
+        self.target_dist_hist = []
         
         if evaluate:
             self.state = np.array([0,0,0.05*np.random.randn(),0,0])

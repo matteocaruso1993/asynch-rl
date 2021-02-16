@@ -65,6 +65,7 @@ class SimulationAgent:
         self.max_n_single_runs = max_n_single_runs
 
         self.is_running = False
+        self.share_conv_layers = False
         
         self.sim_agent_id = sim_agent_id
         self.net_name = net_name
@@ -308,7 +309,10 @@ class SimulationAgent:
                         state_value = self.model_v(self.state_sequences[-1-i]) #.float())
                         self.advantage_loss += (  R -  state_value )**2
                        
-                    total_loss = self.advantage_loss + self.loss_policy
+                    if not self.share_conv_layers:
+                        total_loss = self.advantage_loss + self.loss_policy
+                    else:
+                        total_loss = self.advantage_loss/np.abs(self.advantage_loss.item()) + self.loss_policy/np.abs(self.loss_policy.item())
                 
                 total_loss.backward()
 
@@ -632,7 +636,7 @@ class SimulationAgent:
                 cum_reward_data = self.agent_run_variables['cum_reward']
                 if self.env.env_type == 'Frx' and self.agent_run_variables['steps_since_start']>0:
                     if info is not None:
-                        cum_reward_data = info['return'][0]
+                        cum_reward_data = info['return']
                         #print(f'single run return: {cum_reward_data}')
                     else:
                         cum_reward_data = 0

@@ -127,7 +127,7 @@ class Multiprocess_RL_Environment:
         
         ####################### required to set up sim_agents agents created at the end)
         # NN options
-        self.move_to_cuda = torch.cuda.is_available() and move_to_cuda
+        self.move_to_cuda = torch.cuda.is_available() and move_to_cuda and self.rl_mode != 'AC'
         print(f'using CUDA: {self.move_to_cuda}')
         
         if self.net_type in ['ConvModel', 'ConvFrxModel'] : # if we don't use conv_net there is no reason to use multichannel structure
@@ -639,9 +639,9 @@ class Multiprocess_RL_Environment:
             initial_pg_weights = deepcopy(self.model_pg.cpu().state_dict())     
             initial_v_weights = deepcopy(self.model_v.cpu().state_dict())   
 
+        invalid_occurred = False
         total_log = None
         total_runs = 0
-        unstable_model = False
         qv_update_launched = False        
         
         # QV update launch on GPU
@@ -670,7 +670,7 @@ class Multiprocess_RL_Environment:
             if 'AC' in self.rl_mode :
                 grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i, valid_model = pg_info
                 if valid_model:
-                    
+                    invalid_occurred = False
                     temp_pg_loss, temp_entropy, temp_advantage = self.update_training_variables(partial_log, \
                             policy_loss_i, pg_entropy_i, advantage_i, temp_pg_loss, temp_entropy, temp_advantage)
                     
@@ -708,6 +708,14 @@ class Multiprocess_RL_Environment:
                         
                     self.sim_agents_discr[0].setAttribute('model_pg',self.model_pg)
                     self.sim_agents_discr[0].setAttribute('model_v',self.model_v)
+                    
+                else: # invalid model
+                    if invalid_occurred:
+                        raise('consecutive invalid models')
+                    else:
+                        invalid_occurred = True
+
+                    
             
             if total_log is None:
                 total_log = partial_log
@@ -739,6 +747,7 @@ class Multiprocess_RL_Environment:
             if self.rl_mode == 'AC':
                 initial_v_weights = deepcopy(self.model_v.cpu().state_dict())     
         
+        invalid_occurred = False
         qv_update_launched = False        
         total_log = None
         total_runs = 0        
@@ -795,6 +804,7 @@ class Multiprocess_RL_Environment:
                             # implementation for A3C
                             grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i, valid_model = pg_info
                             if valid_model:
+                                invalid_occurred = False
                                 temp_pg_loss, temp_entropy, temp_advantage = self.update_training_variables(partial_log, \
                                         policy_loss_i, pg_entropy_i, advantage_i, temp_pg_loss, temp_entropy, temp_advantage)
                                 # update common model gradient
@@ -803,6 +813,12 @@ class Multiprocess_RL_Environment:
                                 if self.rl_mode == 'AC':
                                     for net1,net2 in zip( grad_dict_v.items() , self.model_v.named_parameters() ):
                                         net2[1].grad += net1[1].clone()/self.n_agents_discr
+                                        
+                            else:
+                                if invalid_occurred:
+                                    raise('consecutive invalid models')
+                                else:
+                                    invalid_occurred = True
                             
                             if internal_memory_fill_ratio > 0.5:
                                 self.shared_memory.addMemoryBatch(ray.get(agent.emptyLocalMemory.remote()) )

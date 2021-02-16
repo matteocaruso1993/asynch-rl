@@ -22,13 +22,13 @@ from argparse import ArgumentParser
 parser = ArgumentParser()
 
 #following params always to be declared
-parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='parallelAC', help="RL mode (AC, DQL, parallelAC)")
+parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC', help="RL mode (AC, DQL, parallelAC)")
 
 parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100, help="net version used")
 
 parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10, help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=True,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
 
 parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=10,
@@ -37,7 +37,7 @@ parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, def
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 50000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 20000,
                     help="Replay Memory Size")
 
 # following params can be left as default
@@ -46,7 +46,7 @@ parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int,
 
 parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default=0, help = "task degree of difficulty")
 
-parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.25,
+parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.5,
                     help="Ratio of Memory renewed at each iteration")
 
 parser.add_argument("-lr", "--learning-rate", dest="learning_rate",  nargs="*", type=float, default=[1e-3, 1e-3],
@@ -112,7 +112,7 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
     
     env_type = 'CartPole' 
     model_type = 'LinearModel'
-    overwrite_params = ['layers_width']
+    overwrite_params = ['layers_width', 'discrete_action_bins']
     
     # trick used to resume epsilon status if not declared explicitly
     if epsilon == -1:

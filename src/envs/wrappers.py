@@ -86,7 +86,7 @@ class DiscretizedActionWrapper(gym.ActionWrapper):
     # default
     def get_net_input(self, state_obs, **kwargs):
         """ returns input suitable to be fed to the proper Network architecture """
-        return torch.from_numpy(state_obs).unsqueeze(0).unsqueeze(0).float()
+        return torch.from_numpy(state_obs).unsqueeze(0).float()
 
     ###################################################    
     def get_actions_structure(self):

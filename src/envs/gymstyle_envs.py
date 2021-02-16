@@ -86,6 +86,23 @@ class Gymstyle_DicePoker(DiscretizedActionWrapper):
         env = DicePoker()
         super().__init__(env, 1)
         
+        
+class Gymstyle_Frx(DiscretizedActionWrapper):
+    def __init__(self,  n_frames, max_n_moves,initial_account,low_act=None, high_act=None, **kwargs):
+        
+        env = FrxTrdr(n_samples = n_frames, max_n_moves = max_n_moves, initial_account = initial_account , **kwargs)
+        super().__init__(env, [2, env.n_actions-1], low_act, high_act)
+        
+    def get_observations_structure(self):
+        return None,None
+    
+    # get FRX specific NN input tensor
+    def get_net_input(self, state_obs, **kwargs):
+        #transforms env state output into compatible tensor with Network
+        return ( torch.tensor(state_obs[0].T).unsqueeze(0).float(), torch.tensor(state_obs[1]).unsqueeze(0).float() )
+    
+        
+"""
 class Gymstyle_Frx():
     def __init__(self, n_frames, max_n_moves,initial_account, **kwargs):
         
@@ -96,14 +113,6 @@ class Gymstyle_Frx():
     def get_actions_structure(self):
         return self.n_bins_act+1
 
-    def get_observations_structure(self):
-        return None,None
-    
-    # get FRX specific NN input tensor
-    def get_net_input(self, state_obs, **kwargs):
-        """ transforms env state output into compatible tensor with Network"""
-        return ( torch.tensor(state_obs[0].T).unsqueeze(0).float(), torch.tensor(state_obs[1]).unsqueeze(0).float() )
-    
     def action(self, action_bool_array):
         return self.env.step(action_bool_array)
 
@@ -112,7 +121,7 @@ class Gymstyle_Frx():
     
     def get_max_iterations(self):
         return self.env.max_n_moves
-
+"""
 
 
         
