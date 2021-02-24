@@ -41,6 +41,12 @@ parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, d
 parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 20000,
                     help="Replay Memory Size")
 
+parser.add_argument("-ha", "--head-address", dest="head_address", type=str, default= None,
+                    help="Ray Head Address")
+
+parser.add_argument("-rp", "--ray-password", dest="ray_password", type=str, default= None,
+                    help="Ray password")
+
 # following params can be left as default
 parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int, default= 700,
                     help="Max n. iterations each agent runs during simulation")
@@ -106,7 +112,8 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
         epsilon_annealing_factor = 0.95,  mini_batch_size = 64 , pg_agent_contribution_coeff = 0.5, \
         memory_turnover_ratio = 0.1, val_frequency = 10, layers_width= (100,100), reset_optimizer = False, rl_mode = 'AC', \
         gamma = 0.99, beta = 0.001 , difficulty = 0, sim_length_max = 100, \
-        continuous_qv_update = False, tot_iterations = 400, rewards = [1,1,1,1], discrete_action_bins = 8):
+        continuous_qv_update = False, tot_iterations = 400, rewards = [1,1,1,1], discrete_action_bins = 8, \
+        ray_password = None,  head_address = None):
     
 
     function_inputs = locals().copy()
@@ -137,7 +144,7 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
             ray.shutdown()
         except Exception:
             print('ray not active')
-        ray.init()
+        ray.init(address=head_address, redis_password = ray_password )
         
 
     env_options = {}
@@ -182,14 +189,15 @@ if __name__ == "__main__":
     env = main(net_version = args.net_version, n_iterations = args.n_iterations, ray_parallelize= args.ray_parallelize, \
                load_iteration =args.load_iteration, \
                 replay_memory_size = args.replay_memory_size, agents_number = args.agents_number, \
-                n_epochs = args.n_epochs, epsilon = args.epsilon, \
+                n_epochs = args.n_epochs, epsilon = args.epsilon, head_address = args.head_address, \
                 epsilon_annealing_factor = args.epsilon_decay, rewards = args.rewards_list, \
                 mini_batch_size = args.minibatch_size, learning_rate = args.learning_rate, \
                 sim_length_max = args.sim_length_max, difficulty = args.difficulty, \
                 memory_turnover_ratio = args.memory_turnover_ratio, val_frequency = args.val_frequency, \
                 layers_width= args.layers_list, reset_optimizer = args.reset_optimizer, rl_mode = args.rl_mode, \
                 gamma = args.gamma, beta = args.beta, continuous_qv_update = args.continuous_qv_update,\
-                   tot_iterations = args.tot_iterations, discrete_action_bins = args.discrete_action_bins)
+                   tot_iterations = args.tot_iterations, discrete_action_bins = args.discrete_action_bins, \
+                       ray_password = args.ray_password )
     
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)

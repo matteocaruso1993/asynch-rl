@@ -1172,19 +1172,20 @@ class Multiprocess_RL_Environment:
         else:
             raise('Loading error')
         
-        if self.nn_updater is None:
-            # if needed, initialize the model for the updating
-            self.initialize_updater(reset_optimizer)
-            if bool(self.memory_stored):
-                # if memory stored is present, it means memory has been loaded
-                self.load_memorystored_to_updater()
-
-        else:
-            # only update the net name (required to save/load net params)
-            if self.ray_parallelize :
-                self.nn_updater.setAttribute.remote('net_name',self.net_name)
-            else:                
-                self.nn_updater.setAttribute('net_name',self.net_name)
+        if self.rl_mode != 'AC':
+            if self.nn_updater is None:
+                # if needed, initialize the model for the updating
+                self.initialize_updater(reset_optimizer)
+                if bool(self.memory_stored):
+                    # if memory stored is present, it means memory has been loaded
+                    self.load_memorystored_to_updater()
+    
+            else:
+                # only update the net name (required to save/load net params)
+                if self.ray_parallelize :
+                    self.nn_updater.setAttribute.remote('net_name',self.net_name)
+                else:                
+                    self.nn_updater.setAttribute('net_name',self.net_name)
         
         
     ##################################################################################
