@@ -259,10 +259,13 @@ class SimulationAgent:
     def update_sim_log(self, single_run_log):
         
         if single_run_log is not None:
-            if self.simulation_log is None:
-                self.simulation_log = single_run_log
-            else:
-                self.simulation_log = np.append(self.simulation_log, single_run_log, axis = 0)
+            
+            if single_run_log[0,0] > 1 and not np.isnan(single_run_log[0,1] ):
+            
+                if self.simulation_log is None:
+                    self.simulation_log = single_run_log
+                else:
+                    self.simulation_log = np.append(self.simulation_log, single_run_log, axis = 0)
                 
         
     ##################################################################################
@@ -313,7 +316,7 @@ class SimulationAgent:
                     if not self.share_conv_layers:
                         total_loss = self.advantage_loss + self.loss_policy
                     else:
-                        total_loss = self.advantage_loss/np.abs(self.advantage_loss.item()) + self.loss_policy/np.abs(self.loss_policy.item())
+                        total_loss = 1/3*self.advantage_loss/np.abs(self.advantage_loss.item()) + 2/3*self.loss_policy/np.abs(self.loss_policy.item())
                 
                 total_loss.backward()
 
@@ -333,12 +336,14 @@ class SimulationAgent:
     def initialize_run(self):
         """ initialize sim run environment"""
         
+        force_stop = False
+
         if 'AC' in self.rl_mode:
             # check if model contains nan
             for k,v in self.model_pg.state_dict().items():
                 if torch.isnan(v).any():
                     print('nan tensor from start')
-                    return None, None, None, None, (None, None,None, None,None, False)
+                    force_stop = True
             self.model_pg.optimizer.zero_grad()
             self.model_v.optimizer.zero_grad()
             self.initialize_pg_lists()
@@ -355,8 +360,7 @@ class SimulationAgent:
         self.stop_run = False
         self.simulation_log = None
         self.run_variables_init()
-        
-        force_stop = False
+
         self.pg_loss_hist = []
         self.entropy_hist = []
         self.advantage_hist = []
@@ -493,7 +497,11 @@ class SimulationAgent:
             # in case of infeasibility issues, random_gen allows a feasible input to be re-generated inside the environment, to accelerate the learning process
             action_bool_array = action.detach().numpy()
             state_obs_1, reward_np, done, info = self.env.action(action_bool_array)
-            if 'move changed' in info:
+            
+            if np.isnan(reward_np) or np.isinf(reward_np):
+                self.agent_run_variables['failed_iteration'] = True
+            
+            elif 'move changed' in info:
                 action = 0*action
                 action_index = self.env.get_action_idx(info['move changed'])
                 action[ action_index ] = 1
@@ -503,11 +511,7 @@ class SimulationAgent:
 
         except Exception:
             self.agent_run_variables['failed_iteration'] = True
-            reward_np = np.nan
-            state = None
-            state_1 = None
-            done = None
-            info = {'outcome' : 'fail'}
+
         ################# 
         if not self.agent_run_variables['failed_iteration']:
 
@@ -521,12 +525,23 @@ class SimulationAgent:
             # build "new transition" and add it to replay memory
             new_transition = (state, action, reward, state_1, done, action_index)
             
+            # nan checker (only for debug)
+            if torch.isnan(state).any() or torch.isnan(action).any() or torch.isnan(reward).any() or torch.isnan(state_1).any():
+                stophere = 1
+            
             self.internal_memory.addInstance(new_transition)
             # set state to be state_1 (for next iteration)
             #state = state_1
             
             if not 'outcome' in info:
                 info['outcome'] = None
+                
+        else:
+            reward_np = np.nan
+            state = None
+            state_1 = None
+            done = None
+            info = {'outcome' : 'fail'}
             
         return state_1, reward_np, done, info
     
@@ -718,12 +733,12 @@ if __name__ == "__main__":
 
 #%%
 
-from ...envs.gymstyle_envs import discr_GymStyle_Robot
+from ...envs.gymstyle_envs import DiscrGymStyleRobot
 from ...nns.custom_networks import ConvModel
 
 if __name__ == "__main__":
     #env = SimulationAgent(0, env = GymStyle_Robot(n_bins_act=2), model = ConvModel())
-    gym_env = discr_GymStyle_Robot(n_bins_act=2)
+    gym_env = DiscrGymStyleRobot(n_bins_act=2)
     
     agent = SimulationAgent(0, env=gym_env, n_frames=4  , model_qv = ConvModel() )
     agent.max_steps_single_run = 50

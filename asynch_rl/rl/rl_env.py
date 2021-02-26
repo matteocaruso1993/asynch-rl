@@ -25,15 +25,15 @@ from pathlib import Path as createPath
 from copy import deepcopy
 #%%
 # My Libraries
-from ..envs.gymstyle_envs import discr_GymStyle_Robot, discr_GymStyle_CartPole, discr_GymStyle_Platoon, \
-    contn_hyb_GymStyle_Platoon, Gymstyle_Chess, Gymstyle_Connect4, Gymstyle_DicePoker, Gymstyle_Frx
+from ..envs.gymstyle_envs import DiscrGymStyleRobot, DiscrGymStyleCartPole, \
+    DiscrGymStylePlatoon, GymstyleChess, GymstyleConnect4, GymstyleDicePoker, GymstyleFrx
 from ..nns.custom_networks import ConvModel, LinearModel
 from ..nns.nn_frx import NN_frx
 
 from .resources.memory import ReplayMemory
 from .resources.sim_agent import SimulationAgent
 from .resources.updater import RL_Updater 
-from .resources.parallelize import Ray_RL_Updater , Ray_SimulationAgent
+from .resources.parallelize import Ray_RL_Updater, Ray_SimulationAgent
 
 from .utilities import progress, lineno, check_WhileTrue_timeout
 
@@ -55,12 +55,14 @@ class Multiprocess_RL_Environment:
                  ctrlr_prob_annealing_factor = .9,  ctrlr_probability = 0, difficulty = 0, \
                  memory_turnover_ratio = 0.2, val_frequency = 10, bashplot = False, layers_width= (5,5), \
                  rewards = np.ones(5), env_options = {}, share_conv_layers = False, 
-                 beta_PG = 1 , continuous_qv_update = False):
+                 beta_PG = 1 , continuous_qv_update = False, memory_save_load = False):
         
         
         self.continuous_qv_update = continuous_qv_update
         self.one_vs_one = False
         self.unstable_model = [False, False] # current model [0] and previous iteration [1] instability check. if occurrs in consecutive tries, update is aborted
+        
+        self.memory_save_load = memory_save_load
         
         ####################### net/environment initialization
         # check if env/net types make sense
@@ -207,10 +209,7 @@ class Multiprocess_RL_Environment:
             self.env_discr.update_model(self.model_qv)
         
         # this part is basically only needed for 1vs1 (environment has to be updated within sim-agents)
-        if self.use_continuous_act_env:
-            self.env = self.env_contn
-        else:
-            self.env = self.env_discr
+        self.env = self.env_discr
 
         #######################
         # Replay Memory init
@@ -282,35 +281,35 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     def generateDiscrActSpace_GymStyleEnv(self):
         if self.env_type  == 'RobotEnv':
-            return discr_GymStyle_Robot( n_frames = self.n_frames, n_bins_act= self.discr_env_bins , sim_length = self.sim_length_max)
+            return DiscrGymStyleRobot( n_frames = self.n_frames, n_bins_act= self.discr_env_bins , sim_length = self.sim_length_max)
         elif self.env_type  == 'CartPole':
-            return discr_GymStyle_CartPole(n_bins_act= self.discr_env_bins, sim_length_max = self.sim_length_max, difficulty=self.difficulty)
+            return DiscrGymStyleCartPole(n_bins_act= self.discr_env_bins, sim_length_max = self.sim_length_max, difficulty=self.difficulty)
         elif self.env_type  == 'Platoon':
-            return discr_GymStyle_Platoon(n_bins_act= self.discr_env_bins, sim_length_max = self.sim_length_max, \
+            return DiscrGymStylePlatoon(n_bins_act= self.discr_env_bins, sim_length_max = self.sim_length_max, \
                                     difficulty=self.difficulty, rewards = self.rewards, options = self.env_options)
         elif self.env_type == 'Chess':
             self.one_vs_one = True
-            return Gymstyle_Chess(use_NN = True,  max_n_moves = self.sim_length_max  , rewards = self.rewards, print_out = self.show_rendering)
+            return GymstyleChess(use_NN = True,  max_n_moves = self.sim_length_max  , rewards = self.rewards, print_out = self.show_rendering)
         elif self.env_type == 'Connect4':
             self.one_vs_one = True
-            return Gymstyle_Connect4(use_NN = True, rewards = self.rewards, print_out = self.show_rendering)
+            return GymstyleConnect4(use_NN = True, rewards = self.rewards, print_out = self.show_rendering)
         elif self.env_type == 'DicePoker':
-            return Gymstyle_DicePoker()
+            return GymstyleDicePoker()
         elif self.env_type == 'Frx':
-            env = Gymstyle_Frx(n_frames = self.n_frames, max_n_moves = self.sim_length_max ,initial_account = 1000)
+            env = GymstyleFrx(n_frames = self.n_frames, max_n_moves = self.sim_length_max ,initial_account = 1000)
             self.discr_env_bins = env.n_bins_act
             return env
 
 
         
 
-        
+    """
     ##################################################################################
     def generateContnsHybActSpace_GymStyleEnv(self):
         if self.env_type  == 'Platoon':
             return contn_hyb_GymStyle_Platoon(action_structure = [0,0,1], sim_length_max = self.sim_length_max, \
                                     difficulty=self.difficulty, rewards = self.rewards, options = self.env_options)
-
+    """
 
     ##################################################################################
     #agents attributes are updated when they have the same name as the rl environment
@@ -385,8 +384,8 @@ class Multiprocess_RL_Environment:
         if self.ray_parallelize:
             for i in range(self.n_agents_discr):
                 self.sim_agents_discr.append(Ray_SimulationAgent.remote(i, self.generateDiscrActSpace_GymStyleEnv(), rl_mode = self.rl_mode ) )  
-            for i in range(self.n_agents_contn):
-                self.sim_agents_contn.append(Ray_SimulationAgent.remote(i, self.generateContnsHybActSpace_GymStyleEnv(), rl_mode = self.rl_mode ) )                 
+            #for i in range(self.n_agents_contn):
+            #    self.sim_agents_contn.append(Ray_SimulationAgent.remote(i, self.generateContnsHybActSpace_GymStyleEnv(), rl_mode = self.rl_mode ) )                 
         else:
             self.sim_agents_discr.append(SimulationAgent(0, self.generateDiscrActSpace_GymStyleEnv(), rl_mode = self.rl_mode) )  #, ,self.model
             #self.sim_agents_contn.append(SimulationAgent(0, self.generateContnsHybActSpace_GymStyleEnv(), rl_mode = self.rl_mode) )  #, ,self.model
@@ -402,7 +401,7 @@ class Multiprocess_RL_Environment:
 
             
     ##################################################################################
-    def load(self, training_session_number = -1, load_memory = False):
+    def load(self, training_session_number = -1):
         """ load data to resume training """
  
         # first check if the folder/training log exists (otherwise start from scratch)
@@ -412,18 +411,21 @@ class Multiprocess_RL_Environment:
         if os.path.isfile(filename_log):
         
             self.log_df = pd.read_pickle(filename_log)
-            if training_session_number in self.log_df['training session'].values:
-                # create back_up
-                filename_log = os.path.join(self.storage_path, 'TrainingLog_tsn_'+str(int(training_session_number)) + '.pkl')
-                self.log_df.to_pickle(filename_log)
-                self.log_df = self.log_df[:int(training_session_number)]
+            if training_session_number in self.log_df['training session'].values :
+                if self.log_df.shape[0] >=1:
+                    # create back_up
+                    filename_log = os.path.join(self.storage_path, 'TrainingLog_tsn_'+str(int(training_session_number)) + '.pkl')
+                    self.log_df.to_pickle(filename_log)
+                    self.log_df = self.log_df[:int(training_session_number)]
                 self.training_session_number = training_session_number        
-            elif training_session_number != 0:             
+            elif training_session_number != 0 and self.log_df.shape[0] >=1:             
                 # if no training session number is given, last iteration is taken
                 self.training_session_number = int(self.log_df.iloc[-1]['training session'])
+            else:
+                self.training_session_number = training_session_number
     
             # load epsilon (never load it manually, same thing for controller percentage)
-            if self.resume_epsilon:
+            if self.resume_epsilon and self.log_df.shape[0] >=1:
                 self.epsilon = self.log_df.iloc[-1]['epsilon']
             try:
                 self.ctrlr_probability = self.log_df.iloc[self.training_session_number-1]['ctrl prob']
@@ -455,6 +457,9 @@ class Multiprocess_RL_Environment:
 
         # this loads the memory
         self.memory_stored = ReplayMemory(size = self.replay_memory_size, minibatch_size= self.mini_batch_size) 
+        if self.rl_mode == 'DQL' and self.memory_save_load:
+            self.memory_stored.load(self.storage_path, self.net_type + str(self.net_version) )
+        
                                     
         if 'AC' in self.rl_mode:
             filename_pg_train = os.path.join(self.storage_path, 'PG_training'+ '.npy')
@@ -563,7 +568,18 @@ class Multiprocess_RL_Environment:
 
     ##################################################################################
     def saveTrainIteration(self, last_iter = False):
-        # we save the model at every iterations, memory only at the end (not inside this function)
+        # we save the model at every iterations, memory only for debugging of DQL (if exlicitly requested)
+        if self.rl_mode == 'DQL' and self.memory_save_load:
+            if self.ray_parallelize:
+                if ray.get(self.nn_updater.hasMemoryPool.remote()):
+                    self.nn_updater.save_updater_memory.remote(self.storage_path, self.net_type + str(self.net_version) )
+                else:
+                    self.memory_stored.save(self.storage_path, self.net_type + str(self.net_version) )
+            else:
+                if self.nn_updater.hasMemoryPool():
+                    self.nn_updater.save_updater_memory(self.storage_path, self.net_type + str(self.net_version) )
+                else:
+                    self.memory_stored.save(self.storage_path, self.net_type + str(self.net_version) )
         
             
         # in this case PG net is not saved by the updater, but is locally in the main thread

@@ -7,6 +7,13 @@ Created on Fri Nov 13 17:08:05 2020
 """
 
 #%%
+
+# for time debug only
+import cProfile
+import pstats
+import io
+# for time debug only
+
 import os, sys
 
 from asynch_rl.rl.rl_env import Multiprocess_RL_Environment
@@ -23,27 +30,36 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 
-parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC', help="RL mode (AC, DQL, parallelAC)")
+parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='DQL', help="RL mode (AC, DQL, parallelAC)")
 
-parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 5 , help="number of training iterations")
+parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 2 , help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=True,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
 
-parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=4,
+parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=5,
                     help="Number of agents to be used")
 
 
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=10000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=2000,
                     help="Replay Memory Size")
 
 parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100,
                     help="net version used")
 
+parser.add_argument("-ha", "--head-address", dest="head_address", type=str, default= None,
+                    help="Ray Head Address")
+
+parser.add_argument("-rp", "--ray-password", dest="ray_password", type=str, default= None,
+                    help="Ray password")
+
 #####
+parser.add_argument("-msl", "--memory-save-load", dest="memory_save_load", type=bool, default=False,
+                    help="save memory bool (for debugging purpose)")
+
 parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int, default= 500,
                     help="Max n. iterations each agent runs during simulation. Influences the level of exploration which is reached by PG algorithm")
 
@@ -103,7 +119,8 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
         epsilon_annealing_factor = 0.95,  ctrlr_prob_annealing_factor = 0.9 , mini_batch_size = 64, \
             memory_turnover_ratio = 0.1, val_frequency = 10, rewards = np.ones(4), reset_optimizer = False,
             share_conv_layers = False, n_frames = 4, rl_mode = 'DQL', beta = 0.001, \
-                gamma = 0.99,  continuous_qv_update = False, tot_iterations = 400):
+                gamma = 0.99,  continuous_qv_update = False, tot_iterations = 400, \
+                    ray_password = None,  head_address = None, memory_save_load = False):
 
 
     function_inputs = locals().copy()
@@ -139,7 +156,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
             ray.shutdown()
         except Exception:
             print('ray not active')
-        ray.init()
+        ray.init(address=head_address, redis_password = ray_password )
 
     #single_agent_min_iterations = round(memory_turnover_ratio*replay_memory_size / (agents_number * 20) )
     
@@ -149,12 +166,10 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
                         tot_iterations = tot_iterations, discr_env_bins = 2 , \
                         epsilon_annealing_factor=epsilon_annealing_factor,\
                         N_epochs = n_epochs, epsilon = epsilon[0] , epsilon_min = epsilon[1] , rewards = rewards, \
-                        mini_batch_size = mini_batch_size, \
-                        share_conv_layers = share_conv_layers, \
+                        mini_batch_size = mini_batch_size, share_conv_layers = share_conv_layers, \
                         difficulty = difficulty, learning_rate = learning_rate, sim_length_max = sim_length_max, \
                         memory_turnover_ratio = memory_turnover_ratio, val_frequency = val_frequency ,\
-                        gamma = gamma, beta_PG = beta , continuous_qv_update = continuous_qv_update)
-
+                        gamma = gamma, beta_PG = beta , continuous_qv_update = continuous_qv_update , memory_save_load = memory_save_load) 
 
     rl_env.resume_epsilon = resume_epsilon
 
@@ -173,7 +188,17 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
     else:
         store_train_params(rl_env, function_inputs)
         
+    pr = cProfile.Profile()
+    pr.enable()
+        
     rl_env.runSequence(n_iterations, reset_optimizer=reset_optimizer) 
+
+    pr.disable()
+    s = io.StringIO()
+    ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
+    ps.print_stats()
+    with open('duration_test.txt', 'w+') as f:
+        f.write(s.getvalue())
 
     return rl_env
 
@@ -190,7 +215,8 @@ if __name__ == "__main__":
                sim_length_max = args.sim_length_max, val_frequency = args.val_frequency, share_conv_layers = args.share_conv_layers, \
                rewards = args.rewards_list, reset_optimizer = args.reset_optimizer, rl_mode = args.rl_mode, \
                beta = args.beta, gamma = args.gamma, continuous_qv_update = args.continuous_qv_update,\
-               tot_iterations = args.tot_iterations )
+               tot_iterations = args.tot_iterations, head_address = args.head_address, ray_password = args.ray_password ,\
+               memory_save_load = args.memory_save_load)
 
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)

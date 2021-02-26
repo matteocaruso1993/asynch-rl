@@ -48,11 +48,23 @@ class RL_Updater():
         
     #################################################
     def save_model(self, path, model_name):
+
+        for k,v in self.model_qv.state_dict().items():
+            if torch.isnan(v).any():
+                raise('not saving: nan tensor detected in model')
+
         self.model_qv.save_net_params(path, model_name)
 
         with open(os.path.join(path,'train_log.txt'), 'a+') as f:
             f.writelines(model_name + "\n")
             
+        
+        
+    ##################################################################################        
+    # required to check if model is inherited
+    def save_updater_memory(self, path, name):
+        self.memory_pool.save(path,name)
+        
         
     ##################################################################################        
     # required to check if model is inherited
@@ -105,6 +117,10 @@ class RL_Updater():
         if self.training_session_number >= 1:
             self.model_qv.load_net_params(self.storage_path,self.net_name, self.device, reset_optimizer = reset_optimizer)
 
+        for k,v in self.model_qv.state_dict().items():
+            if torch.isnan(v).any():
+                raise('nan tensor after load')
+
     
     #################################################
     def update_DeepRL(self):
@@ -127,6 +143,7 @@ class RL_Updater():
     def qValue_loss_update(self, state_batch, action_batch, reward_batch, state_1_batch, done_batch):
         """ DQL update law """
         
+        
         if self.move_to_cuda:  # put on GPU if CUDA is available
             if isinstance(state_batch,tuple):
                 state_batch   = tuple([s.cuda() for s in state_batch])
@@ -142,27 +159,36 @@ class RL_Updater():
         # get output for the next state
         with torch.no_grad():
             output_1_batch = self.model_qv(state_1_batch)
+        
+            
         # set y_j to r_j for terminal state, otherwise to r_j + gamma*max(Q)
         y_batch = torch.cat(tuple(reward_batch[i] if done_batch[i]  #minibatch[i][4]
                                   else reward_batch[i] + self.gamma * torch.max(output_1_batch[i])
                                   for i in range(len(reward_batch))))
+        
+        
         # extract Q-value
         # calculates Q value corresponding to all actions, then selects those corresponding to the actions taken
         self.model_qv.optimizer.zero_grad()
         q_vals = self.model_qv(state_batch)
+        
         q_value = torch.sum( q_vals * action_batch, dim=1)
         y_batch = y_batch.detach()
         loss_qval = self.model_qv.criterion_MSE(q_value, y_batch)
         
-        """
-        if self.rl_mode == 'parallelAC' and self.model_v is not None:
-            with torch.no_grad():
-                s_val = self.model_v(state_batch.float())
-            loss_qval += torch.sum( (torch.max(q_vals) - s_val)**2 )
-        """
-        
         loss_qval.backward()
+        
+        for name, param in self.model_qv.named_parameters():
+            FINITE_GRAD = torch.isfinite(param.grad).all() 
+            if not FINITE_GRAD:
+                print(name, param.grad)
+        
         self.model_qv.optimizer.step()  
+        
+        for k,v in self.model_qv.state_dict().items():
+            if torch.isnan(v).any():
+                raise('nan tensor in model after update')
+        
         
         return loss_qval
 

@@ -29,7 +29,7 @@ parser.add_argument("-v", "--net-version", dest="net_version", type=int, default
 
 parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10, help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=True,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
 
 parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=10,
@@ -48,6 +48,9 @@ parser.add_argument("-rp", "--ray-password", dest="ray_password", type=str, defa
                     help="Ray password")
 
 # following params can be left as default
+parser.add_argument("-msl", "--memory-save-load", dest="memory_save_load", type=bool, default=False,
+                    help="save memory bool (for debugging purpose)")
+
 parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int, default= 700,
                     help="Max n. iterations each agent runs during simulation")
 
@@ -113,7 +116,7 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
         memory_turnover_ratio = 0.1, val_frequency = 10, layers_width= (100,100), reset_optimizer = False, rl_mode = 'AC', \
         gamma = 0.99, beta = 0.001 , difficulty = 0, sim_length_max = 100, \
         continuous_qv_update = False, tot_iterations = 400, rewards = [1,1,1,1], discrete_action_bins = 8, \
-        ray_password = None,  head_address = None):
+        ray_password = None,  head_address = None, memory_save_load = False):
     
 
     function_inputs = locals().copy()
@@ -160,7 +163,7 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
                                          difficulty = difficulty, learning_rate = learning_rate, sim_length_max = sim_length_max, 
                                          tot_iterations = tot_iterations, memory_turnover_ratio = memory_turnover_ratio, \
                                          gamma = gamma, beta_PG = beta , val_frequency = val_frequency, \
-                                         continuous_qv_update = continuous_qv_update)
+                                         continuous_qv_update = continuous_qv_update, memory_save_load = memory_save_load)
 
     rl_env.resume_epsilon = resume_epsilon
 
@@ -189,15 +192,15 @@ if __name__ == "__main__":
     env = main(net_version = args.net_version, n_iterations = args.n_iterations, ray_parallelize= args.ray_parallelize, \
                load_iteration =args.load_iteration, \
                 replay_memory_size = args.replay_memory_size, agents_number = args.agents_number, \
-                n_epochs = args.n_epochs, epsilon = args.epsilon, head_address = args.head_address, \
+                n_epochs = args.n_epochs, epsilon = args.epsilon,  \
                 epsilon_annealing_factor = args.epsilon_decay, rewards = args.rewards_list, \
                 mini_batch_size = args.minibatch_size, learning_rate = args.learning_rate, \
                 sim_length_max = args.sim_length_max, difficulty = args.difficulty, \
                 memory_turnover_ratio = args.memory_turnover_ratio, val_frequency = args.val_frequency, \
                 layers_width= args.layers_list, reset_optimizer = args.reset_optimizer, rl_mode = args.rl_mode, \
                 gamma = args.gamma, beta = args.beta, continuous_qv_update = args.continuous_qv_update,\
-                   tot_iterations = args.tot_iterations, discrete_action_bins = args.discrete_action_bins, \
-                       ray_password = args.ray_password )
+                tot_iterations = args.tot_iterations, discrete_action_bins = args.discrete_action_bins, \
+                head_address = args.head_address, ray_password = args.ray_password, memory_save_load = args.memory_save_load )
     
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)

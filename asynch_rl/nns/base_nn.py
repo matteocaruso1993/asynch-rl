@@ -85,9 +85,9 @@ class nnBase(nn.Module):
             self.bias.data.fill_(0.01)
             
     ##################################################################################
-    def init_gradient(self):
+    def init_gradient(self, device = torch.device('cpu') ):
         """ initializes net gradient to zero (to allow adding external gradients to it)"""
-        l = torch.sum(self.forward(self.build_generic_input()).float())**2
+        l = torch.sum(self.forward(self.build_generic_input().to(device)).float())**2
         l.backward()
         self.optimizer.zero_grad()
         
@@ -174,7 +174,7 @@ class nnBase(nn.Module):
         self.to(device)  # required step when loading a model on a GPU (even if it was also trained on a GPU)
         
         self.initialize_optimizer()
-        self.init_gradient()
+        self.init_gradient(device)
         
         if not reset_optimizer:
             self.optimizer.load_state_dict(opt_state)
