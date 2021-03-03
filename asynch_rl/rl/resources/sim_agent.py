@@ -630,7 +630,9 @@ class SimulationAgent:
                 action_index = torch.argmax(qvals)
             else:
                 if random.random() <= self.epsilon and not use_NN:
-                    action_index = torch.randint(self.n_actions, torch.Size([]), dtype=torch.int8)
+                    #action_index = torch.randint(self.n_actions, torch.Size([]), dtype=torch.int8)
+                    #action_index = torch.randint(self.n_actions, (1,), dtype=torch.int8)
+                    action_index = random.randint(0,self.n_actions-1)
                 else:
                     # this function allows to randomly choose other good performing q_values
                     qvals = self.model_qv.cpu()(state)

@@ -36,9 +36,7 @@ def initialize_robot(visualization_angle_portion, lidar_range, lidar_n_rays, ini
 
     sim_env = ExtdSimulator()
     #initialize map
-    map_margin_coeff = 1 #.5
-    
-    robotMap = BinaryOccupancyGrid(map_height = map_margin_coeff*2*sim_env.box_size, map_length = map_margin_coeff*2*sim_env.box_size, peds_sim_env = sim_env)
+    robotMap = BinaryOccupancyGrid(map_height = 2*sim_env.box_size, map_length = 2*sim_env.box_size, peds_sim_env = sim_env)
     robotMap.center_map_frame()
     
     robotMap.update_from_peds_sim(fixedObjectsMap = True)
@@ -88,6 +86,10 @@ class RobotEnv(gym.Env):
         self.visualization_angle_portion = visualization_angle_portion
         self.lidar_range = lidar_range
         
+        self.closest_obstacle = self.lidar_range
+
+        self.sim_length = sim_length  # maximum simulation length (in seconds)
+
         self.env_type = 'RobotEnv'
         
         self.rewards = rewards
@@ -100,7 +102,6 @@ class RobotEnv(gym.Env):
         self.linear_max =  v_linear_max
         self.angular_max = v_angular_max
         
-        self.size = [] 
         self.target_distance_max = []
         self.action_space = []
         self.observation_space = []
@@ -110,14 +111,25 @@ class RobotEnv(gym.Env):
         
         #self.render_mode = render_mode
         
-        self.reset()
+        sim_env_test = ExtdSimulator()
+        self.target_distance_max = np.sqrt(2)*(sim_env_test.box_size*2)
+
+        state_max = np.concatenate(  (self.lidar_range*np.ones((self.lidar_n_rays,)), np.array([self.linear_max ,self.angular_max  , self.target_distance_max , np.pi])  ), axis = 0 )
+        state_min = np.concatenate(  ( np.zeros((self.lidar_n_rays,)), np.array([0 , -self.angular_max ,0,  -np.pi])  ), axis = 0 )
+
+        self.action_low = np.array([-self.max_v_x_delta,-self.max_v_rot_delta])
+        self.action_high = np.array([ self.max_v_x_delta, self.max_v_rot_delta])
+
+        self.action_space = spaces.Box(low=self.action_low, high=self.action_high , dtype=np.float64) #, shape=(size__,))
+        self.observation_space = spaces.Box(low=state_min, high=state_max , dtype=np.float64) # , shape=(len(state_max),))
         
         self.n_actions = self.action_space.shape[0]
         self.n_observations = self.observation_space.shape[0]
         
-        self.closest_obstacle = self.lidar_range
+        # aligning peds_sim_env and robot step_width
+        if self.dt is None:
+            self.dt = sim_env_test.peds.step_width
 
-        self.sim_length = sim_length  # maximum simulation length (in seconds)
 
     #####################################################################################################            
     def get_max_iterations(self):
@@ -242,26 +254,16 @@ class RobotEnv(gym.Env):
             self.robot.setPosition(init_coordinates[0], init_coordinates[1], init_coordinates[2])
             
         # initialize Scan to get dimension of state (depends on ray cast) 
-        self.robot.getScan()
-        self.size = len(self.robot.scanner.scan_structure['data']['angles'])
-        self.target_distance_max = np.sqrt(self.robot.map.map_height**2+self.robot.map.map_length**2)
-
-        state_max = np.concatenate(  (self.lidar_range*np.ones((self.size,)), np.array([self.linear_max ,self.angular_max  , self.target_distance_max , np.pi])  ), axis = 0 )
-        state_min = np.concatenate(  ( np.zeros((self.size,)), np.array([0 , -self.angular_max ,0,  -np.pi])  ), axis = 0 )
-
-        self.action_low = np.array([-self.max_v_x_delta,-self.max_v_rot_delta])
-        self.action_high = np.array([ self.max_v_x_delta, self.max_v_rot_delta])
-
-        self.action_space = spaces.Box(low=self.action_low, high=self.action_high , dtype=np.float64) #, shape=(size__,))
-        self.observation_space = spaces.Box(low=state_min, high=state_max , dtype=np.float64) # , shape=(len(state_max),))
+        #self.robot.getScan()
+        #self.size = len(self.robot.scanner.scan_structure['data']['angles'])
 
         self.distance_init = self.robot.target_rel_position(self.target_coordinates[:2])[0]
         
-        # aligning peds_sim_env and robot step_width
-        if self.dt is None:
-            self.dt = self.robot.map.peds_sim_env.peds.step_width
-        else:
+        # if step time externally defined, align peds sim env
+        if self.dt != self.robot.map.peds_sim_env.peds.step_width:
             self.robot.map.peds_sim_env.peds.step_width = self.dt
+
+        
         
         return self._get_obs()
     
@@ -422,6 +424,7 @@ def render_image(occupancy_map,idx_x,idx_y,robot_angle, scan_pts_grid,  closest_
     
     
 #%%
+import time
 
 def turn(steps,dv,dtheta):
     env = RobotEnv()
@@ -438,24 +441,40 @@ def goStraight(steps,dv,orient):
         env.render(mode = 'animation')
         
 def s_like_path():
-    env=RobotEnv()
-    env.robot.setPosition(0, -10, 0)
-    done = False
     
-    for i in range(30):
-        _, reward , done, _ = env.step([0.1,0.02])
-        env.render(mode='animation')
-        print(round(reward,3), done)
-        if done:
-            break
+    start = time.time()
+    tot_steps = 0
+    for ii in range(5):
+        print(f'iteration {ii}')
+        print()
+    
+        env=RobotEnv()
+        env.reset()
+        env.robot.setPosition(0, -10, 0)
+        done = False
         
-    if not done:
         for i in range(30):
-            _, reward , done, _ = env.step([0.1,-0.04])
-            env.render(mode='animation')
-            print(round(reward,3), done)
+            _, reward , done, _ = env.step([0.1,0.02])
+            tot_steps += 1
+            #env.render(mode='animation')
+            #print(round(reward,3), done)
             if done:
                 break
+            
+        if not done:
+            for i in range(30):
+                _, reward , done, _ = env.step([0.1,-0.04])
+                tot_steps += 1
+                #env.render(mode='animation')
+                #print(round(reward,3), done)
+                if done:
+                    break
+                
+    tot_time = round(time.time()-start,2)
+    print(f'total steps: {tot_steps}')
+    print(f'computing time: {tot_time}s')
+    
+    print(f'seconds per step: {round(tot_time/tot_steps,3)}')
 
 #%%    
 
@@ -486,7 +505,7 @@ if __name__ == "__main__":
     s = io.StringIO()
     ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
     ps.print_stats()
-    with open('duration_test.txt', 'w+') as f:
+    with open('duration_robot_env.txt', 'w+') as f:
         f.write(s.getvalue())
 
     
