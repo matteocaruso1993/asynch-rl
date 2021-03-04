@@ -32,7 +32,7 @@ parser = ArgumentParser()
 
 parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='DQL', help="RL mode (AC, DQL, parallelAC)")
 
-parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 2 , help="number of training iterations")
+parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10 , help="number of training iterations")
 
 parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
@@ -44,7 +44,7 @@ parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, def
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=2000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=5000,
                     help="Replay Memory Size")
 
 parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100,
@@ -82,7 +82,7 @@ parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size",  nargs="*"
 parser.add_argument("-y", "--epsilon", dest="epsilon", nargs=2, type=float, default=[0.9995 , 0.2],
                     help="two values: initial epsilon, final epsilon")
 
-parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, default=0.9,
+parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, default=0.99,
                     help="annealing factor of epsilon")
 
 parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=int, default=20,
