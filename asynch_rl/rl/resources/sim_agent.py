@@ -526,8 +526,8 @@ class SimulationAgent:
             new_transition = (state, action, reward, state_1, done, action_index)
             
             # nan checker (only for debug)
-            if torch.isnan(state).any() or torch.isnan(action).any() or torch.isnan(reward).any() or torch.isnan(state_1).any():
-                stophere = 1
+            #if torch.isnan(state).any() or torch.isnan(action).any() or torch.isnan(reward).any() or torch.isnan(state_1).any():
+            #    stophere = 1
             
             self.internal_memory.addInstance(new_transition)
             # set state to be state_1 (for next iteration)
@@ -632,7 +632,7 @@ class SimulationAgent:
                 if random.random() <= self.epsilon and not use_NN:
                     #action_index = torch.randint(self.n_actions, torch.Size([]), dtype=torch.int8)
                     #action_index = torch.randint(self.n_actions, (1,), dtype=torch.int8)
-                    action_index = random.randint(0,self.n_actions-1)
+                    action_index = torch.tensor(random.randint(0,self.n_actions-1))
                 else:
                     # this function allows to randomly choose other good performing q_values
                     qvals = self.model_qv.cpu()(state)
@@ -735,8 +735,9 @@ if __name__ == "__main__":
 
 #%%
 
+
 from ...envs.gymstyle_envs import DiscrGymStyleRobot
-from ...nns.custom_networks import ConvModel
+from ...nns.robot_net import ConvModel
 
 if __name__ == "__main__":
     #env = SimulationAgent(0, env = GymStyle_Robot(n_bins_act=2), model = ConvModel())

@@ -87,7 +87,12 @@ class nnBase(nn.Module):
     ##################################################################################
     def init_gradient(self, device = torch.device('cpu') ):
         """ initializes net gradient to zero (to allow adding external gradients to it)"""
-        l = torch.sum(self.forward(self.build_generic_input().to(device)).float())**2
+        generic_input = self.build_generic_input()
+        if isinstance(generic_input, tuple):
+            generic_input = tuple([g.to(device).float() for g in generic_input]) 
+        else:
+            generic_input =generic_input.to(device).float()
+        l = torch.sum(self.forward(generic_input)**2)
         l.backward()
         self.optimizer.zero_grad()
         

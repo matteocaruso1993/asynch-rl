@@ -74,9 +74,11 @@ class DiscrGymStyleRobot(DiscretizedActionWrapper):
     def get_net_input(self, state_obs, state_tensor_z1 = None, reset = False):
         """ transforms env state output into compatible tensor with Network"""
         if reset:
-            state_tensor = torch.from_numpy(state_obs).unsqueeze(0).repeat(self.n_frames,1).unsqueeze(0).float()
+            state_tensor = (torch.from_numpy(state_obs[0]).unsqueeze(0).repeat(self.n_frames,1).unsqueeze(0).float(),\
+                            torch.tensor(state_obs[1]).unsqueeze(0).float() )
         else:
-            state_tensor = torch.cat((state_tensor_z1.squeeze(0)[1:, :], torch.from_numpy(state_obs).unsqueeze(0))).unsqueeze(0).float()
+            state_tensor = (torch.cat((state_tensor_z1[0].squeeze(0)[1:, :], torch.from_numpy(state_obs[0]).unsqueeze(0).float())).unsqueeze(0).float(), \
+                            torch.tensor(state_obs[1]).unsqueeze(0).float() )
         return state_tensor
         
         

@@ -27,7 +27,8 @@ from copy import deepcopy
 # My Libraries
 from ..envs.gymstyle_envs import DiscrGymStyleRobot, DiscrGymStyleCartPole, \
     DiscrGymStylePlatoon, GymstyleChess, GymstyleConnect4, GymstyleDicePoker, GymstyleFrx
-from ..nns.custom_networks import ConvModel, LinearModel
+from ..nns.custom_networks import LinearModel
+from ..nns.robot_net import ConvModel
 from ..nns.nn_frx import NN_frx
 
 from .resources.memory import ReplayMemory
@@ -262,7 +263,7 @@ class Multiprocess_RL_Environment:
         if self.net_type == 'ConvModel':
                 model = ConvModel(model_version = 0, net_type = self.net_type+str(self.net_version), lr= lr, \
                                   n_actions = n_actions if not (model_type == 'v') else 1, channels_in = self.n_frames, N_in = self.N_in_model, \
-                                   softmax = (model_type == 'pg') ) 
+                                  fc_layers = self.layers_width, softmax = (model_type == 'pg') ) 
 
         elif self.net_type == 'ConvFrxModel':
                 model = NN_frx(model_version = 0, net_type = self.net_type+str(self.net_version), lr= lr, \

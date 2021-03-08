@@ -32,7 +32,7 @@ parser = ArgumentParser()
 
 parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='DQL', help="RL mode (AC, DQL, parallelAC)")
 
-parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10 , help="number of training iterations")
+parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 2 , help="number of training iterations")
 
 parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
@@ -44,11 +44,10 @@ parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, def
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=5000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=1000,
                     help="Replay Memory Size")
 
-parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100,
-                    help="net version used")
+parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100, help="net version used")
 
 parser.add_argument("-ha", "--head-address", dest="head_address", type=str, default= None,
                     help="Ray Head Address")
@@ -74,9 +73,9 @@ parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_rati
 parser.add_argument("-lr", "--learning-rate", dest="learning_rate", nargs="*", type=float, default=[1e-4, 1e-4],
                     help="NN learning rate")
 
-parser.add_argument("-e", "--epochs-training", dest="n_epochs", type=int, default= 400 , help="Number of epochs per training iteration")
+parser.add_argument("-e", "--epochs-training", dest="n_epochs", type=int, default= 100 , help="Number of epochs per training iteration")
 
-parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size",  nargs="*", type=int, default= 512,
+parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size",  nargs="*", type=int, default= 64,
                     help="Size of the minibatches used for QV training")
 
 parser.add_argument("-y", "--epsilon", dest="epsilon", nargs=2, type=float, default=[0.9995 , 0.2],
@@ -106,6 +105,9 @@ parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_q
 
 parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=int, default=[1, 100, 20] )
 
+parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[60, 60, 40] )
+
+
 args = parser.parse_args()
 
 #####
@@ -119,7 +121,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
         epsilon_annealing_factor = 0.95,  ctrlr_prob_annealing_factor = 0.9 , mini_batch_size = 64, \
             memory_turnover_ratio = 0.1, val_frequency = 10, rewards = np.ones(4), reset_optimizer = False,
             share_conv_layers = False, n_frames = 4, rl_mode = 'DQL', beta = 0.001, \
-                gamma = 0.99,  continuous_qv_update = False, tot_iterations = 400, \
+                gamma = 0.99,  continuous_qv_update = False, tot_iterations = 400, layers_width= (100,100), \
                     ray_password = None,  head_address = None, memory_save_load = False):
 
 
@@ -127,7 +129,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
     
     env_type = 'RobotEnv' 
     model_type = 'ConvModel'
-    overwrite_params = ['rewards', 'share_conv_layers', 'n_frames' ]
+    overwrite_params = ['rewards', 'share_conv_layers', 'n_frames' , 'layers_width']
     
     # trick used to resume epsilon status if not declared explicitly
     if epsilon[0] == -1:
@@ -164,7 +166,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
                         ray_parallelize=ray_parallelize, move_to_cuda=True, n_frames = n_frames, \
                         replay_memory_size = replay_memory_size, n_agents = agents_number,\
                         tot_iterations = tot_iterations, discr_env_bins = 2 , \
-                        epsilon_annealing_factor=epsilon_annealing_factor,\
+                        epsilon_annealing_factor=epsilon_annealing_factor,  layers_width= layers_width,\
                         N_epochs = n_epochs, epsilon = epsilon[0] , epsilon_min = epsilon[1] , rewards = rewards, \
                         mini_batch_size = mini_batch_size, share_conv_layers = share_conv_layers, \
                         difficulty = difficulty, learning_rate = learning_rate, sim_length_max = sim_length_max, \
@@ -216,7 +218,7 @@ if __name__ == "__main__":
                rewards = args.rewards_list, reset_optimizer = args.reset_optimizer, rl_mode = args.rl_mode, \
                beta = args.beta, gamma = args.gamma, continuous_qv_update = args.continuous_qv_update,\
                tot_iterations = args.tot_iterations, head_address = args.head_address, ray_password = args.ray_password ,\
-               memory_save_load = args.memory_save_load)
+               memory_save_load = args.memory_save_load, layers_width= args.layers_list)
 
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)

@@ -67,7 +67,7 @@ class RobotEnv(gym.Env):
     #metadata = {'render.modes': ['human']}
 
     #####################################################################################################
-    def __init__(self, lidar_n_rays = 165, \
+    def __init__(self, lidar_n_rays = 135, \
                  collision_distance = 0.7, visualization_angle_portion = 0.5, lidar_range = 10,\
                  v_linear_max = 1.5 , v_angular_max = 2 , rewards = [1,100,20], max_v_x_delta = .5, \
                  initial_margin = .3,    max_v_rot_delta = .5, dt = None, normalize_obs_state = True, \
@@ -155,9 +155,8 @@ class RobotEnv(gym.Env):
         # initial distance
         dist_0 = self.robot.target_rel_position(self.target_coordinates[:2])[0]
         
-        dot_x      = np.maximum(0,np.minimum(self.robot.current_speed['linear']['x'] +  action[0],  self.linear_max))##Rivedere
-        dot_orient = np.maximum(-self.angular_max,np.minimum(self.robot.current_speed['angular']['z']+  action[1], self.angular_max))##Rivedere
-        #dot_orient = 0
+        dot_x      = np.clip(self.robot.current_speed['linear']['x'] + action[0] , 0                , self.linear_max ) 
+        dot_orient = np.clip(self.robot.current_speed['angular']['z']+ action[1] ,-self.angular_max , self.angular_max)
         
         #print(f'orientation = {robot.current_pose["orientation"]["z"]}')
         #print(f'angular speed = {robot.current_speed["angular"]["z"]}')
@@ -173,7 +172,6 @@ class RobotEnv(gym.Env):
         self.robot.getScan(scan_noise = self.scan_noise)
         self.rotation_counter += np.abs(dot_orient*self.dt)
 
-        
         # if pedestrian or obstacle is hit
         if self.robot.check_pedestrians_collision(.5) or self.robot.check_obstacle_collision():
             
@@ -202,7 +200,7 @@ class RobotEnv(gym.Env):
             rotations_penalty = self.rewards[2] * cum_rotations / (1e-5+self.duration)
             
             # reward is proportional to distance covered / speed in getting to target
-            reward = self.rewards[1]*rel_rew* weight - rotations_penalty
+            reward = np.maximum( self.rewards[1]/4 , self.rewards[1]*rel_rew* weight - rotations_penalty )
             done = True
                         
         # if nothing major happened         
@@ -210,7 +208,13 @@ class RobotEnv(gym.Env):
             self.duration += self.dt
             # if time expired
             if self.duration >= self.sim_length:
-                reward = - self.rewards[1]* ( 0.5 + 0.5*np.clip((dist_1/(1e-5+self.distance_init))**2,0,2))
+                reward = - self.rewards[1]* ( 0.5*np.clip((dist_1/(1e-5+self.distance_init))**2,0,2))
+                
+                cum_rotations = (self.rotation_counter/(2*np.pi))
+                rotations_penalty = self.rewards[2] * cum_rotations / (1e-5+self.duration)
+                
+                reward -= rotations_penalty
+                
                 done = True
                 
             else:
@@ -219,7 +223,7 @@ class RobotEnv(gym.Env):
                 ang_speed_penalty = np.abs(dot_orient)/self.angular_max
                 
                 peds_distances = self.robot.getPedsDistances()
-                danger_penalty = np.sum( 0.2*(1 - (peds_distances[peds_distances < self.lidar_range]/self.lidar_range)**2) )
+                danger_penalty = 0.2* np.sum( 1 - (peds_distances[peds_distances < 2/3*self.lidar_range]/self.lidar_range) ) 
 
                 reward = self.rewards[0]* (1 - 0.3*speed_penalty - 0.3*ang_speed_penalty\
                                            - 0.4*danger_penalty) #+ 10*(dist_0-dist_1)/self.target_distance_max)
@@ -304,9 +308,9 @@ class RobotEnv(gym.Env):
             target_distance /= self.target_distance_max
             target_angle = (target_angle+np.pi)/2*np.pi
 
-        self.state =np.concatenate((ranges_np,np.array([speed_x,speed_rot, target_distance,target_angle])  ),axis = 0).astype(np.float32)
+        #self.state =np.concatenate((ranges_np,np.array([speed_x,speed_rot, target_distance,target_angle])  ),axis = 0).astype(np.float32)
     
-        return self.state
+        return ranges_np, np.array([speed_x,speed_rot, target_distance,target_angle])
 
 
     #####################################################################################################    
@@ -444,7 +448,7 @@ def s_like_path():
     
     start = time.time()
     tot_steps = 0
-    for ii in range(5):
+    for ii in range(2):
         print(f'iteration {ii}')
         print()
     

@@ -22,6 +22,7 @@ from .base_nn import nnBase
 #%%
 #
 # NN class
+
 class LinearModel(nnBase):
     def __init__(self,model_version = -1, net_type='LinearModel0',lr =0.001, n_outputs=1, n_inputs=10,*argv,**kwargs):
         super().__init__(model_version, net_type, lr)
@@ -203,7 +204,7 @@ class LinearModel(nnBase):
 #strides   = [5,3] --> strides are used in maxpool layers
 #C1/C2:  number of channels out of first/second convolution (arbitrary)
 # F1/F2: outputs of linear layers
-
+"""
 class ConvModel(nnBase):
     # batch size is not an input to conv layers definition
     # make sure N%stride = 0 for all elements in strides
@@ -239,6 +240,10 @@ class ConvModel(nnBase):
         # this should always be run in the child classes after initialization
         self.complete_initialization(kwargs)
         
+        pytorch_total_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        print(f'total NN trainable parameters: {pytorch_total_params}')
+
+        
 
     ##########################################################################        
     def get_net_input_shape(self):
@@ -252,11 +257,11 @@ class ConvModel(nnBase):
         self.conv1_lidar = nn.Conv1d(in_channels=self.channels_in, out_channels=self.C1, kernel_size=self.kernel_size_in, padding=round((self.kernel_size_in-1)/2)  ) 
         # padding allows N not to be reduced
         # [B, C1, N_in[0]]
-        self.maxpool1_lidar = nn.MaxPool1d(kernel_size=3, stride=self.strides[0]) # stride == 5
+        self.maxpool1_lidar = nn.MaxPool1d(kernel_size=7, stride=self.strides[0], padding=3) # stride == 5
         # [B, C1, N_in[0]/strides[0]]    (no alignment issue if N is a multiple of strides[0] )
         self.conv2_lidar = nn.Conv1d(self.C1, self.C2, kernel_size=3, padding=1)
         # [B, C2, N_in[0]/strides[0]] #only #channels change from convolution
-        self.maxpool2_lidar = nn.MaxPool1d(kernel_size=3, stride=self.strides[1]) # stride == 3
+        self.maxpool2_lidar = nn.MaxPool1d(kernel_size=5, stride=self.strides[1], padding = 2) # stride == 3
         # [B, C2, N_postconv = N/(strides[0]*strides[1])] #only #channels change from convolution
        
         ## ROBOT MOVEMENT CONVOLUTION
@@ -361,24 +366,14 @@ class ConvModel(nnBase):
     def compare_weights(self, state_dict_1, state_dict_0 = None):
         
         average_diff = super().compare_weights(state_dict_1, state_dict_0)
-        
-        """
-        if average_diff > 0 and self.conv_no_grad:
-            
-            if not identical_state_dicts(state_dict_0.pop(self.independent_weights), state_dict_1.pop(self.independent_weights)):
-                raise('constant PG weights differ!')                
                 
-            average_diff = np.average(np.array( [torch.mean(torch.abs(v0[1] - v1[1])).item()  \
-                            for v0,v1 in zip(state_dict_0(self.independent_weights).items(), state_dict_1(self.independent_weights).items())  ]))
-        """
-        
         return average_diff
-
+"""
     
 #%%
 #test
 
-model = ConvModel('ConvModel', n_actions = 49 )
+#model = ConvModel('ConvModel', n_actions = 9 )
 
 
 #test_tensor = torch.rand(32,4,165)

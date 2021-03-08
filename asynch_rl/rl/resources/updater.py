@@ -143,7 +143,6 @@ class RL_Updater():
     def qValue_loss_update(self, state_batch, action_batch, reward_batch, state_1_batch, done_batch):
         """ DQL update law """
         
-        
         if self.move_to_cuda:  # put on GPU if CUDA is available
             if isinstance(state_batch,tuple):
                 state_batch   = tuple([s.cuda() for s in state_batch])
@@ -154,18 +153,15 @@ class RL_Updater():
             
             action_batch = action_batch.cuda()
             reward_batch = reward_batch.cuda()
-            
 
         # get output for the next state
         with torch.no_grad():
             output_1_batch = self.model_qv(state_1_batch)
-        
             
         # set y_j to r_j for terminal state, otherwise to r_j + gamma*max(Q)
         y_batch = torch.cat(tuple(reward_batch[i] if done_batch[i]  #minibatch[i][4]
                                   else reward_batch[i] + self.gamma * torch.max(output_1_batch[i])
                                   for i in range(len(reward_batch))))
-        
         
         # extract Q-value
         # calculates Q value corresponding to all actions, then selects those corresponding to the actions taken
@@ -177,18 +173,17 @@ class RL_Updater():
         loss_qval = self.model_qv.criterion_MSE(q_value, y_batch)
         
         loss_qval.backward()
-        
+        """
         for name, param in self.model_qv.named_parameters():
             FINITE_GRAD = torch.isfinite(param.grad).all() 
             if not FINITE_GRAD:
                 print(name, param.grad)
-        
+        """
         self.model_qv.optimizer.step()  
         
         for k,v in self.model_qv.state_dict().items():
             if torch.isnan(v).any():
                 raise('nan tensor in model after update')
-        
         
         return loss_qval
 
