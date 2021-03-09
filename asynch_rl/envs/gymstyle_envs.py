@@ -25,30 +25,7 @@ from .connect4_env.connect_four_env import ConnectFour
 from .frx_env.frx_env import FrxTrdr
 
 
-#
-#
-# conditional import of RobotEnv
-"""
-def modules_list() :
-    #Return a list of available modules
-    # Capture output of help into a string
-    stdout_sys = sys.stdout
-    stdout_capture = io.StringIO()
-    sys.stdout = stdout_capture
-    help('modules')
-    sys.stdout = stdout_sys
-    help_out = stdout_capture.getvalue()
-    # Remove extra text from string
-    help_out = help_out.replace('.', '')
-    help_out = help_out.replace('available modules', '%').replace('Enter any module', '%').split('%')[-2]
-    # Split multicolumn output
-    help_out = help_out.replace('\n', '%').replace(' ', '%').split('%')
-    help_out = list(filter(None, help_out))
-    help_out.sort()
-    return help_out
 
-ml = modules_list()
-"""
 try:
     import robot_sf
     robot_available = True

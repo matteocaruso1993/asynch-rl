@@ -24,8 +24,8 @@ import os
 import asyncio
 
 # df loader
-net_version = 305
-iteration = -1
+net_version = 0
+iteration = 500
 
 # generate proper discretized bins structure
 ################
@@ -50,7 +50,7 @@ rl_env.live_plot = False
 # always update agents params after rl_env params are changed
 rl_env.updateAgentsAttributesExcept('env')
 
-rl_env.load(iteration, load_memory = False)
+rl_env.load(iteration)
 #rl_env.load(320)
 
 rl_env.plot_training_log(1)

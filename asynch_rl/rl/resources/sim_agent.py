@@ -177,10 +177,10 @@ class SimulationAgent:
             self.__dict__[model].state_dict()[k] += v
         
     ##################################################################################        
-    def renderAnimation(self, action = 0):
+    def renderAnimation(self, action = 0, done = False, reward_np=0):
         iter_params = list( map(self.agent_run_variables.get, ['iteration', 'single_run', 'cum_reward']) )
         if self.env.env_type == 'RobotEnv':
-            self.renderRobotEnv(iter_params)
+            self.renderRobotEnv(iter_params, done, reward_np)
         elif self.env.env_type == 'CartPole':
             self.renderCartPole(iter_params, action)
 
@@ -189,7 +189,7 @@ class SimulationAgent:
         self.env.render(iter_params=iter_params, action = action)
             
     ##################################################################################        
-    def renderRobotEnv(self, iter_params):
+    def renderRobotEnv(self, iter_params, done, reward_np):
         # render animation
         
         if self.show_rendering:
@@ -197,7 +197,14 @@ class SimulationAgent:
                 self.env.render('plot',iter_params=iter_params)
                 plt.show()
             elif not (self.agent_run_variables['single_run'] % self.movie_frequency) :
-                self.ims.append(self.env.render('animation',iter_params=iter_params))        
+                frame = self.env.render('animation',iter_params=iter_params)
+                self.ims.append(frame) 
+                if done:
+                    iter_params[0]+=1
+                    iter_params[2]+=reward_np
+                    frame = self.env.render('animation',iter_params=iter_params)
+                    for _ in range(10):
+                        self.ims.append(frame) 
         
     ##################################################################################
     def controller_selector(self, pctg_ctrl = 0):
@@ -316,7 +323,7 @@ class SimulationAgent:
                     if not self.share_conv_layers:
                         total_loss = self.advantage_loss + self.loss_policy
                     else:
-                        total_loss = 1/3*self.advantage_loss/np.abs(self.advantage_loss.item()) + 2/3*self.loss_policy/np.abs(self.loss_policy.item())
+                        total_loss = self.advantage_loss/(1e-5+np.abs(self.advantage_loss.item())) + self.loss_policy/(1e-5+np.abs(self.loss_policy.item()))
                 
                 total_loss.backward()
 
@@ -404,6 +411,7 @@ class SimulationAgent:
         """ extract gradients from PG and V model to be shared with main model for update"""
         
         pg_info = None
+        nan_grad = False
         if 'AC' in self.rl_mode:
             if force_stop:
                 pg_info = (None,None,None,None,None,False)
@@ -414,9 +422,17 @@ class SimulationAgent:
                     grad_dict_pg[name] = param.grad.clone()
                 if self.rl_mode == 'AC':
                     for name, param in self.model_v.named_parameters():
-                        grad_dict_v[name] = param.grad.clone()
-                pg_info = (grad_dict_pg, grad_dict_v, np.average(self.pg_loss_hist) , \
+                        if torch.isnan(param.grad).any():
+                            nan_grad = True
+                            break
+                        else:
+                            grad_dict_v[name] = param.grad.clone()
+                if not nan_grad:
+                    pg_info = (grad_dict_pg, grad_dict_v, np.average(self.pg_loss_hist) , \
                            np.average(self.entropy_hist),np.average(self.advantage_hist), True )
+                else:
+                    pg_info = (None,None,None,None,None,False)
+                    print('remote worker has diverging gradients')
         return pg_info
 
 
@@ -427,7 +443,7 @@ class SimulationAgent:
         force_stop, done, fig_film = self.initialize_run()
         info = {}
         
-        while not (self.stop_run or ( 'AC' in self.rl_mode and done) ):
+        while not (self.stop_run or ( 'AC' in self.rl_mode and done and not use_NN ) ):
                 
             if self.reset_simulation:
                 loss_pg = 0
@@ -436,6 +452,11 @@ class SimulationAgent:
                 state, use_controller = self.reset_agent(pctg_ctrl, evaluate = use_NN , info = info)
            
             done, state, force_stop  , loss_pg, info = self.sim_routine(state, loss_pg , use_controller, use_NN, test_qv)
+            
+            if DEBUG and use_NN and self.rl_mode == 'AC':
+                state_value = self.model_v(state)
+                print(f'state value: {state_value}')
+                
 
         single_run_log = self.trainVariablesUpdate(reset_variables = True, info = info)
         self.update_sim_log(single_run_log)
@@ -482,11 +503,8 @@ class SimulationAgent:
 
         
     ################################################################################
-    def emptyLocalMemory(self, capacity_threshold = 0.5):
-        if self.internal_memory.fill_ratio > capacity_threshold:
-            return self.internal_memory.getMemoryAndEmpty()
-        else:
-            return []
+    def emptyLocalMemory(self):
+        return self.internal_memory.getMemoryAndEmpty()
         
         
     ################################################################################
@@ -515,23 +533,17 @@ class SimulationAgent:
         ################# 
         if not self.agent_run_variables['failed_iteration']:
 
-            self.renderAnimation(action)
+            self.renderAnimation(action, done, reward_np)
             ## restructure new data
-            
             state_1 = self.env.get_net_input(state_obs_1, state_tensor_z1 = state )
 
             action = action.unsqueeze(0)
             reward = torch.from_numpy(np.array([reward_np], dtype=np.float32)).unsqueeze(0)
-            # build "new transition" and add it to replay memory
-            new_transition = (state, action, reward, state_1, done, action_index)
             
-            # nan checker (only for debug)
-            #if torch.isnan(state).any() or torch.isnan(action).any() or torch.isnan(reward).any() or torch.isnan(state_1).any():
-            #    stophere = 1
-            
-            self.internal_memory.addInstance(new_transition)
-            # set state to be state_1 (for next iteration)
-            #state = state_1
+            if self.rl_mode != 'AC':
+                # build "new transition" and add it to replay memory
+                new_transition = (state, action, reward, state_1, done, action_index)
+                self.internal_memory.addInstance(new_transition)
             
             if not 'outcome' in info:
                 info['outcome'] = None
@@ -558,30 +570,39 @@ class SimulationAgent:
         if self.show_rendering and self.agent_run_variables["single_run"]>=self.movie_frequency  and \
             not self.live_plot and not self.agent_run_variables["consecutive_fails"] >= 3:
             
-            ani = None
-            if self.env.env_type == 'RobotEnv':
-                ani , filename , duration=self.getVideoRobotEnv(fig_film)
-            elif self.env.env_type == 'CartPole':
-                ani , filename, duration=self.getVideoCartPole(fig_film)
-            
-            if ani is not None:
-                #print(f'duration = {duration}s')
-                plt.show(block=False)
-                plt.waitforbuttonpress(round(duration))
+            try:
+                kernel_exec = False
+                ip = get_ipython()
+                if ip.has_trait('kernel'):
+                    kernel_exec = True
+            except Exception:
+                kernel_exec = False
+
+            if not kernel_exec:
+                ani = None
+                if self.env.env_type == 'RobotEnv':
+                    ani , filename , duration=self.getVideoRobotEnv(fig_film)
+                elif self.env.env_type == 'CartPole':
+                    ani , filename, duration=self.getVideoCartPole(fig_film)
+                
+                if ani is not None:
+                    #print(f'duration = {duration}s')
+                    plt.show(block=False)
+                    plt.waitforbuttonpress(round(duration))
+                                
+                    if self.save_movie:
+                        if 'AC' in self.rl_mode :
+                            net_type = self.model_pg.net_type
+                        elif self.rl_mode == 'DQL':
+                            net_type = self.model_qv.net_type
+                        else:
+                            raise('RL mode not defined')                        
                             
-                if self.save_movie:
-                    if 'AC' in self.rl_mode :
-                        net_type = self.model_pg.net_type
-                    elif self.rl_mode == 'DQL':
-                        net_type = self.model_qv.net_type
-                    else:
-                        raise('RL mode not defined')                        
+                        store_path= os.path.join( os.path.dirname(os.path.abspath(__file__)) ,"Data" , self.env.env_type, net_type, 'video'  )
+                        createPath(store_path).mkdir(parents=True, exist_ok=True)
                         
-                    store_path= os.path.join( os.path.dirname(os.path.abspath(__file__)) ,"Data" , self.env.env_type, net_type, 'video'  )
-                    createPath(store_path).mkdir(parents=True, exist_ok=True)
-                    
-                    full_filename = os.path.join(store_path, filename)
-                    ani.save(full_filename)
+                        full_filename = os.path.join(store_path, filename)
+                        ani.save(full_filename)
 
     ##################################################################################
     def getVideoCartPole(self, fig_film):

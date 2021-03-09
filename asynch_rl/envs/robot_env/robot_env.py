@@ -29,12 +29,13 @@ from robot_sf.extenders_py_sf.extender_sim import ExtdSimulator
 
 #%%
 
-def initialize_robot(visualization_angle_portion, lidar_range, lidar_n_rays, init_state, robot_collision_radius):
+def initialize_robot(visualization_angle_portion, lidar_range, lidar_n_rays, init_state, robot_collision_radius, peds_sparsity):
     
     # odd number & lidar_n_rays % 3 (or 5) = 0!! (3 or 5 used as stride in conv_net)
     # allowed lidar_n_rays = 105, 135, 165, 195,...
 
     sim_env = ExtdSimulator()
+    sim_env.setPedSparsity(peds_sparsity)
     #initialize map
     robotMap = BinaryOccupancyGrid(map_height = 2*sim_env.box_size, map_length = 2*sim_env.box_size, peds_sim_env = sim_env)
     robotMap.center_map_frame()
@@ -69,11 +70,14 @@ class RobotEnv(gym.Env):
     #####################################################################################################
     def __init__(self, lidar_n_rays = 135, \
                  collision_distance = 0.7, visualization_angle_portion = 0.5, lidar_range = 10,\
-                 v_linear_max = 1.5 , v_angular_max = 2 , rewards = [1,100,20], max_v_x_delta = .5, \
+                 v_linear_max = 1.5 , v_angular_max = 2 , rewards = [1,100,40], max_v_x_delta = .5, \
                  initial_margin = .3,    max_v_rot_delta = .5, dt = None, normalize_obs_state = True, \
-                     sim_length = 120, difficulty = 0, scan_noise = [0.005,0.002]):
+                     sim_length = 200, difficulty = 0, scan_noise = [0.005,0.002]):
         
-        self.difficulty = difficulty
+        
+        sparsity_levels = [50, 30, 20 , 15,  10, 5 ]
+        
+        self.peds_sparsity = sparsity_levels[difficulty]
         # not implemented yet
         
         self.scan_noise = scan_noise  #percentages (1 = 100%) [scan_noise[0]: lost samples, scan_noise[1]: added samples]
@@ -158,13 +162,20 @@ class RobotEnv(gym.Env):
         dot_x      = np.clip(self.robot.current_speed['linear']['x'] + action[0] , 0                , self.linear_max ) 
         dot_orient = np.clip(self.robot.current_speed['angular']['z']+ action[1] ,-self.angular_max , self.angular_max)
         
-        #print(f'orientation = {robot.current_pose["orientation"]["z"]}')
-        #print(f'angular speed = {robot.current_speed["angular"]["z"]}')
+        #print(f'orientation = {round(self.robot.current_pose["orientation"]["z"],3)}')
+        #print(f'angular speed = {round(self.robot.current_speed["angular"]["z"],3)}')
+        
+        if self.robot_state_history is None:
+            self.robot_state_history = np.array([[dot_x, dot_orient]])
+        else:
+            self.robot_state_history = np.append(self.robot_state_history, np.array([[dot_x, dot_orient]]), axis = 0)
+        
         
         self.robot.map.peds_sim_env.step(1)
         self.robot.map.update_from_peds_sim() 
         self.robot.updateRobotSpeed(dot_x, dot_orient)
         self.robot.computeOdometry(self.dt)
+        
         
         # new distance
         dist_1 = self.robot.target_rel_position(self.target_coordinates[:2])[0]
@@ -173,16 +184,14 @@ class RobotEnv(gym.Env):
         self.rotation_counter += np.abs(dot_orient*self.dt)
 
         # if pedestrian or obstacle is hit
-        if self.robot.check_pedestrians_collision(.5) or self.robot.check_obstacle_collision():
+        if self.robot.check_pedestrians_collision(.8) or self.robot.check_obstacle_collision():
             
-            final_distance_penalty = 0.5*np.clip((dist_1/(1e-5+self.distance_init))**2,0,2)
-            survival_time_penalty = (1-(self.duration/self.sim_length)**2)
-            
-            failure_penalty = self.rewards[1]*( 1 + final_distance_penalty + survival_time_penalty )
-            
-            reward = -failure_penalty 
-            done = True
+            final_distance_penalty = np.clip(dist_1/(1e-5+self.distance_init),0,1)
+            survival_time_bonus = self.duration/self.sim_length
+            #movement_bonus = 2*np.average(self.robot_state_history[:,0]/self.linear_max)-1
+            reward = -self.rewards[1]*( 1 + 0.5*final_distance_penalty - 0.5*survival_time_bonus  )
 
+            done = True
         
         # if target is reached            
         elif self.robot.check_target_reach(self.target_coordinates[:2], tolerance = 1):
@@ -194,7 +203,7 @@ class RobotEnv(gym.Env):
             t_max= self.sim_length
             t_min = self.distance_init/self.linear_max
             t = self.duration
-            rel_rew = (t_max-t)/(t_max - t_min)
+            rel_rew = 0.25+0.75*(t_max-t)/(t_max - t_min)
 
             cum_rotations = (self.rotation_counter/(2*np.pi))
             rotations_penalty = self.rewards[2] * cum_rotations / (1e-5+self.duration)
@@ -208,42 +217,40 @@ class RobotEnv(gym.Env):
             self.duration += self.dt
             # if time expired
             if self.duration >= self.sim_length:
-                reward = - self.rewards[1]* ( 0.5*np.clip((dist_1/(1e-5+self.distance_init))**2,0,2))
-                
-                cum_rotations = (self.rotation_counter/(2*np.pi))
-                rotations_penalty = self.rewards[2] * cum_rotations / (1e-5+self.duration)
-                
-                reward -= rotations_penalty
+                final_distance_penalty = np.clip(dist_1/(1e-5+self.distance_init),0,1)
+                reward = -self.rewards[1]*0.5*final_distance_penalty
                 
                 done = True
                 
             else:
                 # standard  reward calculation
-                speed_penalty = 1- dot_x/self.linear_max
+                speed_bonus = np.clip(0.5*dot_x/self.linear_max + 0.5*(dist_0-dist_1)/(self.linear_max*self.dt),0,1)
                 ang_speed_penalty = np.abs(dot_orient)/self.angular_max
                 
                 peds_distances = self.robot.getPedsDistances()
-                danger_penalty = 0.2* np.sum( 1 - (peds_distances[peds_distances < 2/3*self.lidar_range]/self.lidar_range) ) 
+                danger_penalty = np.minimum(1,0.2* np.sum( 1 - (peds_distances[peds_distances < 2/3*self.lidar_range]/self.lidar_range) )) 
 
-                reward = self.rewards[0]* (1 - 0.3*speed_penalty - 0.3*ang_speed_penalty\
-                                           - 0.4*danger_penalty) #+ 10*(dist_0-dist_1)/self.target_distance_max)
+                reward = self.rewards[0]*( speed_bonus - 0.2*ang_speed_penalty - 0.8*danger_penalty) 
                 done = False
 
-            
         return self._get_obs(), reward, done, {}
+    
     
     #####################################################################################################
     def reset(self,**kwargs):
+        
         self.duration = 0
         self.rotation_counter = 0
         
-        self.robot = initialize_robot(self.visualization_angle_portion, self.lidar_range,self.lidar_n_rays, [0,0,0], self.collision_distance)
+        self.robot_state_history = None
+        
+        self.robot = initialize_robot(self.visualization_angle_portion, self.lidar_range,self.lidar_n_rays, [0,0,0], self.collision_distance, self.peds_sparsity)
         self.robot.setMaxSpeed(self.linear_max, self.angular_max)
 
         low_bound,high_bound = self._getPositionBounds()   
         
         count = 0
-        min_distance = (high_bound[0]-low_bound[0])/10
+        min_distance = (high_bound[0]-low_bound[0])/20
         while True:
             self.target_coordinates = np.random.uniform(low = np.array(low_bound), high = np.array(high_bound),size=3)
             if np.amin(np.sqrt(np.sum((self.robot.map.obstaclesCoordinates - self.target_coordinates[:2])**2, axis = 1)))>min_distance:
@@ -252,10 +259,13 @@ class RobotEnv(gym.Env):
             if count >= 100:
                 raise('suitable initial coordinates not found')
             
-        # if initial condition is too close (1.5m) to obstacle or pedestrians, generate new initial condition
-        while self.robot.check_collision(1.5) or self.robot.checkOutOfBounds(margin = 0.2):
+        # if initial condition is too close (1.5m) to obstacle, pedestrians or target, generate new initial condition
+        while self.robot.check_collision(1.5) or self.robot.checkOutOfBounds(margin = 0.2) or \
+            self.robot.target_rel_position(self.target_coordinates[:2])[0] < (high_bound[0]-low_bound[0])/2 :
+                
             init_coordinates = np.random.uniform(low = low_bound, high = high_bound,size=3)
             self.robot.setPosition(init_coordinates[0], init_coordinates[1], init_coordinates[2])
+            
             
         # initialize Scan to get dimension of state (depends on ray cast) 
         #self.robot.getScan()
@@ -266,8 +276,8 @@ class RobotEnv(gym.Env):
         # if step time externally defined, align peds sim env
         if self.dt != self.robot.map.peds_sim_env.peds.step_width:
             self.robot.map.peds_sim_env.peds.step_width = self.dt
-
         
+        #self.render()
         
         return self._get_obs()
     
@@ -338,13 +348,14 @@ class RobotEnv(gym.Env):
         # target coordinates (grid based)
         y_trg_grd, x_trg_grd = self.robot.map.convert_world_to_grid_no_error(self.target_coordinates[:2].reshape(1,2))[0,:]
         
+        target_distance  = self.robot.target_rel_position(self.target_coordinates[:2])[0]
         
         img  , t1,t2, t3,t_ped_dist_line, trg, rbt,rbt_dir, scn, ped_dist_bar_empty,\
             ped_dist_bar,t_target_dist_line, target_dist_bar_empty, target_dist_bar = \
             render_image(occupancy_map,idx_x,idx_y,robot_angle, scan_pts_grid,  closest_obstacle, \
             rel_width, x_trg_grd, y_trg_grd, iter_params, \
-                target_distance  = self.robot.target_rel_position(self.target_coordinates[:2])[0], \
-                target_rel_width = 1-self.state[-2])
+                target_distance  = target_distance, \
+                target_rel_width = 1-target_distance/self.target_distance_max)  #self.state[-2])
 
         self.data_render.append([occupancy_map,idx_x,idx_y,robot_angle, scan_pts_grid,  closest_obstacle, rel_width, x_trg_grd,y_trg_grd, iter_params])
 
@@ -445,7 +456,6 @@ def goStraight(steps,dv,orient):
         env.render(mode = 'animation')
         
 def s_like_path():
-    
     start = time.time()
     tot_steps = 0
     for ii in range(2):
@@ -460,7 +470,7 @@ def s_like_path():
         for i in range(30):
             _, reward , done, _ = env.step([0.1,0.02])
             tot_steps += 1
-            #env.render(mode='animation')
+            env.render(mode='animation')
             #print(round(reward,3), done)
             if done:
                 break
@@ -469,10 +479,13 @@ def s_like_path():
             for i in range(30):
                 _, reward , done, _ = env.step([0.1,-0.04])
                 tot_steps += 1
-                #env.render(mode='animation')
+                env.render(mode='animation')
                 #print(round(reward,3), done)
                 if done:
                     break
+    
+        if not done:
+            print('no impact')
                 
     tot_time = round(time.time()-start,2)
     print(f'total steps: {tot_steps}')

@@ -30,11 +30,11 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 
-parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='DQL', help="RL mode (AC, DQL, parallelAC)")
+parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC', help="RL mode (AC, DQL, parallelAC)")
 
-parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 2 , help="number of training iterations")
+parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 5 , help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=True,
                     help="ray_parallelize bool")
 
 parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=5,
@@ -93,7 +93,7 @@ parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=boo
 parser.add_argument("-fr", "--frames-number", dest="n_frames", type=int, default=4,
                     help="number of frames considered for convolutional network")
 
-parser.add_argument("-scl", "--share-conv-layers", dest="share_conv_layers", type=bool, default=True,
+parser.add_argument("-scl", "--share-conv-layers", dest="share_conv_layers", type=bool, default=False,
                     help="Flag to share Convolutional Layers between Actor and Critic")
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.95, help="GAMMA parameter in QV learning")
@@ -103,9 +103,9 @@ parser.add_argument("-b", "--beta", dest="beta", nargs=2, type=float, default= 0
 parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=bool, default=False, 
                     help="latest QV model is always used for Advanatge calculation")
 
-parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=int, default=[1, 100, 20] )
+parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=int, default=[1, 100, 40] )
 
-parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[60, 60, 40] )
+parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[60, 60, 20] )
 
 
 args = parser.parse_args()
@@ -158,7 +158,11 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
             ray.shutdown()
         except Exception:
             print('ray not active')
-        ray.init(address=head_address, redis_password = ray_password )
+            
+        if ray_password is not None:
+            ray.init(address=head_address, redis_password = ray_password )
+        else:
+            ray.init()
 
     #single_agent_min_iterations = round(memory_turnover_ratio*replay_memory_size / (agents_number * 20) )
     

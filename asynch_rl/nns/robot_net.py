@@ -43,10 +43,11 @@ class ConvModel(nnBase):
         #if N_in[0] % (strides[0]*strides[1]):
         #    raise ValueError('N in and strides not aligned')
         
+        self.normalize_fc_layers = False
+        
         self.N_in = N_in        
         self.channels = channels
         self.channels_in = channels_in
-        self.channels.insert(0, channels_in)
         self.n_actions = n_actions
         self.F = fc_layers
         
@@ -81,12 +82,16 @@ class ConvModel(nnBase):
         # convolutional layers
         self.maxpool_3 = nn.MaxPool1d(kernel_size=3, stride=3)
         self.maxpool_5 = nn.MaxPool1d(kernel_size=5, stride=5)
-        for i in range(len(self.channels)-1):
-            layer = nn.Conv1d(in_channels= self.channels[i], out_channels=self.channels[i+1], \
-                              kernel_size= 3+2*int(not bool(i)),  padding= 1+ int(not bool(i)) )             
+        for i in range(len(self.channels)):
+            if i == 0:
+                layer = nn.Conv1d(in_channels= self.channels_in, out_channels=self.channels[i], \
+                                  kernel_size= 5,  padding= 2 )             
+            else:
+                layer = nn.Conv1d(in_channels= self.channels[i-1], out_channels=self.channels[i], \
+                                  kernel_size= 3,  padding= 1 )             
+
             layer_name = 'conv'+str(i+1)
             setattr(self , layer_name , layer )
-            
             x_test =  layer(x_test)
             if i == 0:
                 x_test =  self.maxpool_5(x_test)
@@ -98,7 +103,7 @@ class ConvModel(nnBase):
             x_test = layer_norm(x_test)
                 
         # fully connected layers
-        N_linear_in = round(self.N_in[0]/(5*3**(len(self.channels)-2))*self.channels[-1] + self.N_in[1])
+        N_linear_in = round(self.N_in[0]/(5*3**(len(self.channels)-1))*self.channels[-1] + self.N_in[1])
         x_test = torch.cat( (x_test.flatten(), x_test_1.flatten() ),dim = 0 ).unsqueeze(0)
         
         lin_model = LinearModel(0, 'linear_portion', self.lr, self.n_actions, N_linear_in, *(self.F) ) 
@@ -112,10 +117,11 @@ class ConvModel(nnBase):
             nn_layer = getattr(lin_model, layer)
             setattr(self, layer , nn_layer  )
             x_test = nn_layer (x_test)
-            if 'fc'+str(i+1) in layer:
-                layer_norm = nn.LayerNorm(x_test.shape[-1])
-                setattr(self , 'norm_layer_fc'+str(i+1), layer_norm)
-                x_test = layer_norm(x_test)
+            if self.normalize_fc_layers:
+                if 'fc'+str(i+1) in layer:
+                    layer_norm = nn.LayerNorm(x_test.shape[-1])
+                    setattr(self , 'norm_layer_fc'+str(i+1), layer_norm)
+                    x_test = layer_norm(x_test)
             
 
     ##########################################################################
@@ -132,7 +138,8 @@ class ConvModel(nnBase):
         for attr in sorted(self._modules):
             if 'fc'+str(iterate_idx) in attr:
                 x = F.relu(self._modules[attr](x))
-                x = self._modules['norm_layer_fc'+str(iterate_idx)](x)
+                if self.normalize_fc_layers:
+                    x = self._modules['norm_layer_fc'+str(iterate_idx)](x)
                 iterate_idx += 1
                 if iterate_idx > self.net_depth:
                     break
@@ -151,14 +158,14 @@ class ConvModel(nnBase):
         """ takes a tuple of two tensors as input """
         
         x1 = x[0]
-        for i in range(1,len(self.channels)):
-            layer = getattr(self, 'conv'+str(i))
+        for i in range(len(self.channels)):
+            layer = getattr(self, 'conv'+str(i+1))
             x1 = F.relu(layer(x1))
-            if i == 1:
+            if i == 0:
                 x1 = self.maxpool_5(x1)
             else:
                 x1 = self.maxpool_3(x1)
-            x1 = self._modules['norm_layer_conv'+str(i)](x1)
+            x1 = self._modules['norm_layer_conv'+str(i+1)](x1)
             # x1 = self.
    
         return torch.cat((x1.flatten(1), x[1].flatten(1)),dim = 1)
@@ -190,7 +197,8 @@ class ConvModel(nnBase):
     def init_layers(self, model_state):         
         """ """                
 
-        self.channels = [ model_state['conv1.weight'].shape[1] ]
+        self.channels = []
+        self.channels_in = model_state['conv1.weight'].shape[1] 
         self.n_actions = model_state['fc_output.weight'].shape[0]
 
         i = 1
@@ -208,7 +216,7 @@ class ConvModel(nnBase):
                 self.F.append( model_state[fc_layer].shape[0] )
             i += 1
         
-        N_linear_in = round(self.N_in[0]/(5*3**(len(self.channels)-2))*self.channels[-1] + self.N_in[1])
+        N_linear_in = round(self.N_in[0]/(5*3**(len(self.channels)-1))*self.channels[-1] + self.N_in[1])
         if N_linear_in != model_state['fc1.weight'].shape[1]:
             raise("NN consistency error")
 

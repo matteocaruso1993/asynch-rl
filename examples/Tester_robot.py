@@ -3,7 +3,7 @@
 """
 Created on Mon Nov 16 15:50:55 2020
 
-@author: rodpod21
+@author: Enrico Regolin
 """
 
 # tester robot
@@ -23,16 +23,16 @@ import os
 import asyncio
 
 # df loader
-net_version = 80
-iteration = 1000
+net_version = 1
+iteration = 308
 
 # generate proper discretized bins structure
 ################
 env_type = 'RobotEnv' 
 model_type = 'ConvModel'
-rl_mode = 'AC'
+#rl_mode = 'AC'
 
-overwrite_params = ['rewards', 'rl_mode']
+overwrite_params = ['rewards', 'rl_mode', 'share_conv_layers', 'n_frames' , 'layers_width']
 
 my_dict = load_train_params(env_type, model_type, overwrite_params, net_version)
 for i,par in enumerate(overwrite_params):
@@ -48,12 +48,14 @@ rl_env = Multiprocess_RL_Environment(env_type, model_type, net_version,rl_mode =
                                       #replay_memory_size = 500, N_epochs = 100)
 
 
+print(f'rl mode : {rl_env.rl_mode}')
+
 rl_env.save_movie = False
 rl_env.live_plot = False
 # always update agents params after rl_env params are changed
 rl_env.updateAgentsAttributesExcept('env')
 
-rl_env.load(iteration, load_memory = False)
+rl_env.load(iteration)
 #rl_env.load(320)
 
 try:
@@ -113,6 +115,15 @@ np.save(val_history_file, rl_env.val_history )
 #"""
 
 #%%
+"""
+import cProfile
+import pstats
+import io
+
+
+pr = cProfile.Profile()
+pr.enable()
+"""
 
 agent = rl_env.sim_agents_discr[0]
 
@@ -123,10 +134,18 @@ agent.movie_frequency = 1
 #agent.tot_iterations = 10000
 agent.tot_iterations = 300
 agent.max_n_single_runs = 5
-sim_log, single_runs , successful_runs, pg_info = agent.run_synch(use_NN = True, test_qv = False)
+sim_log, single_runs , successful_runs,_, pg_info = agent.run_synch(use_NN = False, test_qv = True)
 
 #agent.env.env.plot_graphs()
 
+"""
+pr.disable()
+s = io.StringIO()
+ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
+ps.print_stats()
+with open('duration_tester_robot.txt', 'w+') as f:
+    f.write(s.getvalue())
+"""
 
 #%%
 

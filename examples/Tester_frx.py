@@ -53,7 +53,7 @@ rl_env.live_plot = False
 # always update agents params after rl_env params are changed
 rl_env.updateAgentsAttributesExcept('env')
 
-rl_env.load(iteration, load_memory = False)
+rl_env.load(iteration)
 #rl_env.load(320)
 
 try:

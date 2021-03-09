@@ -19,6 +19,7 @@ import random
 import pandas as pd
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
+import matplotlib.dates as mpdates 
 
 
 #%%
@@ -50,7 +51,8 @@ class FrxTrdr(gym.Env):
         self.n_samples = n_samples
         self.leverage = leverage
         
-        coeff_0 = np.array([0.001, 0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.5])
+        #coeff_0 = np.array([0.001, 0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.5])
+        coeff_0 = np.array([0.001])
         self.coeff = np.append( -np.flipud(coeff_0), np.append(0, coeff_0))
         
         self.n_actions = len(self.coeff)
@@ -71,13 +73,6 @@ class FrxTrdr(gym.Env):
         self.pip = 0.0001
 
 
-        #coeff_0 = np.array([ -(0.5**i) for i in range(int((self.n_actions-1)/2)) ])
-        #coeff = np.append(coeff_0, 0)
-        #self.coeff = np.append(coeff, -np.flipud(coeff_0))
-        
-        coeff_0 = np.array([0.001, 0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.5])
-        self.coeff = np.append( -np.flipud(coeff_0), np.append(0, coeff_0))
-    
     ###################################
     """ these three methods are needed in sim env / rl env"""
     def get_max_iterations(self):
@@ -93,7 +88,50 @@ class FrxTrdr(gym.Env):
     def render(self):
         pass    
     
+    
+    def initialize_database(self):
+        
+        signal_length = 20000
+        segment_length = 5
+        average_value = 500
+        
+        a = 0.3*np.array([0.5,0.3,0.2,0.25])
+        
+        w = [0.0002,0.0005, 0.001,0.05]
+        phi = 2*np.pi*np.random.random(len(a))
+        
+        raw_signal = average_value+ .02*np.random.randn(signal_length)
+        for i in range(len(a)-1):
+            raw_signal += a[i]*np.sin(np.arange(signal_length)*w[i]+phi[i])
+        
+        raw_signal /= average_value
+        
+        data = None
+        date = datetime.now()
+        delta = timedelta(minutes = 5)
+        
+        for i in range(round(signal_length/segment_length)):
+            
+            section = raw_signal[i*segment_length:(i+1)*segment_length]
+            OHLC = np.array([ [ mpdates.date2num(date)  , section[0], np.max(section),np.min(section) , section[-1] ]])
+            if data is None:
+                data = OHLC
+            else:
+                data = np.append(data, OHLC, axis = 0)
+        
+            date = date + delta
+    
 
+        #fig,ax = plt.subplots(1,1)
+        
+        ## plot the candlesticks
+        #start = random.randint(0,round(signal_length/segment_length)-50)
+        
+        #candlestick_ohlc(ax, data[start:start+50,:], width=.002, colorup='green', colordown='red')
+        
+        self.data = data[:,1:]
+
+    """
     def initialize_database(self, init_row = 0):
         #folders_path = os.path.join(os.getcwd(), 'envs','forex_env' , 'forex_data', 'Train_folder')
         folders_path = os.path.join(os.path.dirname(__file__),'frx_data', 'Train_folder')
@@ -115,6 +153,7 @@ class FrxTrdr(gym.Env):
         init_row = np.random.randint(self.n_samples+1, file_len -self.max_n_moves)
         
         self.data = np.loadtxt(file_path, delimiter=',', usecols=(2,3,4,5), unpack=True, dtype=float, skiprows = init_row, max_rows = (self.n_samples+self.max_n_moves+10) ).T
+    """
 
     def reset(self, **kwargs):
 

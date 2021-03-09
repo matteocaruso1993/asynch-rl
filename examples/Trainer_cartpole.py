@@ -38,7 +38,7 @@ parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, def
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 20000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 2000,
                     help="Replay Memory Size")
 
 parser.add_argument("-ha", "--head-address", dest="head_address", type=str, default= None,
@@ -48,7 +48,7 @@ parser.add_argument("-rp", "--ray-password", dest="ray_password", type=str, defa
                     help="Ray password")
 
 # following params can be left as default
-parser.add_argument("-msl", "--memory-save-load", dest="memory_save_load", type=bool, default=False,
+parser.add_argument("-msl", "--memory-save-load", dest="memory_save_load", type=bool, default=True,
                     help="save memory bool (for debugging purpose)")
 
 parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int, default= 700,
@@ -147,7 +147,11 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
             ray.shutdown()
         except Exception:
             print('ray not active')
-        ray.init(address=head_address, redis_password = ray_password )
+            
+        if ray_password is not None:
+            ray.init(address=head_address, redis_password = ray_password )
+        else:
+            ray.init()
         
 
     env_options = {}
@@ -162,7 +166,7 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
                                          epsilon_annealing_factor=epsilon_annealing_factor, discr_env_bins = discrete_action_bins , \
                                          difficulty = difficulty, learning_rate = learning_rate, sim_length_max = sim_length_max, 
                                          tot_iterations = tot_iterations, memory_turnover_ratio = memory_turnover_ratio, \
-                                         gamma = gamma, beta_PG = beta , val_frequency = val_frequency, \
+                                         gamma = gamma, beta_PG = beta , val_frequency = val_frequency, layers_width= layers_width,\
                                          continuous_qv_update = continuous_qv_update, memory_save_load = memory_save_load)
 
     rl_env.resume_epsilon = resume_epsilon

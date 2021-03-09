@@ -82,7 +82,7 @@ parser.add_argument("-scl", "--share-conv-layers", dest="share_conv_layers", typ
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.95, help="GAMMA parameter in QV learning")
 
-parser.add_argument("-b", "--beta", dest="beta", nargs=2, type=float, default= 0.1 , help="BETA parameter for entropy in PG learning")
+parser.add_argument("-b", "--beta", dest="beta", type=float, default= 0.1 , help="BETA parameter for entropy in PG learning")
 
 parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=bool, default=False, 
                     help="latest QV model is always used for Advanatge calculation")
