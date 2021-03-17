@@ -48,6 +48,8 @@ class SimulationAgent:
         
         self.prob_correction = 0.2 # probability of "correction" of "non sense random inputs" generated
         
+        self.use_REINFORCE = False
+        
         self.beta_PG = 1 
         self.gamma = 0.99
 
@@ -314,7 +316,11 @@ class SimulationAgent:
                 for i in range(len(self.traj_rewards)):
                     R = self.traj_rewards[-1-i] + self.gamma* R
                     advantage = R - self.traj_state_value[-1-i]
-                    self.loss_policy += -advantage*self.traj_log_prob[-1-i] - self.beta_PG*self.traj_entropy[-1-i]
+                    if self.use_REINFORCE:
+                        self.loss_policy += R*self.traj_log_prob[-1-i] - self.beta_PG*self.traj_entropy[-1-i]
+                    else:
+                        self.loss_policy += -advantage*self.traj_log_prob[-1-i] - self.beta_PG*self.traj_entropy[-1-i]
+                        
                     #self.advantage_loss += (  R - torch.max(self.model_qv(self.state_sequences[-1-i].float())) )**2
                     if self.rl_mode == 'AC':
                         state_value = self.model_v(self.state_sequences[-1-i]) #.float())

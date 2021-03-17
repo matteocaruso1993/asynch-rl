@@ -44,6 +44,7 @@ class ConvModel(nnBase):
         #    raise ValueError('N in and strides not aligned')
         
         self.normalize_fc_layers = False
+        self.normalize_cnn_layers = False
         
         self.N_in = N_in        
         self.channels = channels
@@ -59,10 +60,7 @@ class ConvModel(nnBase):
 
         # this should always be run in the child classes after initialization
         self.complete_initialization(kwargs)
-        
-        pytorch_total_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
-        print(f'total NN trainable parameters: {pytorch_total_params}')
-        
+                
     ##########################################################################        
     def build_generic_input(self):
         a,b = self.get_net_input_shape()
@@ -97,10 +95,11 @@ class ConvModel(nnBase):
                 x_test =  self.maxpool_5(x_test)
             else:
                 x_test =  self.maxpool_3(x_test)
-                
-            layer_norm = nn.LayerNorm(x_test.shape[-1])
-            setattr(self , 'norm_layer_conv'+str(i+1), layer_norm)
-            x_test = layer_norm(x_test)
+            
+            if self.normalize_cnn_layers:
+                layer_norm = nn.LayerNorm(x_test.shape[-1])
+                setattr(self , 'norm_layer_conv'+str(i+1), layer_norm)
+                x_test = layer_norm(x_test)
                 
         # fully connected layers
         N_linear_in = round(self.N_in[0]/(5*3**(len(self.channels)-1))*self.channels[-1] + self.N_in[1])
@@ -165,7 +164,8 @@ class ConvModel(nnBase):
                 x1 = self.maxpool_5(x1)
             else:
                 x1 = self.maxpool_3(x1)
-            x1 = self._modules['norm_layer_conv'+str(i+1)](x1)
+            if self.normalize_cnn_layers:
+                x1 = self._modules['norm_layer_conv'+str(i+1)](x1)
             # x1 = self.
    
         return torch.cat((x1.flatten(1), x[1].flatten(1)),dim = 1)

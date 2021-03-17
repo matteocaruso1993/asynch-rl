@@ -23,8 +23,9 @@ import os
 import asyncio
 
 # df loader
-net_version = 1
-iteration = 308
+net_version = 13
+iteration = 240
+
 
 # generate proper discretized bins structure
 ################
@@ -43,8 +44,8 @@ del( overwrite_params, my_dict)
 ################
 
 rl_env = Multiprocess_RL_Environment(env_type, model_type, net_version,rl_mode = rl_mode, ray_parallelize=False, \
-                                     move_to_cuda=False, n_frames = 4, show_rendering = True, discr_env_bins=2,\
-                                    difficulty=0) #, \
+                                     move_to_cuda=False, n_frames = n_frames, show_rendering = True, discr_env_bins=2,\
+                                    difficulty= 0) #, \
                                       #replay_memory_size = 500, N_epochs = 100)
 
 
@@ -58,8 +59,10 @@ rl_env.updateAgentsAttributesExcept('env')
 rl_env.load(iteration)
 #rl_env.load(320)
 
+rl_env.print_NN_parameters_count()
+
 try:
-    rl_env.plot_training_log(1, qv_loss_log = True, pg_loss_log = True)
+    rl_env.plot_training_log(-500, qv_loss_log = True, pg_loss_log = True)
 except Exception:
     print('incomplete data for plot generation')
 
@@ -134,7 +137,7 @@ agent.movie_frequency = 1
 #agent.tot_iterations = 10000
 agent.tot_iterations = 300
 agent.max_n_single_runs = 5
-sim_log, single_runs , successful_runs,_, pg_info = agent.run_synch(use_NN = False, test_qv = True)
+sim_log, single_runs , successful_runs,_, pg_info = agent.run_synch(use_NN = True, test_qv = False)
 
 #agent.env.env.plot_graphs()
 

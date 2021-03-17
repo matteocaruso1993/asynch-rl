@@ -186,10 +186,10 @@ class RobotEnv(gym.Env):
         # if pedestrian or obstacle is hit
         if self.robot.check_pedestrians_collision(.8) or self.robot.check_obstacle_collision():
             
-            final_distance_penalty = np.clip(dist_1/(1e-5+self.distance_init),0,1)
+            final_distance_bonus = np.clip((self.distance_init - dist_1) /(1e-5 + self.distance_init),0,1)
             survival_time_bonus = self.duration/self.sim_length
             #movement_bonus = 2*np.average(self.robot_state_history[:,0]/self.linear_max)-1
-            reward = -self.rewards[1]*( 1 + 0.5*final_distance_penalty - 0.5*survival_time_bonus  )
+            reward = -self.rewards[1]*( 1 - final_distance_bonus*survival_time_bonus  )
 
             done = True
         
@@ -230,8 +230,11 @@ class RobotEnv(gym.Env):
                 peds_distances = self.robot.getPedsDistances()
                 danger_penalty = np.minimum(1,0.2* np.sum( 1 - (peds_distances[peds_distances < 2/3*self.lidar_range]/self.lidar_range) )) 
 
-                reward = self.rewards[0]*( speed_bonus - 0.2*ang_speed_penalty - 0.8*danger_penalty) 
+                reward = self.rewards[0]*speed_bonus*(1 - 0.8*np.clip(0.2*ang_speed_penalty + 0.8*danger_penalty, 0,1) ) 
                 done = False
+                
+        #if done:
+        #    print(f'final reward: {reward}')
 
         return self._get_obs(), reward, done, {}
     
@@ -314,9 +317,9 @@ class RobotEnv(gym.Env):
         if self.normalize_obs_state:
             ranges_np /= self.lidar_range
             speed_x /= self.linear_max
-            speed_rot = (speed_rot+self.angular_max)/(2*self.angular_max)
+            speed_rot = (speed_rot+self.angular_max)/(2*self.angular_max) #speed_rot/self.angular_max #
             target_distance /= self.target_distance_max
-            target_angle = (target_angle+np.pi)/2*np.pi
+            target_angle = (target_angle+np.pi)/2*np.pi #target_angle/np.pi #
 
         #self.state =np.concatenate((ranges_np,np.array([speed_x,speed_rot, target_distance,target_angle])  ),axis = 0).astype(np.float32)
     

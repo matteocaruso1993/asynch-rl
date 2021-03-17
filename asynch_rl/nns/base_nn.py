@@ -35,6 +35,9 @@ class nnBase(nn.Module):
         self.net_type = net_type
         self.lr = lr  
 
+    ##########################################################################
+    def count_NN_params(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
     ##########################################################################
     def complete_initialization(self, kwargs):

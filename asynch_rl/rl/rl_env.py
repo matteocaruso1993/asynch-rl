@@ -670,8 +670,8 @@ class Multiprocess_RL_Environment:
         temp_entropy = []
         temp_advantage = []
         
-        while not self.shared_memory.isFull():
-            progress(round(1000*self.shared_memory.fill_ratio), 1000 , 'Fill memory')
+        while True: 
+            self.display_progress(total_log)
             
             partial_log, single_runs , successful_runs, internal_memory_fill_ratio , pg_info = self.sim_agents_discr[0].run_synch()
             
@@ -717,7 +717,6 @@ class Multiprocess_RL_Environment:
                     else:
                         invalid_occurred = True
 
-                    
             if valid_model:
                 if total_log is None:
                     total_log = partial_log
@@ -725,10 +724,13 @@ class Multiprocess_RL_Environment:
                     total_log = np.append(total_log, partial_log, axis = 0)
                 total_runs += single_runs
             
-            if not self.shared_memory.isFull() and internal_memory_fill_ratio > 0.25 :
+            if self.rl_mode=='AC' and not self.shared_memory.isFull() and internal_memory_fill_ratio > 0.25 :
                 self.shared_memory.addMemoryBatch(self.sim_agents_discr[0].emptyLocalMemory() )
+                
+            if (self.shared_memory.isFull() and self.rl_mode!='AC') or (self.rl_mode=='AC' and np.sum(total_log[:,0]) >= self.memory_turnover_size):
+                break
         
-        progress(round(1000*self.shared_memory.fill_ratio), 1000 , f'Fill memory - {self.shared_memory.size}')
+        self.display_progress(total_log)
         print('')
         # end of iteration
 
@@ -737,6 +739,19 @@ class Multiprocess_RL_Environment:
                         initial_pg_weights = initial_pg_weights, initial_v_weights= initial_v_weights, \
                         total_runs= total_runs, total_log= total_log, temp_pg_loss= temp_pg_loss, \
                         temp_entropy= temp_entropy, temp_advantage = temp_advantage)
+
+
+    ##################################################################################
+    def display_progress(self, total_log = None):
+        """ display progress bar on terminal"""
+        if self.rl_mode == 'AC':
+            if total_log is None:
+                progress(0, 1000)
+            else:
+                progress(round(1000*np.sum(total_log[:,0])/self.memory_turnover_size), 1000)
+        else:
+            progress(round(1000*self.shared_memory.fill_ratio), 1000 , f'Fill memory - {self.shared_memory.size}')
+
 
 
     ##################################################################################
@@ -787,25 +802,18 @@ class Multiprocess_RL_Environment:
     
             while any(tsk is not None for tsk in task_lst):
                 
-                if self.rl_mode == 'AC':
-                    if total_log is None:
-                        progress(0, 1000)
-                    else:
-                        progress(round(1000*np.sum(total_log[:,0])/self.memory_turnover_size), 1000)
-                else:
-                    progress(round(1000*self.shared_memory.fill_ratio), 1000 , f'Fill memory - {self.shared_memory.size}')
-                
+                self.display_progress(total_log)
+
                 for i, agent in enumerate(self.sim_agents_discr):                
                     if not ray.get(agent.isRunning.remote()) and task_lst[i] is not None:
                         try:
                             partial_log, single_runs, successful_runs, internal_memory_fill_ratio , pg_info = ray.get(task_lst[i])
+                            grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i, valid_model = pg_info
                         except Exception:
+                            valid_model = False
                             print('failed remote simulation')
-                            #self.unstable_model[0] = True
-                            #break
                         
-                        # implementation for A3C
-                        grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i, valid_model = pg_info
+                        
                         if valid_model:
                         # partial_log contains 1) duration and 2) cumulative reward of every single-run
                             if total_log is None:
@@ -826,7 +834,10 @@ class Multiprocess_RL_Environment:
                             if self.rl_mode != 'AC' and internal_memory_fill_ratio > 0.2:
                                 self.shared_memory.addMemoryBatch( ray.get(agent.emptyLocalMemory.remote()) )
                             
-                        task_lst[i] = None
+                        if np.sum(total_log[:,0])/self.memory_turnover_size < 0.5:
+                            task_lst[i] = agent.run.remote()
+                        else:
+                            task_lst[i] = None
                 
             # update common model (in caso of common layers gradients are transferred)
             if self.share_conv_layers and self.rl_mode == 'AC':
@@ -869,15 +880,10 @@ class Multiprocess_RL_Environment:
                     # after iteration extract data from remote QV update process
                     self.qval_loss_hist_iteration = np.array(ray.get(updating_process))
                 break
-
-        if self.rl_mode == 'AC':
-            final_progress = round(np.sum(total_log[:,0])/self.memory_turnover_size,4)
-        else:
-            final_progress = self.shared_memory.fill_ratio
-        progress(round(1000*final_progress), 1000)
+            
+        self.display_progress(total_log)
         print('')
-        # end of iteration
-        
+
         if self.unstable_model[0]:
             if not all(self.unstable_model):
                 print('@@@@@@@@@@@@@@@@@ WARNING @@@@@@@@@@@@@@@@@@@')
@@ -932,7 +938,7 @@ class Multiprocess_RL_Environment:
                         total_runs += single_runs
                         
                         self.shared_memory.addMemoryBatch(ray.get(agent.emptyLocalMemory.remote()) )
-                        progress(round(1000*self.shared_memory.fill_ratio), 1000 , f'Fill memory - {self.shared_memory.size}')
+                        self.display_progress()
                     
                     # 2.1.1) run another task if required
                     expected_upcoming_memory_ratio = sum(not tsk is None for tsk in task_lst)*self.tot_iterations/self.memory_turnover_size
@@ -1025,7 +1031,7 @@ class Multiprocess_RL_Environment:
         tot_successful_runs = 0
             
         while not self.shared_memory.isFull():
-            progress(round(1000*self.shared_memory.fill_ratio), 1000 , 'Fill memory')
+            self.display_progress()
             
             partial_log, single_runs, successful_runs, _ , _ = self.sim_agents_discr[0].run_synch(use_NN = True)
             # partial log: steps_since_start, cum_reward
@@ -1064,7 +1070,7 @@ class Multiprocess_RL_Environment:
             if not self.shared_memory.isPartiallyFull(min_fill_ratio):
                 for agent in self.sim_agents_discr:
                     self.shared_memory.addMemoryBatch(ray.get(agent.emptyLocalMemory.remote()) )
-                    progress(round(1000*self.shared_memory.fill_ratio), 1000 , f'Validation - {self.shared_memory.size}')
+                    self.display_progress()
     
             if self.shared_memory.isPartiallyFull(min_fill_ratio): # or break_cycle:
                 break
@@ -1114,7 +1120,36 @@ class Multiprocess_RL_Environment:
 
 
     ##################################################################################
+    def print_NN_parameters_count(self):
+        
+        print('')
+        print('')
+        
+        if self.rl_mode == 'AC':
+            actor_n_params  = self.model_pg.count_NN_params()
+            critic_n_params = self.model_v.count_NN_params()
+            print('total NN trainable parameters:')
+            print(f'actor  :{actor_n_params}')
+            print(f'critic :{critic_n_params}')
+        elif self.rl_mode == 'parallelAC':
+            actor_n_params  = self.model_pg.count_NN_params()
+            QV_critic_n_params = self.model_qv.count_NN_params()
+            print('total NN trainable parameters:')
+            print(f'actor      :{actor_n_params}')
+            print(f'critic (QV):{QV_critic_n_params}')
+        elif self.rl_mode == 'DQL':
+            DQL_n_params = self.model_qv.count_NN_params()
+            print('total NN trainable parameters:')
+            print(f'DQL :{DQL_n_params}')
+        
+        print('')
+        print('')
+
+
+    ##################################################################################
     def runSequence(self, n_runs = 5, display_graphs = False, reset_optimizer = False):
+        
+        self.print_NN_parameters_count()
         
         final_run = self.training_session_number+ n_runs
         
