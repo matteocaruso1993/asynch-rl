@@ -32,9 +32,9 @@ parser = ArgumentParser()
 
 parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC', help="RL mode (AC, DQL, parallelAC)")
 
-parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10 , help="number of training iterations")
+parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 2 , help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=True,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
 
 parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=5,
@@ -44,7 +44,7 @@ parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, def
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default=1000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 10000,
                     help="Replay Memory Size")
 
 parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100, help="net version used")
@@ -70,7 +70,7 @@ parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int,
 parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.25,
                     help="Ratio of Memory renewed at each iteration")
 
-parser.add_argument("-lr", "--learning-rate", dest="learning_rate", nargs="*", type=float, default=[1e-4, 1e-3],
+parser.add_argument("-lr", "--learning-rate", dest="learning_rate", nargs="*", type=float, default=[1e-4, 1e-4],
                     help="NN learning rate")
 
 parser.add_argument("-e", "--epochs-training", dest="n_epochs", type=int, default= 100 , help="Number of epochs per training iteration")
@@ -96,9 +96,9 @@ parser.add_argument("-fr", "--frames-number", dest="n_frames", type=int, default
 parser.add_argument("-scl", "--share-conv-layers", dest="share_conv_layers", type=bool, default=False,
                     help="Flag to share Convolutional Layers between Actor and Critic")
 
-parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.95, help="GAMMA parameter in QV learning")
+parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.9, help="GAMMA parameter in QV learning")
 
-parser.add_argument("-b", "--beta", dest="beta", type=float, default= 0.001 , help="BETA parameter for entropy in PG learning")
+parser.add_argument("-b", "--beta", dest="beta", type=float, default= 0.1 , help="BETA parameter for entropy in PG learning")
 
 parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=bool, default=False, 
                     help="latest QV model is always used for Advanatge calculation")
@@ -106,6 +106,12 @@ parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_q
 parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=int, default=[1, 100, 40] )
 
 parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[40, 40, 20] )
+
+parser.add_argument("-fgs", "--flip-gradient-sign", dest="flip_grad_sign", type=bool, default=False,
+                    help="flip gradient sign in REINFORCE algorithm")
+
+parser.add_argument("-ur", "--use-reinforce", dest="use_reinforce", type=bool, default=False,
+                    help="use REINFORCE instead of AC")
 
 
 args = parser.parse_args()
@@ -122,7 +128,8 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
             memory_turnover_ratio = 0.1, val_frequency = 10, rewards = np.ones(4), reset_optimizer = False,
             share_conv_layers = False, n_frames = 4, rl_mode = 'DQL', beta = 0.001, \
                 gamma = 0.99,  continuous_qv_update = False, tot_iterations = 400, layers_width= (100,100), \
-                    ray_password = None,  head_address = None, memory_save_load = False):
+                    ray_password = None,  head_address = None, memory_save_load = False, \
+                        flip_grad_sign = False, use_reinforce = False):
 
 
     function_inputs = locals().copy()
@@ -170,6 +177,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
                         ray_parallelize=ray_parallelize, move_to_cuda=True, n_frames = n_frames, \
                         replay_memory_size = replay_memory_size, n_agents = agents_number,\
                         tot_iterations = tot_iterations, discr_env_bins = 2 , \
+                        use_reinforce = use_reinforce, flip_grad_sign = flip_grad_sign, \
                         epsilon_annealing_factor=epsilon_annealing_factor,  layers_width= layers_width,\
                         N_epochs = n_epochs, epsilon = epsilon[0] , epsilon_min = epsilon[1] , rewards = rewards, \
                         mini_batch_size = mini_batch_size, share_conv_layers = share_conv_layers, \
@@ -222,7 +230,8 @@ if __name__ == "__main__":
                rewards = args.rewards_list, reset_optimizer = args.reset_optimizer, rl_mode = args.rl_mode, \
                beta = args.beta, gamma = args.gamma, continuous_qv_update = args.continuous_qv_update,\
                tot_iterations = args.tot_iterations, head_address = args.head_address, ray_password = args.ray_password ,\
-               memory_save_load = args.memory_save_load, layers_width= args.layers_list)
+               memory_save_load = args.memory_save_load, layers_width= args.layers_list, \
+               use_reinforce = args.use_reinforce,   flip_grad_sign = args.flip_grad_sign)
 
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)

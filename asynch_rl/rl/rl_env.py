@@ -56,8 +56,12 @@ class Multiprocess_RL_Environment:
                  ctrlr_prob_annealing_factor = .9,  ctrlr_probability = 0, difficulty = 0, \
                  memory_turnover_ratio = 0.2, val_frequency = 10, bashplot = False, layers_width= (5,5), \
                  rewards = np.ones(5), env_options = {}, share_conv_layers = False, 
-                 beta_PG = 1 , continuous_qv_update = False, memory_save_load = False):
+                 beta_PG = 1 , continuous_qv_update = False, memory_save_load = False, \
+                 flip_grad_sign = False, use_reinforce = False):
         
+        
+        self.flip_grad_sign = flip_grad_sign
+        self.use_reinforce = use_reinforce
         
         self.continuous_qv_update = continuous_qv_update
         self.one_vs_one = False
@@ -382,13 +386,15 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     # sim agent is created with current "model" as NN
     def addSimAgents(self):
+        
         if self.ray_parallelize:
             for i in range(self.n_agents_discr):
-                self.sim_agents_discr.append(Ray_SimulationAgent.remote(i, self.generateDiscrActSpace_GymStyleEnv(), rl_mode = self.rl_mode ) )  
+                self.sim_agents_discr.append(Ray_SimulationAgent.remote(i, self.generateDiscrActSpace_GymStyleEnv(), rl_mode = self.rl_mode,\
+                                                                    flip_gradient_sign = self.flip_grad_sign, use_reinforce = self.use_reinforce ) )  
             #for i in range(self.n_agents_contn):
             #    self.sim_agents_contn.append(Ray_SimulationAgent.remote(i, self.generateContnsHybActSpace_GymStyleEnv(), rl_mode = self.rl_mode ) )                 
         else:
-            self.sim_agents_discr.append(SimulationAgent(0, self.generateDiscrActSpace_GymStyleEnv(), rl_mode = self.rl_mode) )  #, ,self.model
+            self.sim_agents_discr.append(SimulationAgent(0, self.generateDiscrActSpace_GymStyleEnv(), rl_mode = self.rl_mode, flip_gradient_sign = self.flip_grad_sign ) )  #, ,self.model
             #self.sim_agents_contn.append(SimulationAgent(0, self.generateContnsHybActSpace_GymStyleEnv(), rl_mode = self.rl_mode) )  #, ,self.model
                 #, self.model, self.n_frames, self.move_to_cuda, self.net_name, self.epsilon))            
         self.updateAgentsAttributesExcept() #,'model')
@@ -809,11 +815,8 @@ class Multiprocess_RL_Environment:
 
                 for i, agent in enumerate(self.sim_agents_discr):                
                     if not ray.get(agent.isRunning.remote()) and (task_lst[i] is not None or task_replacement[i] is not None):
-                        if task_lst[i]:
-                            task = task_lst[i]
-                        elif task_replacement[i]:
-                            task = task_replacement[i]
-                        
+                        task = task_lst[i] if task_lst[i] else task_replacement[i]
+
                         try:
                             partial_log, single_runs, successful_runs, internal_memory_fill_ratio , pg_info = ray.get(task)
                             grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i, valid_model = pg_info

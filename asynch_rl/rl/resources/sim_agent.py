@@ -39,7 +39,8 @@ class SimulationAgent:
     ##################################################################################
     def __init__(self,sim_agent_id, env = None, rl_mode = 'DQL', model_qv= None, model_pg = None,model_v = None,\
                  n_frames = 1, net_name = 'no_name' ,epsilon = 0.9, ctrlr_probability = 0, save_movie = False, \
-                 max_consecutive_env_fails = 3, max_steps_single_run = 200, show_rendering = True, \
+                 max_consecutive_env_fails = 3, max_steps_single_run = 200, show_rendering = True, 
+                 flip_gradient_sign = False, use_reinforce = False, \
                  tot_iterations = 1000, live_plot = False, verbosity = 0 , noise_sd = 0.05, \
                  movie_frequency = 10, max_n_single_runs = 1000, save_sequences  = False, reward_history_span = 200):
                 
@@ -48,7 +49,8 @@ class SimulationAgent:
         
         self.prob_correction = 0.2 # probability of "correction" of "non sense random inputs" generated
         
-        self.use_REINFORCE = False
+        self.flip_gradient_sign = flip_gradient_sign
+        self.use_reinforce = use_reinforce
         
         self.beta_PG = 1 
         self.gamma = 0.99
@@ -315,9 +317,16 @@ class SimulationAgent:
                 R = 0
                 for i in range(len(self.traj_rewards)):
                     R = self.traj_rewards[-1-i] + self.gamma* R
-                    advantage = R - self.traj_state_value[-1-i]
-                    if self.use_REINFORCE:
-                        self.loss_policy += R*self.traj_log_prob[-1-i] - self.beta_PG*self.traj_entropy[-1-i]
+                    
+                    if self.use_reinforce:
+                        advantage = R
+                    else:
+                        advantage = R - self.traj_state_value[-1-i]
+
+                    if self.flip_gradient_sign:
+                        self.loss_policy += advantage*self.traj_log_prob[-1-i] - self.beta_PG*self.traj_entropy[-1-i]
+                        if DEBUG:
+                            print('sign changed')
                     else:
                         self.loss_policy += -advantage*self.traj_log_prob[-1-i] - self.beta_PG*self.traj_entropy[-1-i]
                         
@@ -389,6 +398,10 @@ class SimulationAgent:
         force_stop = False
         
         action, action_index, noise_added, prob_distrib = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN, test_qv=test_qv )
+        
+        if use_NN and DEBUG:
+            print(f'action_index: {action_index}')
+            
         state_1, reward_np, done , info = self.stepAndRecord(state, action, action_index, noise_added)
         
         if use_NN and (info['outcome'] is not None) and (info['outcome'] != 'fail') and (info['outcome'] != 'opponent'):
@@ -645,14 +658,14 @@ class SimulationAgent:
             prob_distrib = self.model_pg.cpu()(state)
             #qvals = self.model_qv.cpu()(state.float())
 
-            if use_NN:
+            #if use_NN:
+            #    action_index = torch.argmax(prob_distrib)
+            #else:
+            try:
+                action_index = torch.multinomial(prob_distrib, 1, replacement=True)
+            except Exception:
                 action_index = torch.argmax(prob_distrib)
-            else:
-                try:
-                    action_index = torch.multinomial(prob_distrib, 1, replacement=True)
-                except Exception:
-                    action_index = torch.argmax(prob_distrib)
-                    print('torch.multinomial failed')
+                print('torch.multinomial failed')
                 
         elif self.rl_mode == 'DQL':
             if use_controller and not use_NN:

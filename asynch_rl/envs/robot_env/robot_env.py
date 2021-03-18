@@ -156,11 +156,22 @@ class RobotEnv(gym.Env):
 
     #####################################################################################################            
     def step(self,action, *args):
+        
+        saturate_input = False
+        
         # initial distance
         dist_0 = self.robot.target_rel_position(self.target_coordinates[:2])[0]
         
-        dot_x      = np.clip(self.robot.current_speed['linear']['x'] + action[0] , 0                , self.linear_max ) 
-        dot_orient = np.clip(self.robot.current_speed['angular']['z']+ action[1] ,-self.angular_max , self.angular_max)
+        dot_x = self.robot.current_speed['linear']['x'] + action[0]
+        dot_orient = self.robot.current_speed['angular']['z']+ action[1] 
+        
+        if dot_x < 0 or dot_x > self.linear_max:
+            dot_x      = np.clip( dot_x, 0 , self.linear_max ) 
+            saturate_input = True
+            
+        if abs(dot_orient)> self.angular_max:
+            saturate_input = True
+            dot_orient = np.clip( dot_orient ,-self.angular_max , self.angular_max)
         
         #print(f'orientation = {round(self.robot.current_pose["orientation"]["z"],3)}')
         #print(f'angular speed = {round(self.robot.current_speed["angular"]["z"],3)}')
@@ -176,6 +187,7 @@ class RobotEnv(gym.Env):
         self.robot.updateRobotSpeed(dot_x, dot_orient)
         self.robot.computeOdometry(self.dt)
         
+        ranges, rob_state = self._get_obs()
         
         # new distance
         dist_1 = self.robot.target_rel_position(self.target_coordinates[:2])[0]
@@ -183,13 +195,14 @@ class RobotEnv(gym.Env):
         self.robot.getScan(scan_noise = self.scan_noise)
         self.rotation_counter += np.abs(dot_orient*self.dt)
 
-        # if pedestrian or obstacle is hit
-        if self.robot.check_pedestrians_collision(.8) or self.robot.check_obstacle_collision():
+        # if pedestrian / obstacle is hit or time expired
+        if self.robot.check_pedestrians_collision(.8) or self.robot.check_obstacle_collision() or \
+            self.robot.checkOutOfBounds(margin = 0.01) or self.duration > self.sim_length :
             
-            final_distance_bonus = np.clip((self.distance_init - dist_1) /(1e-5 + self.distance_init),0,1)
-            survival_time_bonus = self.duration/self.sim_length
+            final_distance_bonus = np.clip((self.distance_init - dist_1) / self.target_distance_max ,0,1)
+            survival_time_bonus = self.duration/self.sim_length * (np.average(self.robot_state_history[:,0])/self.linear_max )
             #movement_bonus = 2*np.average(self.robot_state_history[:,0]/self.linear_max)-1
-            reward = -self.rewards[1]*( 1 - final_distance_bonus*survival_time_bonus  )
+            reward = -self.rewards[1]*( 0.75 + 0.25*(1- np.average(self.robot_state_history[:,0]/self.linear_max)) - 0.5*final_distance_bonus -0.5*survival_time_bonus  )
 
             done = True
         
@@ -211,32 +224,21 @@ class RobotEnv(gym.Env):
             # reward is proportional to distance covered / speed in getting to target
             reward = np.maximum( self.rewards[1]/4 , self.rewards[1]*rel_rew* weight - rotations_penalty )
             done = True
-                        
-        # if nothing major happened         
+                
         else:
             self.duration += self.dt
-            # if time expired
-            if self.duration >= self.sim_length:
-                final_distance_penalty = np.clip(dist_1/(1e-5+self.distance_init),0,1)
-                reward = -self.rewards[1]*0.5*final_distance_penalty
-                
-                done = True
-                
-            else:
-                # standard  reward calculation
-                speed_bonus = np.clip(0.5*dot_x/self.linear_max + 0.5*(dist_0-dist_1)/(self.linear_max*self.dt),0,1)
-                ang_speed_penalty = np.abs(dot_orient)/self.angular_max
-                
-                peds_distances = self.robot.getPedsDistances()
-                danger_penalty = np.minimum(1,0.2* np.sum( 1 - (peds_distances[peds_distances < 2/3*self.lidar_range]/self.lidar_range) )) 
+            # standard  reward calculation
+            #speed_bonus = np.clip(0.5*(dot_x/self.linear_max)*(1-abs(dot_orient)/self.angular_max) + 0.5*(dist_0-dist_1)/(self.linear_max*self.dt),-0.2,1)
 
-                reward = self.rewards[0]*speed_bonus*(1 - 0.8*np.clip(0.2*ang_speed_penalty + 0.8*danger_penalty, 0,1) ) 
-                done = False
-                
-        #if done:
-        #    print(f'final reward: {reward}')
+            #ang_speed_penalty = np.abs(dot_orient)/self.angular_max
+            
+            #peds_distances = self.robot.getPedsDistances()
+            #danger_penalty = np.minimum(1 , 0.2* np.sum( 1 - (peds_distances[peds_distances < 2/3*self.lidar_range]/self.lidar_range) )) 
 
-        return self._get_obs(), reward, done, {}
+            reward = self.rewards[0]*int(not saturate_input)*(dist_0-dist_1)/(self.linear_max*self.dt)* int(min(ranges) > 0.25 )*int(dist_0>dist_1)
+            done = False
+
+        return (ranges, rob_state), reward, done, {}
     
     
     #####################################################################################################
@@ -280,10 +282,7 @@ class RobotEnv(gym.Env):
         if self.dt != self.robot.map.peds_sim_env.peds.step_width:
             self.robot.map.peds_sim_env.peds.step_width = self.dt
         
-        #self.render()
-        
         return self._get_obs()
-    
         
 
 
