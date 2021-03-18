@@ -50,6 +50,10 @@ class nnBase(nn.Module):
         # and update the given keys by their given values
         self.__dict__.update((key, value) for key, value in kwargs.items() if key in allowed_keys)
         
+        if self.softmax:
+            self.sm = nn.Softmax(dim = 1)
+
+        
         # define Adam optimizer
         self.initialize_optimizer() 
         

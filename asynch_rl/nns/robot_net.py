@@ -105,6 +105,10 @@ class ConvModel(nnBase):
         N_linear_in = round(self.N_in[0]/(5*3**(len(self.channels)-1))*self.channels[-1] + self.N_in[1])
         x_test = torch.cat( (x_test.flatten(), x_test_1.flatten() ),dim = 0 ).unsqueeze(0)
         
+        #self.rnn = nn.RNN(N_linear_in,20,2, nonlinearity='relu', bias=False)
+        
+        #x_test, _ = self.rnn(x_test)
+        
         lin_model = LinearModel(0, 'linear_portion', self.lr, self.n_actions, N_linear_in, *(self.F) ) 
         layers = []
         for layer in lin_model.state_dict().keys():
@@ -146,9 +150,7 @@ class ConvModel(nnBase):
         x = self.fc_output(x)
 
         if self.softmax:
-            sm = nn.Softmax(dim = 1)
-            x = sm(x)
-
+            x = self.sm(x)
         return x
     
     

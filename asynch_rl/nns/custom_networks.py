@@ -178,8 +178,8 @@ class LinearModel(nnBase):
                     break
         x = self.fc_output(x)
         if self.softmax:
-            sm = nn.Softmax(dim = 1)
-            x = sm(x)
+            #sm = nn.Softmax(dim = 1)
+            x = self.sm(x)
         
         return x #F.log_softmax(x,dim=1)  # we return the log softmax (sum of probabilities across the classes = 1)
     

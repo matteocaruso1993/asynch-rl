@@ -111,9 +111,8 @@ class NN_frx(nnBase):
         x = self.fc_output(x)
 
         if self.softmax:
-            sm = nn.Softmax(dim = 1)
-            x = sm(x)
-
+            #sm = nn.Softmax(dim = 1)
+            x = self.sm(x)
         return x
     
     
