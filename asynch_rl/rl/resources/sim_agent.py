@@ -482,8 +482,9 @@ class SimulationAgent:
         force_stop, done, fig_film = self.initialize_run()
         info = {}
         self.is_running = True
+        self.external_force_stop = False
         
-        while not (self.stop_run or ( 'AC' in self.rl_mode and done) ):
+        while not (self.stop_run or ( 'AC' in self.rl_mode and done) or self.external_force_stop):
             
             await asyncio.sleep(0.00001)
                 
@@ -500,12 +501,16 @@ class SimulationAgent:
         self.endOfRunRoutine(fig_film = fig_film)
         plt.close(fig_film)
         
-        pg_info = self.extract_gradients(force_stop)
+        pg_info = self.extract_gradients(self.external_force_stop or force_stop)
         self.is_running = False
 
         return self.simulation_log, self.agent_run_variables['single_run'], self.agent_run_variables['successful_runs'], self.internal_memory.fill_ratio,  pg_info #[0]
         # self.simulation_log contains duration and cumulative reward of every single-run
 
+
+    ################################################################################
+    async def force_stop(self):
+        self.external_force_stop = True
 
         
     ################################################################################

@@ -774,8 +774,9 @@ class Multiprocess_RL_Environment:
         temp_advantage = []
 
         task_lst = [None for _ in self.sim_agents_discr]
+        task_replacement = [None for _ in self.sim_agents_discr]
         tot_epochs = 0
-        
+                
         # start of iteration
         while True:
             
@@ -799,20 +800,26 @@ class Multiprocess_RL_Environment:
                 if self.continuous_qv_update and qv_update_launched:
                     agent.update_model_weights_only.remote(model_qv_weights, 'model_qv')
                 task_lst[i] = agent.run.remote()
+                
+            n_trajectories = 0
     
             while any(tsk is not None for tsk in task_lst):
                 
                 self.display_progress(total_log)
 
                 for i, agent in enumerate(self.sim_agents_discr):                
-                    if not ray.get(agent.isRunning.remote()) and task_lst[i] is not None:
+                    if not ray.get(agent.isRunning.remote()) and (task_lst[i] is not None or task_replacement[i] is not None):
+                        if task_lst[i]:
+                            task = task_lst[i]
+                        elif task_replacement[i]:
+                            task = task_replacement[i]
+                        
                         try:
-                            partial_log, single_runs, successful_runs, internal_memory_fill_ratio , pg_info = ray.get(task_lst[i])
+                            partial_log, single_runs, successful_runs, internal_memory_fill_ratio , pg_info = ray.get(task)
                             grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i, valid_model = pg_info
                         except Exception:
                             valid_model = False
                             print('failed remote simulation')
-                        
                         
                         if valid_model:
                         # partial_log contains 1) duration and 2) cumulative reward of every single-run
@@ -826,19 +833,31 @@ class Multiprocess_RL_Environment:
                                     policy_loss_i, pg_entropy_i, advantage_i, temp_pg_loss, temp_entropy, temp_advantage)
                             # update common model gradient
                             for net1,net2 in zip( grad_dict_pg.items() , self.model_pg.named_parameters() ):
-                                net2[1].grad += net1[1].clone()/self.n_agents_discr
+                                net2[1].grad += net1[1].clone()
                             if self.rl_mode == 'AC':
                                 for net1,net2 in zip( grad_dict_v.items() , self.model_v.named_parameters() ):
-                                    net2[1].grad += net1[1].clone()/self.n_agents_discr
+                                    net2[1].grad += net1[1].clone()
                         
                             if self.rl_mode != 'AC' and internal_memory_fill_ratio > 0.2:
                                 self.shared_memory.addMemoryBatch( ray.get(agent.emptyLocalMemory.remote()) )
+                                
+                            n_trajectories += 1
+
+                        task_replacement[i] = agent.run.remote()
+                        task_lst[i] = None
                             
-                        if np.sum(total_log[:,0])/self.memory_turnover_size < 0.5:
-                            task_lst[i] = agent.run.remote()
-                        else:
-                            task_lst[i] = None
-                
+            for i, agent in enumerate(self.sim_agents_discr):
+                if task_replacement[i] is not None:
+                    agent.force_stop.remote()
+                    ray.get(task_replacement[i])
+                    task_replacement[i] = None
+                    
+            print(f'simulated trajectories: {n_trajectories}')
+                            
+            for net1,net2 in zip( self.model_pg.named_parameters() , self.model_v.named_parameters() ):    
+                net1[1].grad/= n_trajectories
+                net2[1].grad/= n_trajectories
+            
             # update common model (in caso of common layers gradients are transferred)
             if self.share_conv_layers and self.rl_mode == 'AC':
                 for net1,net2 in zip( self.model_pg.named_parameters() , self.model_v.named_parameters() ):
