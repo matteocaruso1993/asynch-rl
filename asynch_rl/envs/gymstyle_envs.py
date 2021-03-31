@@ -50,6 +50,21 @@ class DiscrGymStyleRobot(DiscretizedActionWrapper):
     # get robot specific NN input tensor
     def get_net_input(self, state_obs, state_tensor_z1 = None, reset = False):
         """ transforms env state output into compatible tensor with Network"""
+        
+        new_full_state_observation = torch.cat((torch.from_numpy(state_obs[0]).unsqueeze(0),torch.from_numpy(state_obs[1][:2]).unsqueeze(1).repeat(1,state_obs[0].shape[0]))).float()
+        new_robot_state = torch.tensor(state_obs[1]).unsqueeze(0).float()
+        
+        if reset:
+            state_tensor = (new_full_state_observation.unsqueeze(1).repeat(1,self.n_frames,1).unsqueeze(0), new_robot_state )
+        else:
+            state_tensor = (torch.cat((state_tensor_z1[0].squeeze(0)[:,1:, :], new_full_state_observation.unsqueeze(1)),dim = 1).unsqueeze(0), new_robot_state )
+            
+        return state_tensor
+    
+    """
+    # get robot specific NN input tensor
+    def get_net_input(self, state_obs, state_tensor_z1 = None, reset = False):
+        #transforms env state output into compatible tensor with Network
         if reset:
             state_tensor = (torch.from_numpy(state_obs[0]).unsqueeze(0).repeat(self.n_frames,1).unsqueeze(0).float(),\
                             torch.tensor(state_obs[1]).unsqueeze(0).float() )
@@ -57,6 +72,8 @@ class DiscrGymStyleRobot(DiscretizedActionWrapper):
             state_tensor = (torch.cat((state_tensor_z1[0].squeeze(0)[1:, :], torch.from_numpy(state_obs[0]).unsqueeze(0).float())).unsqueeze(0).float(), \
                             torch.tensor(state_obs[1]).unsqueeze(0).float() )
         return state_tensor
+    """
+
         
         
 class DiscrGymStyleCartPole(DiscretizedActionWrapper):

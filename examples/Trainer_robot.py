@@ -44,7 +44,7 @@ parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, def
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 10000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 1000,
                     help="Replay Memory Size")
 
 parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100, help="net version used")
@@ -231,7 +231,7 @@ if __name__ == "__main__":
                beta = args.beta, gamma = args.gamma, continuous_qv_update = args.continuous_qv_update,\
                tot_iterations = args.tot_iterations, head_address = args.head_address, ray_password = args.ray_password ,\
                memory_save_load = args.memory_save_load, layers_width= args.layers_list, \
-               use_reinforce = args.use_reinforce,   flip_grad_sign = args.flip_grad_sign)
+               use_reinforce = args.use_reinforce,   flip_grad_sign = args.flip_grad_sign, n_frames = args.n_frames)
 
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)

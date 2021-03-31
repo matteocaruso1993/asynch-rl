@@ -266,7 +266,7 @@ class Multiprocess_RL_Environment:
         
         if self.net_type == 'ConvModel':
                 model = ConvModel(model_version = 0, net_type = self.net_type+str(self.net_version), lr= lr, \
-                                  n_actions = n_actions if not (model_type == 'v') else 1, channels_in = self.n_frames, N_in = self.N_in_model, \
+                                  n_actions = n_actions if not (model_type == 'v') else 1, n_frames = self.n_frames, N_in = self.N_in_model, \
                                   fc_layers = self.layers_width, softmax = (model_type == 'pg') ) 
 
         elif self.net_type == 'ConvFrxModel':
