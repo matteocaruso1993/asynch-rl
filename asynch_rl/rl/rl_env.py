@@ -57,8 +57,9 @@ class Multiprocess_RL_Environment:
                  memory_turnover_ratio = 0.2, val_frequency = 10, bashplot = False, layers_width= (5,5), \
                  rewards = np.ones(5), env_options = {}, share_conv_layers = False, 
                  beta_PG = 1 , continuous_qv_update = False, memory_save_load = False, \
-                 flip_grad_sign = False, use_reinforce = False):
+                 flip_grad_sign = False, use_reinforce = False, normalize_layers = False):
         
+        self.normalize_layers = normalize_layers
         
         self.flip_grad_sign = flip_grad_sign
         self.use_reinforce = use_reinforce
@@ -267,7 +268,7 @@ class Multiprocess_RL_Environment:
         if self.net_type == 'ConvModel':
                 model = ConvModel(model_version = 0, net_type = self.net_type+str(self.net_version), lr= lr, \
                                   n_actions = n_actions if not (model_type == 'v') else 1, n_frames = self.n_frames, N_in = self.N_in_model, \
-                                  fc_layers = self.layers_width, softmax = (model_type == 'pg') ) 
+                                  fc_layers = self.layers_width, softmax = (model_type == 'pg') , layers_normalization = self.normalize_layers) 
 
         elif self.net_type == 'ConvFrxModel':
                 model = NN_frx(model_version = 0, net_type = self.net_type+str(self.net_version), lr= lr, \
@@ -683,7 +684,7 @@ class Multiprocess_RL_Environment:
             
             # implementation for A3C
             if 'AC' in self.rl_mode :
-                grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i, valid_model = pg_info
+                grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i, loss_map_i ,  valid_model = pg_info
                 if valid_model:
                     invalid_occurred = False
                     temp_pg_loss, temp_entropy, temp_advantage = self.update_training_variables(partial_log, \
@@ -819,7 +820,7 @@ class Multiprocess_RL_Environment:
 
                         try:
                             partial_log, single_runs, successful_runs, internal_memory_fill_ratio , pg_info = ray.get(task)
-                            grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i, valid_model = pg_info
+                            grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i,loss_map_i , valid_model = pg_info
                         except Exception:
                             valid_model = False
                             print('failed remote simulation')

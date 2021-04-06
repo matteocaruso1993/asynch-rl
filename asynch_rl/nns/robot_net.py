@@ -247,15 +247,15 @@ class ConvModel(nnBase):
     # make sure N%stride = 0 for all elements in strides
     def __init__(self, model_version = -1, net_type='ConvModel0',lr =1e-6,  n_actions = 9, channels_in = 3, n_frames = 10, \
                  n_partial_outputs = 18,  N_in = [135,4] , channels = [16, 10, 1] , fc_layers = [60,60,20], \
-                 partial_outputs = False, **kwargs):
+                 partial_outputs = False, layers_normalization = False, **kwargs):
         
         #ConvModel, self
         super().__init__(model_version, net_type, lr)
         #if N_in[0] % (strides[0]*strides[1]):
         #    raise ValueError('N in and strides not aligned')
         
-        self.normalize_fc_layers = False
-        self.normalize_cnn_layers = False
+        self.normalize_fc_layers = layers_normalization
+        self.normalize_cnn_layers = layers_normalization
         
         self.n_partial_outputs = n_partial_outputs
         self.partial_outputs = partial_outputs

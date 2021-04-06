@@ -287,15 +287,22 @@ class SimulationAgent:
         self.traj_entropy = []
         self.advantage_loss = 0
         self.loss_policy = 0
+        self.map_est_loss = 0
         self.state_sequences = []
+        
+        self.map_est_sequences = []
 
     
     ##################################################################################
-    def pg_calculation(self, reward, state_0, prob, action_idx, done, valid):
+    def pg_calculation(self, reward, state_0, prob, action_idx, done, info):
         """ core of PG functionality. here gradients are calculated (model update occurs in rl_env)"""
+        
+        valid = (info['outcome'] != 'fail')
+        
         if valid:
             loss_pg_i = 0
             loss_v_i = 0
+            loss_map_i = 0
             
             advantage = torch.tensor(0)
             entropy = torch.sum(-torch.log(prob)*prob)
@@ -313,6 +320,9 @@ class SimulationAgent:
             self.traj_entropy.append(entropy)
             self.state_sequences.append(state_0) 
             
+            if self.env.env_type == 'RobotEnv' and info['robot_map'] is not None and self.model_pg.partial_outputs:
+                self.map_est_sequences.append(info['robot_map'])
+                
             if done:
                 R = 0
                 for i in range(len(self.traj_rewards)):
@@ -332,27 +342,34 @@ class SimulationAgent:
                         
                     #self.advantage_loss += (  R - torch.max(self.model_qv(self.state_sequences[-1-i].float())) )**2
                     if self.rl_mode == 'AC':
-                        state_value = self.model_v(self.state_sequences[-1-i]) #.float())
+                        state_value, output_map = self.model_v(self.state_sequences[-1-i], return_map = True) #.float())
                         self.advantage_loss += (  R -  state_value )**2
+                        
+                        if self.env.env_type == 'RobotEnv' and info['robot_map'] is not None and output_map is not None:
+                            self.map_est_loss += torch.sum( (torch.tensor(info['robot_map'])- output_map)**2 )
                        
                     if not self.share_conv_layers:
-                        total_loss = self.advantage_loss + self.loss_policy
+                        total_loss = self.advantage_loss + self.loss_policy + self.map_est_loss
                     else:
-                        total_loss = self.advantage_loss/(1e-5+np.abs(self.advantage_loss.item())) + self.loss_policy/(1e-5+np.abs(self.loss_policy.item()))
+                        total_loss = self.advantage_loss/(1e-5+np.abs(self.advantage_loss.item())) \
+                                    + self.loss_policy/(1e-5+np.abs(self.loss_policy.item())) \
+                                    + self.map_est_loss/(self.map_est_loss.item())
                 
                 total_loss.backward()
 
                 loss_pg_i = np.round(self.loss_policy.item(),3)
                 if self.rl_mode == 'AC':
                     loss_v_i = np.round(self.advantage_loss.item(),3)
-                    
+                    if torch.is_tensor(self.map_est_loss):
+                        loss_map_i = np.round(self.map_est_loss.item(),3)
+                                        
                 self.initialize_pg_lists()
 
-            return loss_pg_i, entropy.item(), loss_v_i
+            return loss_pg_i, entropy.item(), loss_v_i, loss_map_i
 
         else:
             self.loss_policy = 0
-            return np.nan, np.nan, np.nan
+            return np.nan, np.nan, np.nan, np.nan
 
     ##################################################################################
     def initialize_run(self):
@@ -386,6 +403,7 @@ class SimulationAgent:
         self.pg_loss_hist = []
         self.entropy_hist = []
         self.advantage_hist = []
+        self.loss_map_hist = []
         done = False
         
         return force_stop, done, fig_film
@@ -408,11 +426,12 @@ class SimulationAgent:
             self.agent_run_variables['successful_runs'] += 1
             
         if 'AC' in self.rl_mode:
-            loss_pg_i, entropy_i, advantage_i = self.pg_calculation(reward_np, state, prob_distrib, action_index, done, (info['outcome'] != 'fail'))
+            loss_pg_i, entropy_i, advantage_i, loss_map_i = self.pg_calculation(reward_np, state, prob_distrib, action_index, done, info )
             loss_pg += loss_pg_i
             force_stop = np.isnan(loss_pg_i)
             self.entropy_hist.append(entropy_i)
             self.advantage_hist.append(advantage_i)
+            self.loss_map_hist.append(loss_map_i)
             if done:
                 self.pg_loss_hist.append(loss_pg)
         
@@ -448,9 +467,10 @@ class SimulationAgent:
                             grad_dict_v[name] = param.grad.clone()
                 if not nan_grad:
                     pg_info = (grad_dict_pg, grad_dict_v, np.average(self.pg_loss_hist) , \
-                           np.average(self.entropy_hist),np.average(self.advantage_hist), True )
+                           np.average(self.entropy_hist),np.average(self.advantage_hist), \
+                           np.average(self.loss_map_hist), True )
                 else:
-                    pg_info = (None,None,None,None,None,False)
+                    pg_info = (None,None,None,None,None,None,False)
                     print('remote worker has diverging gradients')
         return pg_info
 

@@ -40,6 +40,8 @@ parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, de
 parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=5,
                     help="Number of agents to be used")
 
+parser.add_argument("-norm", "--normalize-layers", dest="normalize_layers", type=bool, default=False,
+                    help="normalize data between NN layers")
 
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
@@ -129,7 +131,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
             share_conv_layers = False, n_frames = 4, rl_mode = 'DQL', beta = 0.001, \
                 gamma = 0.99,  continuous_qv_update = False, tot_iterations = 400, layers_width= (100,100), \
                     ray_password = None,  head_address = None, memory_save_load = False, \
-                        flip_grad_sign = False, use_reinforce = False):
+                        flip_grad_sign = False, use_reinforce = False, normalize_layers = False):
 
 
     function_inputs = locals().copy()
@@ -183,7 +185,8 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
                         mini_batch_size = mini_batch_size, share_conv_layers = share_conv_layers, \
                         difficulty = difficulty, learning_rate = learning_rate, sim_length_max = sim_length_max, \
                         memory_turnover_ratio = memory_turnover_ratio, val_frequency = val_frequency ,\
-                        gamma = gamma, beta_PG = beta , continuous_qv_update = continuous_qv_update , memory_save_load = memory_save_load) 
+                        gamma = gamma, beta_PG = beta , continuous_qv_update = continuous_qv_update , \
+                        memory_save_load = memory_save_load , normalize_layers = normalize_layers) 
 
     rl_env.resume_epsilon = resume_epsilon
 
@@ -230,7 +233,7 @@ if __name__ == "__main__":
                rewards = args.rewards_list, reset_optimizer = args.reset_optimizer, rl_mode = args.rl_mode, \
                beta = args.beta, gamma = args.gamma, continuous_qv_update = args.continuous_qv_update,\
                tot_iterations = args.tot_iterations, head_address = args.head_address, ray_password = args.ray_password ,\
-               memory_save_load = args.memory_save_load, layers_width= args.layers_list, \
+               memory_save_load = args.memory_save_load, layers_width= args.layers_list, normalize_layers = args.normalize_layers, \
                use_reinforce = args.use_reinforce,   flip_grad_sign = args.flip_grad_sign, n_frames = args.n_frames)
 
     current_folder = os.path.abspath(os.path.dirname(__file__))
