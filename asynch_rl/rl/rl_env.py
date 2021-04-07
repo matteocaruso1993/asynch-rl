@@ -56,9 +56,12 @@ class Multiprocess_RL_Environment:
                  ctrlr_prob_annealing_factor = .9,  ctrlr_probability = 0, difficulty = 0, \
                  memory_turnover_ratio = 0.2, val_frequency = 10, bashplot = False, layers_width= (5,5), \
                  rewards = np.ones(5), env_options = {}, share_conv_layers = False, 
-                 beta_PG = 1 , continuous_qv_update = False, memory_save_load = False, \
-                 flip_grad_sign = False, use_reinforce = False, normalize_layers = False):
+                 beta_PG = 1 , continuous_qv_update = False, memory_save_load = False, n_partial_outputs = 18, \
+                 flip_grad_sign = False, use_reinforce = False, normalize_layers = False, map_output= False):
         
+
+        self.n_partial_outputs = n_partial_outputs
+        self.map_output = map_output
         self.normalize_layers = normalize_layers
         
         self.flip_grad_sign = flip_grad_sign
@@ -266,9 +269,10 @@ class Multiprocess_RL_Environment:
             lr= self.lr[0]
         
         if self.net_type == 'ConvModel':
-                model = ConvModel(model_version = 0, net_type = self.net_type+str(self.net_version), lr= lr, \
+                model = ConvModel(model_version = 0, net_type = self.net_type+str(self.net_version), lr= lr, partial_outputs = self.map_output, \
                                   n_actions = n_actions if not (model_type == 'v') else 1, n_frames = self.n_frames, N_in = self.N_in_model, \
-                                  fc_layers = self.layers_width, softmax = (model_type == 'pg') , layers_normalization = self.normalize_layers) 
+                                  fc_layers = self.layers_width, softmax = (model_type == 'pg') , layers_normalization = self.normalize_layers,\
+                                      n_partial_outputs = self.n_partial_outputs) 
 
         elif self.net_type == 'ConvFrxModel':
                 model = NN_frx(model_version = 0, net_type = self.net_type+str(self.net_version), lr= lr, \
@@ -287,7 +291,8 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     def generateDiscrActSpace_GymStyleEnv(self):
         if self.env_type  == 'RobotEnv':
-            return DiscrGymStyleRobot( n_frames = self.n_frames, n_bins_act= self.discr_env_bins , sim_length = self.sim_length_max , difficulty=self.difficulty)
+            return DiscrGymStyleRobot( n_frames = self.n_frames, n_bins_act= self.discr_env_bins , sim_length = self.sim_length_max , \
+                                      difficulty=self.difficulty, n_chunk_sections = self.n_partial_outputs)
         elif self.env_type  == 'CartPole':
             return DiscrGymStyleCartPole(n_bins_act= self.discr_env_bins, sim_length_max = self.sim_length_max, difficulty=self.difficulty)
         elif self.env_type  == 'Platoon':
@@ -731,11 +736,11 @@ class Multiprocess_RL_Environment:
                     total_log = np.append(total_log, partial_log, axis = 0)
                 total_runs += single_runs
             
-            if self.rl_mode=='AC' and not self.shared_memory.isFull() and internal_memory_fill_ratio > 0.25 :
-                self.shared_memory.addMemoryBatch(self.sim_agents_discr[0].emptyLocalMemory() )
-                
-            if (self.shared_memory.isFull() and self.rl_mode!='AC') or (self.rl_mode=='AC' and np.sum(total_log[:,0]) >= self.memory_turnover_size):
-                break
+                if self.rl_mode=='AC' and not self.shared_memory.isFull() and internal_memory_fill_ratio > 0.25 :
+                    self.shared_memory.addMemoryBatch(self.sim_agents_discr[0].emptyLocalMemory() )
+                    
+                if (self.shared_memory.isFull() and self.rl_mode!='AC') or (self.rl_mode=='AC' and np.sum(total_log[:,0]) >= self.memory_turnover_size):
+                    break
         
         self.display_progress(total_log)
         print('')
@@ -834,7 +839,7 @@ class Multiprocess_RL_Environment:
                             total_runs += single_runs
 
                             temp_pg_loss, temp_entropy, temp_advantage = self.update_training_variables(partial_log, \
-                                    policy_loss_i, pg_entropy_i, advantage_i, temp_pg_loss, temp_entropy, temp_advantage)
+                                    policy_loss_i, pg_entropy_i, advantage_i if loss_map_i is None else loss_map_i, temp_pg_loss, temp_entropy, temp_advantage)
                             # update common model gradient
                             for net1,net2 in zip( grad_dict_pg.items() , self.model_pg.named_parameters() ):
                                 net2[1].grad += net1[1].clone()
@@ -922,7 +927,7 @@ class Multiprocess_RL_Environment:
         self.post_iteration_routine(initial_qv_weights = initial_qv_weights, \
                     initial_pg_weights = initial_pg_weights, initial_v_weights= initial_v_weights, \
                     total_runs= total_runs, total_log= total_log, temp_pg_loss= temp_pg_loss, \
-                    temp_entropy= temp_entropy, temp_advantage = temp_advantage)
+                    temp_entropy= temp_entropy, temp_advantage = temp_advantage )
 
 
     ##################################################################################
@@ -987,7 +992,8 @@ class Multiprocess_RL_Environment:
 
     ##################################################################################
     def post_iteration_routine(self, initial_qv_weights = None, initial_pg_weights = None, initial_v_weights= None, \
-                               total_runs= None, total_log= None, temp_pg_loss= None, temp_entropy= None, temp_advantage = None):
+                               total_runs= None, total_log= None, temp_pg_loss= None, temp_entropy= None, \
+                                   temp_advantage = None):
         """ store data, display intermediate results """
 
         average_qval_loss = policy_loss = pg_entropy = np.nan
@@ -1430,8 +1436,11 @@ class Multiprocess_RL_Environment:
             
             ax2[1].plot(self.global_pg_entropy[init_epoch:])
             ax2[1].legend(['entropy complete'])
-
-            ax2[2].plot(self.global_cum_reward[init_epoch:])
+            
+            
+            av_reward = self.global_cum_reward[init_epoch:]
+            ma_reward = np.convolve(av_reward, np.ones(50), 'valid') / 50
+            ax2[2].plot(ma_reward)
             ax2[2].legend(['av. cum reward'])
             
             ax2[3].plot(self.global_duration[init_epoch:])

@@ -381,10 +381,13 @@ class ConvModel(nnBase):
         if self.softmax:
             x = self.sm(x)
             
-        if not return_map:
-            return x
+        if return_map :
+            if self.partial_outputs: 
+                return x, po
+            else:
+                return x, None
         else:
-            return x , po
+            return x
     
     
     ##########################################################################

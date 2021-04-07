@@ -72,8 +72,10 @@ class RobotEnv(gym.Env):
                  collision_distance = 0.7, visualization_angle_portion = 0.5, lidar_range = 10,\
                  v_linear_max = 1.5 , v_angular_max = 2 , rewards = [1,100,40], max_v_x_delta = .5, \
                  initial_margin = .3,    max_v_rot_delta = .5, dt = None, normalize_obs_state = True, \
-                     sim_length = 200, difficulty = 0, scan_noise = [0.005,0.002]):
+                     sim_length = 200, difficulty = 0, scan_noise = [0.005,0.002], n_chunk_sections = 18):
         
+        
+        self.n_chunk_sections = n_chunk_sections
         
         sparsity_levels = [50, 30, 20 , 15,  10, 5 ]
         
@@ -242,7 +244,7 @@ class RobotEnv(gym.Env):
             reward = 0
             done = False
             
-        info['robot_map'] = None
+        info['robot_map'] = self.robot.chunk(self.n_chunk_sections)
 
         return (ranges, rob_state), reward, done, info
     

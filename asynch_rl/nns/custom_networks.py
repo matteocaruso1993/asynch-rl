@@ -168,7 +168,7 @@ class LinearModel(nnBase):
     ##########################################################################        
     ## HERE WE DEFINE THE PATH
     # inside the forward function we can create CONDITIONAL PATHS FOR CERTAIN LAYERS!!
-    def forward(self,x):
+    def forward(self,x, **kwargs):
         iterate_idx = 1
         for attr in self._modules:
             if 'fc'+str(iterate_idx) in attr:

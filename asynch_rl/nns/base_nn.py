@@ -82,7 +82,7 @@ class nnBase(nn.Module):
         pass
 
     ##########################################################################        
-    def forward(self,x):
+    def forward(self,x, **kwargs):
         return x 
 
     ##################################################################################
@@ -99,7 +99,15 @@ class nnBase(nn.Module):
             generic_input = tuple([g.to(device).float() for g in generic_input]) 
         else:
             generic_input =generic_input.to(device).float()
-        l = torch.sum(self.forward(generic_input)**2)
+            
+        net_output = self.forward(generic_input, return_map = True)
+        if isinstance(net_output, tuple):
+            loss_list = [torch.sum(out**2)  for out in net_output if out is not None]
+            l = 0
+            for ll in loss_list:
+                l += ll 
+        else:
+            l = torch.sum(net_output**2)
         l.backward()
         self.optimizer.zero_grad()
         
