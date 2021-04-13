@@ -241,7 +241,7 @@ class RobotEnv(gym.Env):
             #danger_penalty = np.minimum(1 , 0.2* np.sum( 1 - (peds_distances[peds_distances < 2/3*self.lidar_range]/self.lidar_range) )) 
 
             #reward = self.rewards[0]*int(not saturate_input)*(dist_0-dist_1)/(self.linear_max*self.dt)* int(min(ranges) > 0.25 )*int(dist_0>dist_1)
-            reward = 0
+            reward = self.rewards[0]*int(not saturate_input)*int( (dist_0-dist_1)>0)*min(ranges)
             done = False
             
         info['robot_map'] = self.robot.chunk(self.n_chunk_sections)

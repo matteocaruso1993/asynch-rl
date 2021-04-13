@@ -22,161 +22,155 @@ import os
 
 import asyncio
 
+#####
+from argparse import ArgumentParser
+
+parser = ArgumentParser()
+
+parser.add_argument("-v", "--version", dest="net_version", type = int, default= 902 , help="training version")
+
+parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 131 , help="iteration")
+
+parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type = bool, default= False , help="simulate instance")
+
+args = parser.parse_args()
+################
+
+
 # df loader
-net_version = 13
-iteration = 240
+#net_version = 902
+#iteration   = 27
 
 
 # generate proper discretized bins structure
-################
-env_type = 'RobotEnv' 
-model_type = 'ConvModel'
-#rl_mode = 'AC'
 
-overwrite_params = ['rewards', 'rl_mode', 'share_conv_layers', 'n_frames' , 'layers_width']
+def main(net_version = 100, iteration = 2, simulate = False):
 
-my_dict = load_train_params(env_type, model_type, overwrite_params, net_version)
-for i,par in enumerate(overwrite_params):
-    exec(par + " =  my_dict['"  + par + "']")
-del( overwrite_params, my_dict)
-
-
-################
-
-rl_env = Multiprocess_RL_Environment(env_type, model_type, net_version,rl_mode = rl_mode, ray_parallelize=False, \
-                                     move_to_cuda=False, n_frames = n_frames, show_rendering = True, discr_env_bins=2,\
-                                    difficulty= 0) #, \
-                                      #replay_memory_size = 500, N_epochs = 100)
-
-
-print(f'rl mode : {rl_env.rl_mode}')
-
-rl_env.save_movie = False
-rl_env.live_plot = False
-# always update agents params after rl_env params are changed
-rl_env.updateAgentsAttributesExcept('env')
-
-rl_env.load(iteration)
-#rl_env.load(320)
-
-rl_env.print_NN_parameters_count()
-
-try:
-    rl_env.plot_training_log(-500, qv_loss_log = True, pg_loss_log = True)
-except Exception:
-    print('incomplete data for plot generation')
-
-
-try:
-    if hasattr(rl_env, 'val_history'):
-        
-        if rl_env.val_history is not None:
-            # 0) iteration ---- 1) average duration   ---- 2)average single run reward   ---- 3) average loss
-            
-            fig_val1 = plt.figure()
-            ax1 = fig_val1.add_subplot(4,1,1)
-            ax2 = fig_val1.add_subplot(4,1,2)
-            ax3 = fig_val1.add_subplot(4,1,3)
-            ax4 = fig_val1.add_subplot(4,1,4)
-        
-            ax1.plot(rl_env.val_history[:,0], rl_env.val_history[:,2])
-            ax1.legend(['total runs'])
-                
-            ax2.plot(rl_env.val_history[:,0], rl_env.val_history[:,3])
-            ax2.legend(['average duration'])
-            
-            ax3.plot(rl_env.val_history[:,0], rl_env.val_history[:,4])
-            ax3.legend(['average cum reward'])
-        
-            ax4.plot(rl_env.val_history[:,0], rl_env.val_history[:,1])
-            ax4.legend(['successful runs ratio'])
-except Exception:
-    pass
-
-#%%
-# script to clean up val hist
-
-"""
-import numpy as np
-
-mask = np.ones(rl_env.val_history.shape[0], dtype = bool)
-mask[16:19] = False
-
-rl_env.val_history = rl_env.val_history[mask]
-"""
-
-"""
-#save it afterwards
-import os
-#path = os.path.dirname(os.path.abspath(__file__))
-path = os.getcwd()
-val_history_file = os.path.join(path, 'val_history.npy')
-np.save(val_history_file, rl_env.val_history )
-"""
-
-
-#"""
-
-#%%
-"""
-import cProfile
-import pstats
-import io
-
-
-pr = cProfile.Profile()
-pr.enable()
-"""
-
-agent = rl_env.sim_agents_discr[0]
-
-#agent.max_steps_single_run = 20000
-
-#
-agent.movie_frequency = 1
-#agent.tot_iterations = 10000
-agent.tot_iterations = 300
-agent.max_n_single_runs = 5
-sim_log, single_runs , successful_runs,_, pg_info = agent.run_synch(use_NN = True, test_qv = False)
-
-#agent.env.env.plot_graphs()
-
-"""
-pr.disable()
-s = io.StringIO()
-ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
-ps.print_stats()
-with open('duration_tester_robot.txt', 'w+') as f:
-    f.write(s.getvalue())
-"""
-
-#%%
-
-current_folder = os.path.abspath(os.path.dirname(__file__))
-clear_pycache(current_folder)
-
-
-"""
-async def synch_tester(save_movie = False):
-    agent.save_movie = save_movie
-    task = asyncio.create_task(agent.run(use_NN = True))
-    await task
+    ################
+    env_type = 'RobotEnv' 
+    model_type = 'ConvModel'
+    #rl_mode = 'AC'
     
-#print(is_Ipython())
+    overwrite_params = ['rewards', 'rl_mode', 'share_conv_layers', 'n_frames' , 'layers_width', 'map_output', 'normalize_layers']
+        
+    my_dict = load_train_params(env_type, model_type, overwrite_params, net_version)
+    local_vars = locals()
     
-if not is_Ipython():
-    asyncio.run(synch_tester(save_movie = True))
-else:  
-    agent.live_plot = True
-    loop = asyncio.get_event_loop()
+    for i,par in enumerate(overwrite_params):
+        #exec(par + " =  my_dict['"  + par + "']", None, )
+        local_vars[par] = my_dict[par]
+    del( overwrite_params, my_dict)
+    
+    
+    
+    ################
+    """
+    my_vars = locals().copy()
+    for v in my_vars:
+        print(v)
+    """
+    import inspect
+    inspect.signature(Multiprocess_RL_Environment.__init__)
+    
+    
+    rl_env = Multiprocess_RL_Environment(env_type, model_type, net_version, rl_mode=local_vars['rl_mode'] , ray_parallelize=False, \
+                                         move_to_cuda=False, n_frames = local_vars['n_frames'], show_rendering = True, discr_env_bins=2,\
+                                        difficulty= 0, map_output = local_vars['map_output'], \
+                                          layers_width = local_vars['layers_width'], normalize_layers = local_vars['normalize_layers']  ) #, \
+                                      #    #replay_memory_size = 500, N_epochs = 100)
+    
+    
+    print(f'rl mode : {rl_env.rl_mode}')
+    
+    rl_env.save_movie = False
+    rl_env.live_plot = False
+    # always update agents params after rl_env params are changed
+    rl_env.updateAgentsAttributesExcept('env')
+    
+    rl_env.load(iteration)
+    #rl_env.load(320)
+    
+    rl_env.print_NN_parameters_count()
+    
     try:
-        asyncio.ensure_future(synch_tester())
-        loop.run_forever()
-    except KeyboardInterrupt:
+        rl_env.plot_training_log(1, qv_loss_log = True, pg_loss_log = True)
+    except Exception:
+        print('incomplete data for plot generation')
+    
+    
+    try:
+        if hasattr(rl_env, 'val_history'):
+            
+            if rl_env.val_history is not None:
+                # 0) iteration ---- 1) average duration   ---- 2)average single run reward   ---- 3) average loss
+                
+                fig_val1 = plt.figure()
+                ax1 = fig_val1.add_subplot(4,1,1)
+                ax2 = fig_val1.add_subplot(4,1,2)
+                ax3 = fig_val1.add_subplot(4,1,3)
+                ax4 = fig_val1.add_subplot(4,1,4)
+            
+                ax1.plot(rl_env.val_history[:,0], rl_env.val_history[:,2])
+                ax1.legend(['total runs'])
+                    
+                ax2.plot(rl_env.val_history[:,0], rl_env.val_history[:,3])
+                ax2.legend(['average duration'])
+                
+                ax3.plot(rl_env.val_history[:,0], rl_env.val_history[:,4])
+                ax3.legend(['average cum reward'])
+            
+                ax4.plot(rl_env.val_history[:,0], rl_env.val_history[:,1])
+                ax4.legend(['successful runs ratio'])
+    except Exception:
         pass
-"""
+    
+    #%%
+    # script to clean up val hist
+    
+    """
+    import numpy as np
+    
+    mask = np.ones(rl_env.val_history.shape[0], dtype = bool)
+    mask[16:19] = False
+    
+    rl_env.val_history = rl_env.val_history[mask]
+    """
+    
+    """
+    #save it afterwards
+    import os
+    #path = os.path.dirname(os.path.abspath(__file__))
+    path = os.getcwd()
+    val_history_file = os.path.join(path, 'val_history.npy')
+    np.save(val_history_file, rl_env.val_history )
+    """
+    
+    
+    #"""
+    
+    #%%
+    if simulate:
+        agent = rl_env.sim_agents_discr[0]
+        #agent.live_plot = True
+        
+        #agent.max_steps_single_run = 20000
+        
+        #
+        agent.movie_frequency = 1
+        #agent.tot_iterations = 10000
+        agent.tot_iterations = 300
+        agent.max_n_single_runs = 5
+        sim_log, single_runs , successful_runs,_, pg_info = agent.run_synch(use_NN = True, test_qv = False)
+    
+    
 
-# doesn't work in Ipython!
+#%%
+################################################################
 
-#agent.env.env.cartpole.plot_graphs(dt=agent.env.env.dt, save = False, no_norm = False, ml_ctrl = True)
-#"""
+if __name__ == "__main__":
+    
+    main(net_version = args.net_version, iteration = args.iteration, simulate = args.simulate)
+
+    current_folder = os.path.abspath(os.path.dirname(__file__))
+    clear_pycache(current_folder)
+

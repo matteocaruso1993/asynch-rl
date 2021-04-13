@@ -43,7 +43,7 @@ parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, def
 parser.add_argument("-norm", "--normalize-layers", dest="normalize_layers", type=bool, default=False,
                     help="normalize data between NN layers")
 
-parser.add_argument("-mo", "--map-output", dest="map_output", type=bool, default=False,
+parser.add_argument("-mo", "--map-output", dest="map_output", type=bool, default=True,
                     help="NN has intermediate output with estimated map")
 
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
@@ -141,7 +141,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
     
     env_type = 'RobotEnv' 
     model_type = 'ConvModel'
-    overwrite_params = ['rewards', 'rl_mode', 'share_conv_layers', 'n_frames' , 'layers_width', 'map_output']
+    overwrite_params = ['rewards', 'rl_mode', 'share_conv_layers', 'n_frames' , 'layers_width', 'map_output', 'normalize_layers']
     
     # trick used to resume epsilon status if not declared explicitly
     if epsilon[0] == -1:

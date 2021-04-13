@@ -842,10 +842,12 @@ class Multiprocess_RL_Environment:
                                     policy_loss_i, pg_entropy_i, advantage_i if loss_map_i is None else loss_map_i, temp_pg_loss, temp_entropy, temp_advantage)
                             # update common model gradient
                             for net1,net2 in zip( grad_dict_pg.items() , self.model_pg.named_parameters() ):
-                                net2[1].grad += net1[1].clone()
+                                if torch.is_tensor(net1[1]):
+                                    net2[1].grad += net1[1].clone()
                             if self.rl_mode == 'AC':
                                 for net1,net2 in zip( grad_dict_v.items() , self.model_v.named_parameters() ):
-                                    net2[1].grad += net1[1].clone()
+                                    if torch.is_tensor(net1[1]):
+                                        net2[1].grad += net1[1].clone()
                         
                             if self.rl_mode != 'AC' and internal_memory_fill_ratio > 0.2:
                                 self.shared_memory.addMemoryBatch( ray.get(agent.emptyLocalMemory.remote()) )
@@ -1027,7 +1029,10 @@ class Multiprocess_RL_Environment:
             print(f'average policy loss : {policy_loss}')
             print(f'average pg entropy  : {np.round(100*pg_entropy/self.max_entropy, 2)}%')
             if self.rl_mode == 'AC':
-                print(f'average adv loss : {adv_loss}')
+                if self.map_output:
+                    print(f'average map-output loss : {adv_loss}')
+                else:   
+                    print(f'average adv loss : {adv_loss}')
             
         print('')
         print(f'average cum-reward  : {np.round(np.average(total_log[:,1]),5)}')
@@ -1408,7 +1413,10 @@ class Multiprocess_RL_Environment:
         ax1_1.plot(self.log_df.iloc[init_epoch:][indicators[5]])
         if qv_loss_log:
             ax1_1.set_yscale('log')
-        ax1_1.legend(['q-val (AC) / s-val (DQL) loss'])
+        if not self.map_output:
+            ax1_1.legend(['q-val (AC) / s-val (DQL) loss'])
+        else:
+            ax1_1.legend(['map output loss'])
 
         # 'av. policy loss'
         ax2_1 = fig_1.add_subplot(412)
@@ -1447,7 +1455,10 @@ class Multiprocess_RL_Environment:
             ax2[3].legend(['av. duration'])
 
             ax2[4].plot(self.global_advantage[init_epoch:])
-            ax2[4].legend(['advantage'])
+            if not self.map_output:
+                ax2[4].legend(['advantage'])
+            else:
+                ax2[4].legend(['map loss'])
             
             return fig, fig_1 , fig_2
     

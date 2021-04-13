@@ -352,12 +352,12 @@ class SimulationAgent:
                             print(output_map)
                             raise('stophere')
                        
-                    if not self.share_conv_layers:
-                        total_loss = self.advantage_loss + self.loss_policy + self.map_est_loss
-                    else:
-                        total_loss = self.advantage_loss/(1e-5+np.abs(self.advantage_loss.item())) \
-                                    + self.loss_policy/(1e-5+np.abs(self.loss_policy.item())) \
-                                    + self.map_est_loss/(self.map_est_loss.item())
+                    #if not self.share_conv_layers:
+                    #    total_loss = self.advantage_loss + self.loss_policy + self.map_est_loss
+                    #else:
+                    total_loss = self.advantage_loss/(1e-5+self.advantage_loss.item()) \
+                                + self.loss_policy/(1e-5+abs(self.loss_policy.item())) \
+                                + self.map_est_loss/(1e-5+self.map_est_loss.item())
                 
                 total_loss.backward()
 
@@ -461,15 +461,25 @@ class SimulationAgent:
                 grad_dict_pg = {}
                 grad_dict_v = {}
                 for name, param in self.model_pg.named_parameters():
-                    grad_dict_pg[name] = param.grad.clone()
-                    
+                    if param.grad is not None:
+                        grad_dict_pg[name] = param.grad.clone()
+                    else:
+                        grad_dict_pg[name] = 0
+                        
                 if self.rl_mode == 'AC':
-                    for name, param in self.model_v.named_parameters():
-                        if torch.isnan(param.grad).any():
-                            nan_grad = True
-                            break
-                        else:
-                            grad_dict_v[name] = param.grad.clone()
+                    if param.grad is not None:
+
+                        for name, param in self.model_v.named_parameters():
+                            if torch.isnan(param.grad).any():
+                                nan_grad = True
+                                break
+                            else:
+                                grad_dict_v[name] = param.grad.clone()
+                                
+                    else:
+                        grad_dict_v[name] = 0
+
+
                 if not nan_grad:
                     pg_info = (grad_dict_pg, grad_dict_v, np.average(self.pg_loss_hist) , \
                            np.average(self.entropy_hist),np.average(self.advantage_hist), \
