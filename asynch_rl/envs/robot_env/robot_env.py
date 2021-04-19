@@ -73,11 +73,9 @@ class RobotEnv(gym.Env):
                  v_linear_max = 1.5 , v_angular_max = 2 , rewards = [1,100,40], max_v_x_delta = .5, \
                  initial_margin = .3,    max_v_rot_delta = .5, dt = None, normalize_obs_state = True, \
                      sim_length = 200, difficulty = 0, scan_noise = [0.005,0.002], n_chunk_sections = 18):
-        
-        
+
         self.n_chunk_sections = n_chunk_sections
-        
-        sparsity_levels = [50, 30, 20 , 15,  10, 5 ]
+        sparsity_levels = [500, 200 , 100,  50 , 20 ]
         
         self.peds_sparsity = sparsity_levels[difficulty]
         self._difficulty = difficulty
@@ -242,7 +240,8 @@ class RobotEnv(gym.Env):
             #danger_penalty = np.minimum(1 , 0.2* np.sum( 1 - (peds_distances[peds_distances < 2/3*self.lidar_range]/self.lidar_range) )) 
 
             #reward = self.rewards[0]*int(not saturate_input)*(dist_0-dist_1)/(self.linear_max*self.dt)* int(min(ranges) > 0.25 )*int(dist_0>dist_1)
-            reward = self.rewards[0]*int(not saturate_input)*int( (dist_0-dist_1)>0)*min(ranges)
+            #reward = self.rewards[0]*int(not saturate_input)*int( (dist_0-dist_1)>0)*min(ranges)
+            reward = -self.rewards[0]*int(saturate_input)
             done = False
             
         info['robot_map'] = self.robot.chunk(self.n_chunk_sections)
@@ -317,17 +316,18 @@ class RobotEnv(gym.Env):
         ranges_np = np.nan_to_num(np.array(ranges), nan = self.lidar_range)
         speed_x = self.robot.current_speed['linear']['x']
         speed_rot = self.robot.current_speed['angular']['z']
-        target_distance = self.robot.target_rel_position(self.target_coordinates[:2])[0]
-        target_angle =    self.robot.target_rel_position(self.target_coordinates[:2])[1]
+        
+        target_coords = self.target_coordinates[:2]
+        target_distance, target_angle = self.robot.target_rel_position(target_coords)
         
         self.closest_obstacle = np.amin(ranges_np)
 
         if self.normalize_obs_state:
             ranges_np /= self.lidar_range
             speed_x /= self.linear_max
-            speed_rot = (speed_rot+self.angular_max)/(2*self.angular_max) #speed_rot/self.angular_max #
+            speed_rot = speed_rot/self.angular_max #(speed_rot +self.angular_max)/(2*self.angular_max) # #
             target_distance /= self.target_distance_max
-            target_angle = (target_angle+np.pi)/2*np.pi #target_angle/np.pi #
+            target_angle = target_angle/np.pi # (target_angle+np.pi)/2*np.pi #
 
         #self.state =np.concatenate((ranges_np,np.array([speed_x,speed_rot, target_distance,target_angle])  ),axis = 0).astype(np.float32)
     
@@ -363,10 +363,9 @@ class RobotEnv(gym.Env):
         
         img  , t1,t2, t3,t_ped_dist_line, trg, rbt,rbt_dir, scn, ped_dist_bar_empty,\
             ped_dist_bar,t_target_dist_line, target_dist_bar_empty, target_dist_bar = \
-            render_image(occupancy_map,idx_x,idx_y,robot_angle, scan_pts_grid,  closest_obstacle, \
-            rel_width, x_trg_grd, y_trg_grd, iter_params, \
-                target_distance  = target_distance, \
-                target_rel_width = 1-target_distance/self.target_distance_max)  #self.state[-2])
+            render_image(self.robot.map.map_length, self.robot.map.map_height, occupancy_map,idx_x,idx_y,robot_angle, scan_pts_grid,  closest_obstacle, \
+                         rel_width, x_trg_grd, y_trg_grd, iter_params, target_distance  = target_distance, \
+                         target_rel_width = 1-target_distance/self.target_distance_max)  #self.state[-2])
 
         self.data_render.append([occupancy_map,idx_x,idx_y,robot_angle, scan_pts_grid,  closest_obstacle, rel_width, x_trg_grd,y_trg_grd, iter_params])
 
@@ -381,7 +380,8 @@ class RobotEnv(gym.Env):
             
 #%%
     
-def render_image(occupancy_map,idx_x,idx_y,robot_angle, scan_pts_grid,  closest_obstacle, rel_width, x_trg_grd,y_trg_grd, iter_params, target_distance = 10, target_rel_width = 0.5):
+def render_image(map_width, map_height, occupancy_map,idx_x,idx_y,robot_angle, scan_pts_grid,  closest_obstacle, \
+                 rel_width, x_trg_grd,y_trg_grd, iter_params, target_distance = 10, target_rel_width = 0.5):
     
     # display parameters
     robot_width = 1*15
@@ -394,7 +394,22 @@ def render_image(occupancy_map,idx_x,idx_y,robot_angle, scan_pts_grid,  closest_
     img = Image.new('1', (shape_grid[0], shape_grid[1]))
     
     # plot occupancy data            
-    img = plt.imshow(occupancy_map, cmap='Greys',  interpolation='nearest', animated=True)
+    img = plt.imshow(occupancy_map, cmap='Greys',  interpolation='nearest', animated=True) 
+    #, extent= [-round(map_width/2),round(map_width/2),-round(map_height/2),round(map_height/2)] )
+    
+    ticks_portion = 1 #0.9
+    n_ticks = 9
+    
+    
+    x_ticks_pos = np.round(np.linspace(1-ticks_portion, ticks_portion,n_ticks)*ticks_portion*shape_grid[0])
+    y_ticks_pos = np.round(np.linspace(1-ticks_portion, ticks_portion,n_ticks)*ticks_portion*shape_grid[1])
+    img.axes.set_xticks(x_ticks_pos)
+    img.axes.set_yticks(y_ticks_pos)
+    xlabels = np.round(np.linspace(-1,1,n_ticks)*ticks_portion*map_width/2).astype(int).tolist()
+    ylabels = np.flipud(np.round(np.linspace(-1,1,n_ticks)*ticks_portion*map_height/2)).astype(int).tolist()
+    img.axes.set_xticklabels(xlabels)
+    img.axes.set_yticklabels(ylabels)
+    
     
     # draw robot as a Rectangle patch (grid based) and add it to the axes object of img
     
@@ -475,22 +490,22 @@ def s_like_path():
     
         env=RobotEnv()
         env.reset()
-        env.robot.setPosition(0, -10, 0)
+        env.robot.setPosition(0, -10,  np.pi)
         done = False
         
         for i in range(30):
-            _, reward , done, _ = env.step([0.1,0.02])
+            state , reward , done, info = env.step([0.1,0.02])
             tot_steps += 1
-            env.render(mode='animation')
+            env.render(mode='plot')
             #print(round(reward,3), done)
             if done:
                 break
             
         if not done:
             for i in range(30):
-                _, reward , done, _ = env.step([0.1,-0.04])
+                state , reward , done, info= env.step([0.1,-0.04])
                 tot_steps += 1
-                env.render(mode='animation')
+                env.render(mode='plot')
                 #print(round(reward,3), done)
                 if done:
                     break

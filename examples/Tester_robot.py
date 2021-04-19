@@ -27,11 +27,13 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 
-parser.add_argument("-v", "--version", dest="net_version", type = int, default= 902 , help="training version")
+parser.add_argument("-v", "--version", dest="net_version", type = int, default= 903 , help="training version")
 
-parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 131 , help="iteration")
+parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 4200 , help="iteration")
 
-parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type = bool, default= False , help="simulate instance")
+parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type = bool, default= True , help="simulate instance")
+
+parser.add_argument("-d", "--difficulty"   , dest="difficulty"  , type = int, default= 0 , help="difficulty")
 
 args = parser.parse_args()
 ################
@@ -44,7 +46,7 @@ args = parser.parse_args()
 
 # generate proper discretized bins structure
 
-def main(net_version = 100, iteration = 2, simulate = False):
+def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0):
 
     ################
     env_type = 'RobotEnv' 
@@ -75,7 +77,7 @@ def main(net_version = 100, iteration = 2, simulate = False):
     
     rl_env = Multiprocess_RL_Environment(env_type, model_type, net_version, rl_mode=local_vars['rl_mode'] , ray_parallelize=False, \
                                          move_to_cuda=False, n_frames = local_vars['n_frames'], show_rendering = True, discr_env_bins=2,\
-                                        difficulty= 0, map_output = local_vars['map_output'], \
+                                        difficulty= difficulty, map_output = local_vars['map_output'], \
                                           layers_width = local_vars['layers_width'], normalize_layers = local_vars['normalize_layers']  ) #, \
                                       #    #replay_memory_size = 500, N_epochs = 100)
     
@@ -169,7 +171,7 @@ def main(net_version = 100, iteration = 2, simulate = False):
 
 if __name__ == "__main__":
     
-    main(net_version = args.net_version, iteration = args.iteration, simulate = args.simulate)
+    main(net_version = args.net_version, iteration = args.iteration, simulate = args.simulate, difficulty = args.difficulty)
 
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)
