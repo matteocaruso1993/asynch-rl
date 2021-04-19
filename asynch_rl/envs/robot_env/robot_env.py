@@ -29,12 +29,12 @@ from robot_sf.extenders_py_sf.extender_sim import ExtdSimulator
 
 #%%
 
-def initialize_robot(visualization_angle_portion, lidar_range, lidar_n_rays, init_state, robot_collision_radius, peds_sparsity):
+def initialize_robot(visualization_angle_portion, lidar_range, lidar_n_rays, init_state, robot_collision_radius, peds_sparsity, diff):
     
     # odd number & lidar_n_rays % 3 (or 5) = 0!! (3 or 5 used as stride in conv_net)
     # allowed lidar_n_rays = 105, 135, 165, 195,...
 
-    sim_env = ExtdSimulator()
+    sim_env = ExtdSimulator(difficulty=diff)
     sim_env.setPedSparsity(peds_sparsity)
     #initialize map
     robotMap = BinaryOccupancyGrid(map_height = 2*sim_env.box_size, map_length = 2*sim_env.box_size, peds_sim_env = sim_env)
@@ -80,6 +80,7 @@ class RobotEnv(gym.Env):
         sparsity_levels = [50, 30, 20 , 15,  10, 5 ]
         
         self.peds_sparsity = sparsity_levels[difficulty]
+        self._difficulty = difficulty
         # not implemented yet
         
         self.scan_noise = scan_noise  #percentages (1 = 100%) [scan_noise[0]: lost samples, scan_noise[1]: added samples]
@@ -257,7 +258,7 @@ class RobotEnv(gym.Env):
         
         self.robot_state_history = None
         
-        self.robot = initialize_robot(self.visualization_angle_portion, self.lidar_range,self.lidar_n_rays, [0,0,0], self.collision_distance, self.peds_sparsity)
+        self.robot = initialize_robot(self.visualization_angle_portion, self.lidar_range,self.lidar_n_rays, [0,0,0], self.collision_distance, self.peds_sparsity, self._difficulty)
         self.robot.setMaxSpeed(self.linear_max, self.angular_max)
 
         low_bound,high_bound = self._getPositionBounds()   
