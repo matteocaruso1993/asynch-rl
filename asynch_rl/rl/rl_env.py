@@ -292,7 +292,7 @@ class Multiprocess_RL_Environment:
     def generateDiscrActSpace_GymStyleEnv(self):
         if self.env_type  == 'RobotEnv':
             return DiscrGymStyleRobot( n_frames = self.n_frames, n_bins_act= self.discr_env_bins , sim_length = self.sim_length_max , \
-                                      difficulty=self.difficulty, n_chunk_sections = self.n_partial_outputs)
+                                      difficulty=self.difficulty, n_chunk_sections = self.n_partial_outputs, rewards= self.rewards)
         elif self.env_type  == 'CartPole':
             return DiscrGymStyleCartPole(n_bins_act= self.discr_env_bins, sim_length_max = self.sim_length_max, difficulty=self.difficulty)
         elif self.env_type  == 'Platoon':
@@ -839,7 +839,7 @@ class Multiprocess_RL_Environment:
                             total_runs += single_runs
 
                             temp_pg_loss, temp_entropy, temp_advantage = self.update_training_variables(partial_log, \
-                                    policy_loss_i, pg_entropy_i, advantage_i if loss_map_i is None else loss_map_i, temp_pg_loss, temp_entropy, temp_advantage)
+                                    policy_loss_i, pg_entropy_i, loss_map_i if self.map_output else advantage_i, temp_pg_loss, temp_entropy, temp_advantage)
                             # update common model gradient
                             for net1,net2 in zip( grad_dict_pg.items() , self.model_pg.named_parameters() ):
                                 if torch.is_tensor(net1[1]):

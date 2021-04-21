@@ -27,9 +27,9 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 
-parser.add_argument("-v", "--version", dest="net_version", type = int, default= 903 , help="training version")
+parser.add_argument("-v", "--version", dest="net_version", type = int, default= 920 , help="training version")
 
-parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 4200 , help="iteration")
+parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 300 , help="iteration")
 
 parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type = bool, default= True , help="simulate instance")
 
@@ -95,7 +95,7 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0):
     rl_env.print_NN_parameters_count()
     
     try:
-        rl_env.plot_training_log(1, qv_loss_log = True, pg_loss_log = True)
+        rl_env.plot_training_log(1, qv_loss_log = rl_env.rl_mode=='DQL', pg_loss_log = True)
     except Exception:
         print('incomplete data for plot generation')
     

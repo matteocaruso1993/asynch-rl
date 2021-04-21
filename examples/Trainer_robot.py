@@ -43,7 +43,7 @@ parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, def
 parser.add_argument("-norm", "--normalize-layers", dest="normalize_layers", type=bool, default=False,
                     help="normalize data between NN layers")
 
-parser.add_argument("-mo", "--map-output", dest="map_output", type=bool, default=True,
+parser.add_argument("-mo", "--map-output", dest="map_output", type=bool, default=False,
                     help="NN has intermediate output with estimated map")
 
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
@@ -108,7 +108,7 @@ parser.add_argument("-b", "--beta", dest="beta", type=float, default= 0.1 , help
 parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=bool, default=False, 
                     help="latest QV model is always used for Advanatge calculation")
 
-parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=int, default=[1, 100, 40] )
+parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=float, default=[.1, 100, 40] )
 
 parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[40, 40, 20] )
 

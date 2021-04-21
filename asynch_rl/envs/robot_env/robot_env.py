@@ -202,10 +202,10 @@ class RobotEnv(gym.Env):
             self.robot.checkOutOfBounds(margin = 0.01) or self.duration > self.sim_length :
             
             final_distance_bonus = np.clip((self.distance_init - dist_1) / self.target_distance_max ,-1,1)
-            survival_time_bonus = self.duration/self.sim_length * (np.average(self.robot_state_history[:,0])/self.linear_max )
+            #survival_time_bonus = self.duration/self.sim_length * (np.average(self.robot_state_history[:,0])/self.linear_max )
             #movement_bonus = 2*np.average(self.robot_state_history[:,0]/self.linear_max)-1
             #reward = -self.rewards[1]*( 0.75 + 0.25*(1- np.average(self.robot_state_history[:,0]/self.linear_max)) - 0.5*final_distance_bonus -0.5*survival_time_bonus  )
-            reward = -self.rewards[1]*( 1 - 0.5*final_distance_bonus -0.5*survival_time_bonus  )
+            reward = -self.rewards[1]*( 1 - 0.5*final_distance_bonus )
 
             done = True
         
@@ -239,12 +239,14 @@ class RobotEnv(gym.Env):
             #peds_distances = self.robot.getPedsDistances()
             #danger_penalty = np.minimum(1 , 0.2* np.sum( 1 - (peds_distances[peds_distances < 2/3*self.lidar_range]/self.lidar_range) )) 
 
-            #reward = self.rewards[0]*int(not saturate_input)*(dist_0-dist_1)/(self.linear_max*self.dt)* int(min(ranges) > 0.25 )*int(dist_0>dist_1)
+            #reward = self.rewards[0]*int(not saturate_input)*(dist_0-dist_1)/(self.linear_max*self.dt)
             #reward = self.rewards[0]*int(not saturate_input)*int( (dist_0-dist_1)>0)*min(ranges)
-            reward = -self.rewards[0]*int(saturate_input)
+            reward = self.rewards[0]*int(not saturate_input)
             done = False
             
         info['robot_map'] = self.robot.chunk(self.n_chunk_sections)
+        
+        #print(reward)
 
         return (ranges, rob_state), reward, done, info
     

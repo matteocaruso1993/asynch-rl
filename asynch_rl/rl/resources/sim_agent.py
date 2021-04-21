@@ -347,17 +347,16 @@ class SimulationAgent:
                         
                         if self.env.env_type == 'RobotEnv' and info['robot_map'] is not None and output_map is not None:
                             self.map_est_loss += torch.sum( (torch.tensor(info['robot_map'])- output_map)**2 )
+                            map_loss_scalar = self.map_est_loss.item()
                         else:
-                            print(info['robot_map'])
-                            print(output_map)
-                            raise('stophere')
+                            map_loss_scalar = 0
                        
                     #if not self.share_conv_layers:
                     #    total_loss = self.advantage_loss + self.loss_policy + self.map_est_loss
                     #else:
                     total_loss = self.advantage_loss/(1e-5+self.advantage_loss.item()) \
                                 + self.loss_policy/(1e-5+abs(self.loss_policy.item())) \
-                                + self.map_est_loss/(1e-5+self.map_est_loss.item())
+                                + self.map_est_loss/(1e-5+map_loss_scalar)
                 
                 total_loss.backward()
 
