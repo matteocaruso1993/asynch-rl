@@ -27,12 +27,12 @@ parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC', 
 
 parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100, help="net version used")
 
-parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10, help="number of training iterations")
+parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 100, help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=True,
                     help="ray_parallelize bool")
 
-parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=10,
+parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=5,
                     help="Number of agents to be used")
 
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
@@ -94,6 +94,9 @@ parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_q
 parser.add_argument("-dab", "--discrete-action-bins", dest="discrete_action_bins",  type=int, default= 16, 
                     help="discrete action bins (n_actions = dab+1)")
 
+parser.add_argument("-dgw", "--dynamic-gradient-weighting", dest="dynamic_grad_weighting",  type=bool, default= False, 
+                    help="dynamic-gradient-weighting for AC update")
+
 # env specific parameters
 
 parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[60, 60, 20] )
@@ -116,14 +119,14 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
         memory_turnover_ratio = 0.1, val_frequency = 10, layers_width= (100,100), reset_optimizer = False, rl_mode = 'AC', \
         gamma = 0.99, beta = 0.001 , difficulty = 0, sim_length_max = 100, \
         continuous_qv_update = False, tot_iterations = 400, rewards = [1,1,1,1], discrete_action_bins = 8, \
-        ray_password = None,  head_address = None, memory_save_load = False):
+        ray_password = None,  head_address = None, memory_save_load = False, dynamic_grad_weighting = False):
     
 
     function_inputs = locals().copy()
     
     env_type = 'CartPole' 
     model_type = 'LinearModel'
-    overwrite_params = ['layers_width', 'discrete_action_bins']
+    overwrite_params = ['layers_width', 'discrete_action_bins', 'dynamic_grad_weighting']
     
     # trick used to resume epsilon status if not declared explicitly
     if epsilon == -1:
@@ -167,7 +170,8 @@ def main(net_version = 0, n_iterations = 5, ray_parallelize = False, \
                                          difficulty = difficulty, learning_rate = learning_rate, sim_length_max = sim_length_max, 
                                          tot_iterations = tot_iterations, memory_turnover_ratio = memory_turnover_ratio, \
                                          gamma = gamma, beta_PG = beta , val_frequency = val_frequency, layers_width= layers_width,\
-                                         continuous_qv_update = continuous_qv_update, memory_save_load = memory_save_load)
+                                         continuous_qv_update = continuous_qv_update, memory_save_load = memory_save_load, \
+                                         dynamic_grad_weighting = dynamic_grad_weighting)
 
     rl_env.resume_epsilon = resume_epsilon
 
@@ -204,7 +208,8 @@ if __name__ == "__main__":
                 layers_width= args.layers_list, reset_optimizer = args.reset_optimizer, rl_mode = args.rl_mode, \
                 gamma = args.gamma, beta = args.beta, continuous_qv_update = args.continuous_qv_update,\
                 tot_iterations = args.tot_iterations, discrete_action_bins = args.discrete_action_bins, \
-                head_address = args.head_address, ray_password = args.ray_password, memory_save_load = args.memory_save_load )
+                head_address = args.head_address, ray_password = args.ray_password, memory_save_load = args.memory_save_load ,\
+                dynamic_grad_weighting = args.dynamic_grad_weighting)
     
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)

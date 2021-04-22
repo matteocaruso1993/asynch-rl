@@ -352,11 +352,12 @@ class SimulationAgent:
                             map_loss_scalar = 0
                        
                     #if not self.share_conv_layers:
-                    #    total_loss = self.advantage_loss + self.loss_policy + self.map_est_loss
+                    total_loss = self.advantage_loss + self.loss_policy + self.map_est_loss
                     #else:
-                    total_loss = self.advantage_loss/(1e-5+self.advantage_loss.item()) \
+                    """total_loss = self.advantage_loss/(1e-5+self.advantage_loss.item()) \
                                 + self.loss_policy/(1e-5+abs(self.loss_policy.item())) \
                                 + self.map_est_loss/(1e-5+map_loss_scalar)
+                    """
                 
                 total_loss.backward()
 

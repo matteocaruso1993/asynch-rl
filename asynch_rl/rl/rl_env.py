@@ -57,8 +57,14 @@ class Multiprocess_RL_Environment:
                  memory_turnover_ratio = 0.2, val_frequency = 10, bashplot = False, layers_width= (5,5), \
                  rewards = np.ones(5), env_options = {}, share_conv_layers = False, 
                  beta_PG = 1 , continuous_qv_update = False, memory_save_load = False, n_partial_outputs = 18, \
-                 flip_grad_sign = False, use_reinforce = False, normalize_layers = False, map_output= False):
+                 flip_grad_sign = False, use_reinforce = False, normalize_layers = False, map_output= False,\
+                     dynamic_grad_weighting  = False):
         
+        # dynamical gradient weighting      
+        self.dynamic_grad_weighting = dynamic_grad_weighting
+        self.ma_reward = 0
+        self.minimum_reward = 0
+        self.ma_coeff = 0.99
 
         self.n_partial_outputs = n_partial_outputs
         self.map_output = map_output
@@ -767,6 +773,30 @@ class Multiprocess_RL_Environment:
 
 
     ##################################################################################
+    def dynamic_grad_weight(self, partial_log):
+        """ calculate dynamic weights for gradient accumulation"""
+
+        current_reward = partial_log[0,1]
+        self.minimum_reward = min(self.minimum_reward, current_reward)
+        rew_plus = current_reward - self.minimum_reward
+        
+        ma_reward_new = self.ma_coeff*self.ma_reward + (1-self.ma_coeff)*rew_plus
+
+        
+        grad_weight_v = min(100, int(self.ma_reward > 0) * ( int(self.ma_reward >= rew_plus)*rew_plus/(self.ma_reward+1e-10) + \
+                                                 int(self.ma_reward < rew_plus)*np.exp(rew_plus/(self.ma_reward+1e-10) -1 )  )  )
+
+        grad_weight_pg = 1 + (self.ma_reward - rew_plus)**2/( self.ma_reward**2 + rew_plus**2) 
+        
+        #print(grad_weight_pg, grad_weight_v)
+
+        
+        self.ma_reward = ma_reward_new
+
+        return grad_weight_pg, grad_weight_v 
+
+
+    ##################################################################################
     def runAC_Parallelized(self):
         """ parallelized implementation of single iteration"""
         
@@ -837,17 +867,22 @@ class Multiprocess_RL_Environment:
                             else:
                                 total_log = np.append(total_log, partial_log, axis = 0)
                             total_runs += single_runs
+                            
+                            if self.dynamic_grad_weighting:
+                                grad_weight_pg, grad_weight_v = self.dynamic_grad_weight(partial_log)
+                            else:
+                                grad_weight_pg, grad_weight_v = (1,1)
 
                             temp_pg_loss, temp_entropy, temp_advantage = self.update_training_variables(partial_log, \
                                     policy_loss_i, pg_entropy_i, loss_map_i if self.map_output else advantage_i, temp_pg_loss, temp_entropy, temp_advantage)
                             # update common model gradient
                             for net1,net2 in zip( grad_dict_pg.items() , self.model_pg.named_parameters() ):
                                 if torch.is_tensor(net1[1]):
-                                    net2[1].grad += net1[1].clone()
+                                    net2[1].grad += grad_weight_pg*net1[1].clone()
                             if self.rl_mode == 'AC':
                                 for net1,net2 in zip( grad_dict_v.items() , self.model_v.named_parameters() ):
                                     if torch.is_tensor(net1[1]):
-                                        net2[1].grad += net1[1].clone()
+                                        net2[1].grad += grad_weight_v*net1[1].clone()
                         
                             if self.rl_mode != 'AC' and internal_memory_fill_ratio > 0.2:
                                 self.shared_memory.addMemoryBatch( ray.get(agent.emptyLocalMemory.remote()) )
@@ -863,7 +898,8 @@ class Multiprocess_RL_Environment:
                     ray.get(task_replacement[i])
                     task_replacement[i] = None
                     
-            print(f'simulated trajectories: {n_trajectories}')
+            if self.env_type == 'RobotEnv':
+                print(f'simulated trajectories: {n_trajectories}')
                             
             for net1,net2 in zip( self.model_pg.named_parameters() , self.model_v.named_parameters() ):    
                 net1[1].grad/= n_trajectories
@@ -913,7 +949,9 @@ class Multiprocess_RL_Environment:
             
         self.display_progress(total_log)
         print('')
-
+        
+        print(f'moving average of reward: {round(self.ma_reward + self.minimum_reward,2)}')
+        
         if self.unstable_model[0]:
             if not all(self.unstable_model):
                 print('@@@@@@@@@@@@@@@@@ WARNING @@@@@@@@@@@@@@@@@@@')

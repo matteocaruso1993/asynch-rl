@@ -27,11 +27,11 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 
-parser.add_argument("-v", "--version", dest="net_version", type = int, default= 920 , help="training version")
+parser.add_argument("-v", "--version", dest="net_version", type = int, default= 503 , help="training version")
 
-parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 300 , help="iteration")
+parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 117 , help="iteration")
 
-parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type = bool, default= True , help="simulate instance")
+parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type = bool, default= False , help="simulate instance")
 
 parser.add_argument("-d", "--difficulty"   , dest="difficulty"  , type = int, default= 0 , help="difficulty")
 
@@ -78,7 +78,8 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0):
     rl_env = Multiprocess_RL_Environment(env_type, model_type, net_version, rl_mode=local_vars['rl_mode'] , ray_parallelize=False, \
                                          move_to_cuda=False, n_frames = local_vars['n_frames'], show_rendering = True, discr_env_bins=2,\
                                         difficulty= difficulty, map_output = local_vars['map_output'], \
-                                          layers_width = local_vars['layers_width'], normalize_layers = local_vars['normalize_layers']  ) #, \
+                                          layers_width = local_vars['layers_width'], normalize_layers = local_vars['normalize_layers'] ,\
+                                              rewards=local_vars['rewards']) #, \
                                       #    #replay_memory_size = 500, N_epochs = 100)
     
     

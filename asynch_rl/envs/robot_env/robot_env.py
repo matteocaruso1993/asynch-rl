@@ -70,7 +70,7 @@ class RobotEnv(gym.Env):
     #####################################################################################################
     def __init__(self, lidar_n_rays = 135, \
                  collision_distance = 0.7, visualization_angle_portion = 0.5, lidar_range = 10,\
-                 v_linear_max = 1.5 , v_angular_max = 2 , rewards = [1,100,40], max_v_x_delta = .5, \
+                 v_linear_max = 1 , v_angular_max = 1 , rewards = [1,100,40], max_v_x_delta = .5, \
                  initial_margin = .3,    max_v_rot_delta = .5, dt = None, normalize_obs_state = True, \
                      sim_length = 200, difficulty = 0, scan_noise = [0.005,0.002], n_chunk_sections = 18):
 
@@ -205,7 +205,7 @@ class RobotEnv(gym.Env):
             #survival_time_bonus = self.duration/self.sim_length * (np.average(self.robot_state_history[:,0])/self.linear_max )
             #movement_bonus = 2*np.average(self.robot_state_history[:,0]/self.linear_max)-1
             #reward = -self.rewards[1]*( 0.75 + 0.25*(1- np.average(self.robot_state_history[:,0]/self.linear_max)) - 0.5*final_distance_bonus -0.5*survival_time_bonus  )
-            reward = -self.rewards[1]*( 1 - 0.5*final_distance_bonus )
+            reward = -self.rewards[1]*( 1 - final_distance_bonus )
 
             done = True
         
@@ -239,9 +239,8 @@ class RobotEnv(gym.Env):
             #peds_distances = self.robot.getPedsDistances()
             #danger_penalty = np.minimum(1 , 0.2* np.sum( 1 - (peds_distances[peds_distances < 2/3*self.lidar_range]/self.lidar_range) )) 
 
-            #reward = self.rewards[0]*int(not saturate_input)*(dist_0-dist_1)/(self.linear_max*self.dt)
-            #reward = self.rewards[0]*int(not saturate_input)*int( (dist_0-dist_1)>0)*min(ranges)
-            reward = self.rewards[0]*int(not saturate_input)
+            #reward = self.rewards[0]*int(not saturate_input)*
+            reward = self.rewards[0]*( (dist_0-dist_1)/(self.linear_max*self.dt)  - int(saturate_input)  + (1-min(ranges))*(dot_x/self.linear_max)*int(dist_0>dist_1) )
             done = False
             
         info['robot_map'] = self.robot.chunk(self.n_chunk_sections)
