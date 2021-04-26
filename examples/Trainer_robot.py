@@ -95,7 +95,7 @@ parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=
 parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=bool, default=False,
                     help="reset optimizer")
 
-parser.add_argument("-fr", "--frames-number", dest="n_frames", type=int, default= 10,
+parser.add_argument("-fr", "--frames-number", dest="n_frames", type=int, default= 5,
                     help="number of frames considered for convolutional network")
 
 parser.add_argument("-scl", "--share-conv-layers", dest="share_conv_layers", type=bool, default=False,
@@ -111,9 +111,6 @@ parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_q
 parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=float, default=[.2, 100, 40] )
 
 parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[40, 40, 20] )
-
-parser.add_argument("-fgs", "--flip-gradient-sign", dest="flip_grad_sign", type=bool, default=False,
-                    help="flip gradient sign in REINFORCE algorithm")
 
 parser.add_argument("-ur", "--use-reinforce", dest="use_reinforce", type=bool, default=False,
                     help="use REINFORCE instead of AC")
@@ -134,7 +131,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
             share_conv_layers = False, n_frames = 4, rl_mode = 'DQL', beta = 0.001, \
                 gamma = 0.99,  continuous_qv_update = False, tot_iterations = 400, layers_width= (100,100), \
                     ray_password = None,  head_address = None, memory_save_load = False, \
-                        flip_grad_sign = False, use_reinforce = False, normalize_layers = False, map_output = False):
+                        use_reinforce = False, normalize_layers = False, map_output = False):
 
 
     function_inputs = locals().copy()
@@ -182,8 +179,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
                         ray_parallelize=ray_parallelize, move_to_cuda=True, n_frames = n_frames, \
                         replay_memory_size = replay_memory_size, n_agents = agents_number,\
                         tot_iterations = tot_iterations, discr_env_bins = 2 , \
-                        use_reinforce = use_reinforce, flip_grad_sign = flip_grad_sign, \
-                        epsilon_annealing_factor=epsilon_annealing_factor,  layers_width= layers_width,\
+                        use_reinforce = use_reinforce,  epsilon_annealing_factor=epsilon_annealing_factor,  layers_width= layers_width,\
                         N_epochs = n_epochs, epsilon = epsilon[0] , epsilon_min = epsilon[1] , rewards = rewards, \
                         mini_batch_size = mini_batch_size, share_conv_layers = share_conv_layers, \
                         difficulty = difficulty, learning_rate = learning_rate, sim_length_max = sim_length_max, \
@@ -238,7 +234,7 @@ if __name__ == "__main__":
                beta = args.beta, gamma = args.gamma, continuous_qv_update = args.continuous_qv_update,\
                tot_iterations = args.tot_iterations, head_address = args.head_address, ray_password = args.ray_password ,\
                memory_save_load = args.memory_save_load, layers_width= args.layers_list, normalize_layers = args.normalize_layers, \
-               use_reinforce = args.use_reinforce,   flip_grad_sign = args.flip_grad_sign, n_frames = args.n_frames, \
+               use_reinforce = args.use_reinforce,   n_frames = args.n_frames, \
                    map_output = args.map_output)
 
     current_folder = os.path.abspath(os.path.dirname(__file__))

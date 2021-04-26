@@ -57,7 +57,7 @@ class Multiprocess_RL_Environment:
                  memory_turnover_ratio = 0.2, val_frequency = 10, bashplot = False, layers_width= (5,5), \
                  rewards = np.ones(5), env_options = {}, share_conv_layers = False, 
                  beta_PG = 1 , continuous_qv_update = False, memory_save_load = False, n_partial_outputs = 18, \
-                 flip_grad_sign = False, use_reinforce = False, normalize_layers = False, map_output= False,\
+                 use_reinforce = False, normalize_layers = False, map_output= False,\
                      dynamic_grad_weighting  = False):
         
         # dynamical gradient weighting      
@@ -69,8 +69,7 @@ class Multiprocess_RL_Environment:
         self.n_partial_outputs = n_partial_outputs
         self.map_output = map_output
         self.normalize_layers = normalize_layers
-        
-        self.flip_grad_sign = flip_grad_sign
+
         self.use_reinforce = use_reinforce
         
         self.continuous_qv_update = continuous_qv_update
@@ -402,11 +401,11 @@ class Multiprocess_RL_Environment:
         if self.ray_parallelize:
             for i in range(self.n_agents_discr):
                 self.sim_agents_discr.append(Ray_SimulationAgent.remote(i, self.generateDiscrActSpace_GymStyleEnv(), rl_mode = self.rl_mode,\
-                                                                    flip_gradient_sign = self.flip_grad_sign, use_reinforce = self.use_reinforce ) )  
+                                                                    use_reinforce = self.use_reinforce ) )  
             #for i in range(self.n_agents_contn):
             #    self.sim_agents_contn.append(Ray_SimulationAgent.remote(i, self.generateContnsHybActSpace_GymStyleEnv(), rl_mode = self.rl_mode ) )                 
         else:
-            self.sim_agents_discr.append(SimulationAgent(0, self.generateDiscrActSpace_GymStyleEnv(), rl_mode = self.rl_mode, flip_gradient_sign = self.flip_grad_sign ) )  #, ,self.model
+            self.sim_agents_discr.append(SimulationAgent(0, self.generateDiscrActSpace_GymStyleEnv(), rl_mode = self.rl_mode ) )  #, ,self.model
             #self.sim_agents_contn.append(SimulationAgent(0, self.generateContnsHybActSpace_GymStyleEnv(), rl_mode = self.rl_mode) )  #, ,self.model
                 #, self.model, self.n_frames, self.move_to_cuda, self.net_name, self.epsilon))            
         self.updateAgentsAttributesExcept() #,'model')

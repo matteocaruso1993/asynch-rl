@@ -293,8 +293,12 @@ class ConvModel(nnBase):
         x_test, x_test_1 = self.build_generic_input()
 
         # convolutional layers
-        self.maxpool_3 = nn.MaxPool2d(kernel_size=(3,3) , stride=(1,2) )
-        self.maxpool_5 = nn.MaxPool2d(kernel_size=(3,5), stride=(1,3))
+        # 4<= n_frames <= 10
+        kernel_size_3,kernel_size_5 = [None,None,None,None,[2,2],[2,3],[2,3],[2,3],[2,3],[3,3],[3,3]][self.n_frames]
+        
+        self.maxpool_3 = nn.MaxPool2d(kernel_size=(kernel_size_3,3) , stride=(1,2) )
+        self.maxpool_5 = nn.MaxPool2d(kernel_size=(kernel_size_5,5), stride=(1,3))
+
         for i in range(len(self.channels)):
             if i == 0:
                 layer = nn.Conv2d(in_channels= self.channels_in, out_channels=self.channels[i], \
@@ -306,6 +310,7 @@ class ConvModel(nnBase):
             layer_name = 'conv'+str(i+1)
             setattr(self , layer_name , layer )
             x_test =  layer(x_test)
+            
             if i == 0:
                 x_test =  self.maxpool_5(x_test)
             else:

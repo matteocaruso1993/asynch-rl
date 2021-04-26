@@ -497,7 +497,7 @@ def s_like_path():
         for i in range(30):
             state , reward , done, info = env.step([0.1,0.02])
             tot_steps += 1
-            env.render(mode='plot')
+            #env.render(mode='plot')
             #print(round(reward,3), done)
             if done:
                 break
@@ -506,7 +506,7 @@ def s_like_path():
             for i in range(30):
                 state , reward , done, info= env.step([0.1,-0.04])
                 tot_steps += 1
-                env.render(mode='plot')
+                #env.render(mode='plot')
                 #print(round(reward,3), done)
                 if done:
                     break

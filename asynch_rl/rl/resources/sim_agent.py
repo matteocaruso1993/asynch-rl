@@ -40,7 +40,7 @@ class SimulationAgent:
     def __init__(self,sim_agent_id, env = None, rl_mode = 'DQL', model_qv= None, model_pg = None,model_v = None,\
                  n_frames = 1, net_name = 'no_name' ,epsilon = 0.9, ctrlr_probability = 0, save_movie = False, \
                  max_consecutive_env_fails = 3, max_steps_single_run = 200, show_rendering = True, 
-                 flip_gradient_sign = False, use_reinforce = False, \
+                 use_reinforce = False, \
                  tot_iterations = 1000, live_plot = False, verbosity = 0 , noise_sd = 0.05, \
                  movie_frequency = 10, max_n_single_runs = 1000, save_sequences  = False, reward_history_span = 200):
                 
@@ -48,8 +48,7 @@ class SimulationAgent:
         self.reward_history_span = reward_history_span
         
         self.prob_correction = 0.2 # probability of "correction" of "non sense random inputs" generated
-        
-        self.flip_gradient_sign = flip_gradient_sign
+
         self.use_reinforce = use_reinforce
         
         self.beta_PG = 1 
@@ -333,12 +332,7 @@ class SimulationAgent:
                     else:
                         advantage = R - self.traj_state_value[-1-i]
 
-                    if self.flip_gradient_sign:
-                        self.loss_policy += advantage*self.traj_log_prob[-1-i] - self.beta_PG*self.traj_entropy[-1-i]
-                        if DEBUG:
-                            print('sign changed')
-                    else:
-                        self.loss_policy += -advantage*self.traj_log_prob[-1-i] - self.beta_PG*self.traj_entropy[-1-i]
+                    self.loss_policy += -advantage*self.traj_log_prob[-1-i] - self.beta_PG*self.traj_entropy[-1-i]
                         
                     #self.advantage_loss += (  R - torch.max(self.model_qv(self.state_sequences[-1-i].float())) )**2
                     if self.rl_mode == 'AC':
