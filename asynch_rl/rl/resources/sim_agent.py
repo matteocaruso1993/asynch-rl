@@ -142,12 +142,6 @@ class SimulationAgent:
             failed_iteration = False,
             successful_runs = 0)
 
-    """
-    ##################################################################################        
-    # required since ray wrapper doesn't allow accessing attributes
-    def hasInternalMemoryInfo(self, threshold = 0):
-        return self.internal_memory.fill_ratio >= threshold
-    """
 
     ##################################################################################        
     # required since ray wrapper doesn't allow accessing attributes
@@ -345,13 +339,13 @@ class SimulationAgent:
                         else:
                             map_loss_scalar = 0
                        
-                    #if not self.share_conv_layers:
-                    total_loss = self.advantage_loss + self.loss_policy + self.map_est_loss
-                    #else:
-                    """total_loss = self.advantage_loss/(1e-5+self.advantage_loss.item()) \
+                    if not self.share_conv_layers:
+                        total_loss = self.advantage_loss + self.loss_policy + self.map_est_loss
+                    else:
+                        total_loss = self.advantage_loss/(1e-5+self.advantage_loss.item()) \
                                 + self.loss_policy/(1e-5+abs(self.loss_policy.item())) \
                                 + self.map_est_loss/(1e-5+map_loss_scalar)
-                    """
+                 
                 
                 total_loss.backward()
 
@@ -586,7 +580,8 @@ class SimulationAgent:
         ################# 
         if not self.agent_run_variables['failed_iteration']:
 
-            self.renderAnimation(action, done, reward_np)
+            if self.show_rendering:
+                self.renderAnimation(action, done, reward_np)
             ## restructure new data
             state_1 = self.env.get_net_input(state_obs_1, state_tensor_z1 = state )
 
@@ -685,11 +680,7 @@ class SimulationAgent:
         # PG only uses greedy approach            
         if 'AC' in self.rl_mode:
             prob_distrib = self.model_pg.cpu()(state)
-            #qvals = self.model_qv.cpu()(state.float())
 
-            #if use_NN:
-            #    action_index = torch.argmax(prob_distrib)
-            #else:
             try:
                 action_index = torch.multinomial(prob_distrib, 1, replacement=True)
             except Exception:
@@ -785,27 +776,7 @@ def prob_action_idx_qval(qvals):
         p[i] = 2.**(-c-1)
     return torch.multinomial(torch.tensor(p), 1, replacement=True).squeeze(0)
 
-#%%
-"""
-from envs.gymstyle_envs import discr_GymStyle_Platoon
-from nns.custom_networks import LinearModel
 
-if __name__ == "__main__":
-    #env = SimulationAgent(0, env = GymStyle_Robot(n_bins_act=2), model = ConvModel())
-    pla_env = GymStyle_Platoon(n_bins_act=[10,1])
-    
-    agent = SimulationAgent(0, env=pla_env, n_frames=1  , model = \
-                LinearModel('LinearModel_test', 0.001, pla_env.get_actions_structure(), \
-                            pla_env.get_observations_structure(), 20, 50, 50, 20) ) 
-    agent.max_steps_single_run = 200
-    
-    
-    agent.save_movie = False
-    agent.movie_frequency = 1000
-    agent.tot_iterations = 200
-    agent.run_synch(pctg_ctrl=1)
-    agent.env.env.plot_graphs()
-"""
 
 #%%
 
@@ -826,24 +797,3 @@ if __name__ == "__main__":
     agent.tot_iterations = 100
     agent.run_synch()
 
-
-#%%
-
-"""
-from envs.gymstyle_envs import GymStyle_CartPole
-from nns.custom_networks import LinearModel
-
-
-if __name__ == "__main__":
-    #env = SimulationAgent(0, env = GymStyle_Robot(n_bins_act=4), model = ConvModel())
-    gym_env = GymStyle_CartPole(n_bins_act=40)
-    
-    agent = SimulationAgent(0, env=gym_env  , model = LinearModel('LinearModel_test', gym_env.get_actions_structure(), gym_env.get_observations_structure(), 10, 10) )
-    agent.max_steps_single_run = 2000
-    
-    agent.movie_frequency = 1
-    agent.tot_iterations = 1000
-    agent.run(use_controller = True)
-    agent.env.env.cartpole.plot_graphs(dt=agent.env.env.dt, save = False, no_norm = False, ml_ctrl = True)
-
-"""
