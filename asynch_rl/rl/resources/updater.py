@@ -140,8 +140,13 @@ class RL_Updater():
         
     
     #################################################
-    def qValue_loss_update(self, state_batch, action_batch, reward_batch, state_1_batch, done_batch):
+    def qValue_loss_update(self, state_batch, action_batch, reward_batch, state_1_batch, done_batch, info_batch):
         """ DQL update law """
+        
+        map_output=False
+        if hasattr(self.model_qv, 'partial_outputs'):
+            if self.model_qv.partial_outputs:
+                map_output=True
         
         if self.move_to_cuda:  # put on GPU if CUDA is available
             if isinstance(state_batch,tuple):
@@ -166,11 +171,15 @@ class RL_Updater():
         # extract Q-value
         # calculates Q value corresponding to all actions, then selects those corresponding to the actions taken
         self.model_qv.optimizer.zero_grad()
-        q_vals = self.model_qv(state_batch)
+        q_vals, map_out = self.model_qv(state_batch, True)
         
         q_value = torch.sum( q_vals * action_batch, dim=1)
         y_batch = y_batch.detach()
         loss_qval = self.model_qv.criterion_MSE(q_value, y_batch)
+        
+        if map_output:
+            loss_map = self.model_qv.criterion_MSE(map_out, info_batch.cuda())
+            loss_qval = loss_qval/(1e-5+loss_qval.item()) + loss_map/(1e-5+loss_map.item())
         
         loss_qval.backward()
         """

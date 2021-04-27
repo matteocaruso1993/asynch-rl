@@ -692,13 +692,15 @@ class Multiprocess_RL_Environment:
             
             partial_log, single_runs , successful_runs, internal_memory_fill_ratio , pg_info = self.sim_agents_discr[0].run_synch()
             
+            valid_model = True
             # implementation for A3C
             if 'AC' in self.rl_mode :
                 grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i, loss_map_i ,  valid_model = pg_info
                 if valid_model:
                     invalid_occurred = False
                     temp_pg_loss, temp_entropy, temp_advantage = self.update_training_variables(partial_log, \
-                            policy_loss_i, pg_entropy_i, advantage_i, temp_pg_loss, temp_entropy, temp_advantage)
+                            policy_loss_i, pg_entropy_i, loss_map_i if self.map_output else advantage_i,\
+                                temp_pg_loss, temp_entropy, temp_advantage)
                     
                     # update common model gradient
                     for net1,net2 in zip( grad_dict_pg.items() , self.model_pg.named_parameters() ):
@@ -741,7 +743,7 @@ class Multiprocess_RL_Environment:
                     total_log = np.append(total_log, partial_log, axis = 0)
                 total_runs += single_runs
             
-                if self.rl_mode=='AC' and not self.shared_memory.isFull() and internal_memory_fill_ratio > 0.25 :
+                if not self.shared_memory.isFull() and internal_memory_fill_ratio > 0.25 :
                     self.shared_memory.addMemoryBatch(self.sim_agents_discr[0].emptyLocalMemory() )
                     
                 if (self.shared_memory.isFull() and self.rl_mode!='AC') or (self.rl_mode=='AC' and np.sum(total_log[:,0]) >= self.memory_turnover_size):

@@ -151,4 +151,6 @@ def unpack_batch(batch):
     done_batch = (tuple(element[4] for element in batch) )
     action_idx_batch = (tuple(element[5] for element in batch) )
 
-    return state_batch, action_batch, reward_batch, state_1_batch, done_batch, action_idx_batch
+    info_batch  = torch.cat(tuple(element[6] for element in batch))
+
+    return state_batch, action_batch, reward_batch, state_1_batch, done_batch, info_batch , action_idx_batch

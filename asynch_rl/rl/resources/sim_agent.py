@@ -293,9 +293,9 @@ class SimulationAgent:
         valid = (info['outcome'] != 'fail')
         
         if valid:
-            loss_pg_i = 0
-            loss_v_i = 0
-            loss_map_i = 0
+            loss_pg = 0
+            loss_v = 0
+            loss_map = 0
             
             advantage = torch.tensor(0)
             entropy = torch.sum(-torch.log(prob)*prob)
@@ -339,25 +339,25 @@ class SimulationAgent:
                         else:
                             map_loss_scalar = 0
                        
-                    if not self.share_conv_layers:
-                        total_loss = self.advantage_loss + self.loss_policy + self.map_est_loss
-                    else:
-                        total_loss = self.advantage_loss/(1e-5+self.advantage_loss.item()) \
-                                + self.loss_policy/(1e-5+abs(self.loss_policy.item())) \
-                                + self.map_est_loss/(1e-5+map_loss_scalar)
+                if self.share_conv_layers:
+                    total_loss = self.advantage_loss/(1e-5+self.advantage_loss.item()) \
+                            + self.loss_policy/(1e-5+abs(self.loss_policy.item())) \
+                            + self.map_est_loss/(1e-5+map_loss_scalar)
+                else:
+                    total_loss = self.advantage_loss + self.loss_policy + self.map_est_loss
                  
                 
                 total_loss.backward()
 
-                loss_pg_i = np.round(self.loss_policy.item(),3)
+                loss_pg = np.round(self.loss_policy.item()/len(self.traj_rewards),3)
                 if self.rl_mode == 'AC':
-                    loss_v_i = np.round(self.advantage_loss.item(),3)
+                    loss_v = np.round(self.advantage_loss.item()/len(self.traj_rewards),3)
                     if torch.is_tensor(self.map_est_loss):
-                        loss_map_i = np.round(self.map_est_loss.item(),3)
+                        loss_map = np.round(self.map_est_loss.item()/len(self.traj_rewards),3)
                                         
                 self.initialize_pg_lists()
 
-            return loss_pg_i, entropy.item(), loss_v_i, loss_map_i
+            return loss_pg, entropy.item(), loss_v, loss_map
 
         else:
             self.loss_policy = 0
@@ -418,14 +418,13 @@ class SimulationAgent:
             self.agent_run_variables['successful_runs'] += 1
             
         if 'AC' in self.rl_mode:
-            loss_pg_i, entropy_i, advantage_i, loss_map_i = self.pg_calculation(reward_np, state, prob_distrib, action_index, done, info )
-            loss_pg += loss_pg_i
-            force_stop = np.isnan(loss_pg_i)
+            loss_pg, entropy_i, advantage, loss_map = self.pg_calculation(reward_np, state, prob_distrib, action_index, done, info )
+            force_stop = np.isnan(loss_pg)
             self.entropy_hist.append(entropy_i)
-            self.advantage_hist.append(advantage_i)
-            self.loss_map_hist.append(loss_map_i)
             if done:
                 self.pg_loss_hist.append(loss_pg)
+                self.advantage_hist.append(advantage)
+                self.loss_map_hist.append(loss_map)
         
         if self.verbosity > 0:
             self.displayStatus()                    
@@ -470,7 +469,7 @@ class SimulationAgent:
 
                 if not nan_grad:
                     pg_info = (grad_dict_pg, grad_dict_v, np.average(self.pg_loss_hist) , \
-                           np.average(self.entropy_hist),np.average(self.advantage_hist), \
+                           round(np.average(self.entropy_hist),4),np.average(self.advantage_hist), \
                            np.average(self.loss_map_hist), True )
                 else:
                     pg_info = (None,None,None,None,None,None,False)
@@ -589,8 +588,11 @@ class SimulationAgent:
             reward = torch.from_numpy(np.array([reward_np], dtype=np.float32)).unsqueeze(0)
             
             if self.rl_mode != 'AC':
+                info_out = None
+                if 'robot_map' in info:
+                    info_out = torch.tensor(info['robot_map']).unsqueeze(0).float()
                 # build "new transition" and add it to replay memory
-                new_transition = (state, action, reward, state_1, done, action_index)
+                new_transition = (state, action, reward, state_1, done, action_index, info_out)
                 self.internal_memory.addInstance(new_transition)
             
             if not 'outcome' in info:
