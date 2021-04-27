@@ -36,15 +36,20 @@ class Ray_RL_Updater(RL_Updater):
         
         self.sim_complete = stop_update = False
         total_loss = []
+        array_av_loss_map = []
+        
         epochs = 0
         
         if self.memory_pool is None:
             raise("memory pool is None object!!")
         
         print(f'Asynchronous update started: state_value')
+
         while not stop_update:
 
-            loss = self.qValue_loss_update(*self.memory_pool.extractMinibatch()[:-1])
+            loss, av_loss_map = self.qValue_loss_update(*self.memory_pool.extractMinibatch()[:-1])
+            if av_loss_map is not None:
+                array_av_loss_map.append(av_loss_map)
             total_loss.append(loss.cpu().item())
             epochs += 1
 
@@ -56,7 +61,11 @@ class Ray_RL_Updater(RL_Updater):
         print(f'Training iteration completed. n_epochs: {epochs}')
         self.model_qv.model_version +=1
         
-        return total_loss
+        av_map_loss_out = None
+        if len(array_av_loss_map) > 0:
+            av_map_loss_out = round(sum(array_av_loss_map)/len(array_av_loss_map),3)
+        
+        return total_loss, av_map_loss_out
         
 
 

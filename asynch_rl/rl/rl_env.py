@@ -102,6 +102,7 @@ class Multiprocess_RL_Environment:
             self.global_cum_reward = []
             self.global_duration = []
             self.global_advantage = []
+            self.global_map_loss = []
         
         self.training_session_number = 0 #by default ==0, if saved net is loaded this will be changed
         self.update_net_name()
@@ -231,7 +232,7 @@ class Multiprocess_RL_Environment:
         
         #######################
         # empty initializations
-        self.qval_loss_history = self.qval_loss_hist_iteration = self.val_history = None
+        self.qval_loss_history = self.qval_loss_hist_iteration = self.val_history = self.av_map_loss = None
         self.nn_updater = None
         self.memory_stored = None
         
@@ -243,11 +244,11 @@ class Multiprocess_RL_Environment:
         self.log_df = pd.DataFrame(columns=['training session','epsilon', 'total single-run(s)',\
                                     'average single-run duration', 'average single-run reward' , 'av. q-val loss', \
                                     'av. policy loss','N epochs', 'memory size', 'split random/noisy','split conventional',\
-                                        'split NN', 'pg_entropy'])
+                                        'split NN', 'pg_entropy', 'average map loss'])
             
         self.session_log = {'total runs':None, 'steps since start': None, \
                             'cumulative reward':None, 'qval_loss':None, \
-                                'policy_loss':None, 'pg_entropy' : None}
+                                'policy_loss':None, 'pg_entropy' : None, 'map_loss':None}
             
         self.splits = np.array([np.nan, np.nan, np.nan])
         # splits: random/noisy, conventional, NN
@@ -644,20 +645,24 @@ class Multiprocess_RL_Environment:
           
 
     ##################################################################################
-    def update_training_variables(self, partial_log, policy_loss_i, pg_entropy_i, advantage_i, temp_pg_loss, temp_entropy, temp_advantage):
+    def update_training_variables(self, partial_log, policy_loss_i, pg_entropy_i, \
+                                  advantage_i, loss_map_i, temp_pg_loss, temp_entropy, \
+                                      temp_advantage, temp_map_loss):
         """ update lists used to display tarining progress"""
         
         self.global_tr_sess_num.append(self.training_session_number)
         self.global_pg_loss.append(policy_loss_i)
         self.global_advantage.append(advantage_i)
+        self.global_map_loss.append(loss_map_i)
         self.global_pg_entropy.append(pg_entropy_i)
         self.global_cum_reward.append(np.average(partial_log[:,1]))
         self.global_duration.append(np.average(partial_log[:,0]))
         temp_pg_loss.append(policy_loss_i)
         temp_entropy.append(pg_entropy_i)
         temp_advantage.append(advantage_i)
+        temp_map_loss.append(loss_map_i)
         
-        return temp_pg_loss, temp_entropy, temp_advantage
+        return temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss
 
 
     ##################################################################################
@@ -680,12 +685,13 @@ class Multiprocess_RL_Environment:
             if self.nn_updater.hasMemoryPool():
 
                 initial_qv_weights = deepcopy(self.nn_updater.getAttributeValue('model_qv')).cpu().state_dict()     
-                self.qval_loss_hist_iteration = self.nn_updater.update_DeepRL()
+                self.qval_loss_hist_iteration, self.av_map_loss = self.nn_updater.update_DeepRL()
                 qv_update_launched = False        
         
         temp_pg_loss = []
         temp_entropy = []
         temp_advantage = []
+        temp_map_loss = []
         
         while True: 
             self.display_progress(total_log)
@@ -698,11 +704,10 @@ class Multiprocess_RL_Environment:
                 grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i, loss_map_i ,  valid_model = pg_info
                 if valid_model:
                     invalid_occurred = False
-                    temp_pg_loss, temp_entropy, temp_advantage = self.update_training_variables(partial_log, \
-                            policy_loss_i, pg_entropy_i, loss_map_i if self.map_output else advantage_i,\
-                                temp_pg_loss, temp_entropy, temp_advantage)
-                    
-                    # update common model gradient
+                    temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss = self.update_training_variables(partial_log, \
+                                    policy_loss_i, pg_entropy_i, advantage_i, loss_map_i, temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss)                    
+
+                        # update common model gradient
                     for net1,net2 in zip( grad_dict_pg.items() , self.model_pg.named_parameters() ):
                         net2[1].grad += net1[1].clone()
                     for net1,net2 in zip( grad_dict_v.items() , self.model_v.named_parameters() ):
@@ -757,7 +762,7 @@ class Multiprocess_RL_Environment:
             self.post_iteration_routine(initial_qv_weights = initial_qv_weights, \
                         initial_pg_weights = initial_pg_weights, initial_v_weights= initial_v_weights, \
                         total_runs= total_runs, total_log= total_log, temp_pg_loss= temp_pg_loss, \
-                        temp_entropy= temp_entropy, temp_advantage = temp_advantage)
+                        temp_entropy= temp_entropy, temp_advantage = temp_advantage, temp_map_loss = temp_map_loss)
 
 
     ##################################################################################
@@ -815,6 +820,7 @@ class Multiprocess_RL_Environment:
         temp_pg_loss = []
         temp_entropy = []
         temp_advantage = []
+        temp_map_loss = []
 
         task_lst = [None for _ in self.sim_agents_discr]
         task_replacement = [None for _ in self.sim_agents_discr]
@@ -874,8 +880,8 @@ class Multiprocess_RL_Environment:
                             else:
                                 grad_weight_pg, grad_weight_v = (1,1)
 
-                            temp_pg_loss, temp_entropy, temp_advantage = self.update_training_variables(partial_log, \
-                                    policy_loss_i, pg_entropy_i, loss_map_i if self.map_output else advantage_i, temp_pg_loss, temp_entropy, temp_advantage)
+                            temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss = self.update_training_variables(partial_log, \
+                                    policy_loss_i, pg_entropy_i, advantage_i, loss_map_i, temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss)
                             # update common model gradient
                             for net1,net2 in zip( grad_dict_pg.items() , self.model_pg.named_parameters() ):
                                 if torch.is_tensor(net1[1]):
@@ -945,7 +951,7 @@ class Multiprocess_RL_Environment:
                 if qv_update_launched:
                     self.nn_updater.sentinel.remote()
                     # after iteration extract data from remote QV update process
-                    self.qval_loss_hist_iteration = np.array(ray.get(updating_process))
+                    self.qval_loss_hist_iteration, self.av_map_loss = np.array(ray.get(updating_process))
                 break
             
         self.display_progress(total_log)
@@ -968,7 +974,7 @@ class Multiprocess_RL_Environment:
         self.post_iteration_routine(initial_qv_weights = initial_qv_weights, \
                     initial_pg_weights = initial_pg_weights, initial_v_weights= initial_v_weights, \
                     total_runs= total_runs, total_log= total_log, temp_pg_loss= temp_pg_loss, \
-                    temp_entropy= temp_entropy, temp_advantage = temp_advantage )
+                    temp_entropy= temp_entropy, temp_advantage = temp_advantage , temp_map_loss = temp_map_loss)
 
 
     ##################################################################################
@@ -1024,7 +1030,7 @@ class Multiprocess_RL_Environment:
                 if qv_update_launched:
                     self.nn_updater.sentinel.remote()
                     # after iteration extract data from remote QV update process
-                    self.qval_loss_hist_iteration = np.array(ray.get(updating_process))
+                    self.qval_loss_hist_iteration, self.av_map_loss = np.array(ray.get(updating_process))
                 break
 
         if not memory_fill_only:        
@@ -1034,15 +1040,21 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     def post_iteration_routine(self, initial_qv_weights = None, initial_pg_weights = None, initial_v_weights= None, \
                                total_runs= None, total_log= None, temp_pg_loss= None, temp_entropy= None, \
-                                   temp_advantage = None):
+                                   temp_advantage = None, temp_map_loss = None):
         """ store data, display intermediate results """
 
-        average_qval_loss = policy_loss = pg_entropy = np.nan
+        average_qval_loss = policy_loss = pg_entropy = map_loss =  np.nan
 
         if initial_qv_weights is not None:
             # 1) compute qv average loss
             average_qval_loss = np.round(np.average(self.qval_loss_hist_iteration), 3)
-            print(f'QV. loss = {average_qval_loss}')
+            print(f'QV loss = {average_qval_loss}')
+            
+            if self.av_map_loss is not None:
+                map_loss = self.av_map_loss
+            
+            print(f'average map loss = {map_loss}')
+            
             # 2) show model differences
             if self.ray_parallelize:
                 current_qv_weights = deepcopy(ray.get(self.nn_updater.get_current_QV_model.remote())).cpu().state_dict()
@@ -1067,11 +1079,11 @@ class Multiprocess_RL_Environment:
             print('')
             print(f'average policy loss : {policy_loss}')
             print(f'average pg entropy  : {np.round(100*pg_entropy/self.max_entropy, 2)}%')
+            if self.map_output:
+                map_loss = np.round(sum(temp_map_loss)/(1e-5+len(temp_map_loss)), 3)
+                print(f'average map-output loss : {map_loss}')
             if self.rl_mode == 'AC':
-                if self.map_output:
-                    print(f'average map-output loss : {adv_loss}')
-                else:   
-                    print(f'average adv loss : {adv_loss}')
+                print(f'average adv loss : {adv_loss}')
             
         print('')
         print(f'average cum-reward  : {np.round(np.average(total_log[:,1]),5)}')
@@ -1079,7 +1091,7 @@ class Multiprocess_RL_Environment:
         #print(total_log[:,1])
     
         #3) store computed losses
-        self.get_log(total_runs, total_log, qval_loss = average_qval_loss, policy_loss = policy_loss , pg_entropy = pg_entropy)
+        self.get_log(total_runs, total_log, qval_loss = average_qval_loss, policy_loss = policy_loss , pg_entropy = pg_entropy, map_loss = map_loss)
 
 
     ##################################################################################
@@ -1088,7 +1100,7 @@ class Multiprocess_RL_Environment:
         #total log includes (for all runs): [0] steps since start [1] cumulative reward
 
         for k,v in kwargs.items():
-            self.session_log[k] = np.round( v , 2)
+            self.session_log[k] = np.round( v , 3)
         
         # total runs, steps since start, cumulative reward, average loss / total_successful_runs, entropy (pg training only)
         self.session_log['total runs'] = int(total_runs)
@@ -1375,7 +1387,7 @@ class Multiprocess_RL_Environment:
                        self.session_log['steps since start'] , self.session_log['cumulative reward'], self.session_log['qval_loss'],\
                            self.session_log['policy_loss'], self.n_epochs, self.replay_memory_size, \
                                self.splits[0], self.splits[1], self.splits[2] ,  \
-                                   self.session_log['pg_entropy']   ]
+                                   self.session_log['pg_entropy'] , self.session_log['map_loss']  ]
                 
             self.log_df.loc[len(self.log_df)] = new_row
         
@@ -1422,58 +1434,79 @@ class Multiprocess_RL_Environment:
         # 0: 'training session', 1: 'epsilon', 2: 'total single-run(s)',
         # 3: 'average single-run duration', 4: 'average single-run reward' , 5: 'av. q-val loss', 
         # 6: 'av. policy loss', 7: 'N epochs', 8: 'memory size', 9: 'split random/noisy',
-        # 10:'split conventional', 11: 'split NN', 12: 'pg_entropy'] )        
+        # 10:'split conventional', 11: 'split NN', 12: 'pg_entropy', 13: 'average map loss'] )        
 
         indicators = self.log_df.columns
 
-        ######################################
-        # figsize=(12, 12)
-        fig = plt.figure()
-        ax1 = fig.add_subplot(311)
-        ax2 = fig.add_subplot(312)
-        ax3 = fig.add_subplot(313)
-        
-        # 'total single-run(s)'
-        ax1.plot(self.log_df.iloc[init_epoch:][indicators[3]])
-        ax1.legend([indicators[3]])
-        
+        fig0 = plt.figure()
+        ax1_0 = fig0.add_subplot(211)
+        ax2_0 = fig0.add_subplot(212)
+
         # 'average single-run duration'
-        ax2.plot(self.log_df.iloc[init_epoch:][indicators[4]])
-        ax2.legend([indicators[4]])
+        ax1_0.plot(self.log_df.iloc[init_epoch:][indicators[3]])
+        ax1_0.legend([indicators[3]])
         
-        # train splits
-        self.log_df.iloc[init_epoch:][['split random/noisy','split conventional','split NN']].plot.area(stacked=True, ax = ax3)
+        # 'average single-run reward'
+        ax2_0.plot(self.log_df.iloc[init_epoch:][indicators[4]])
+        ax2_0.legend([indicators[4]])
+
+
+        ######################################
+        if self.rl_mode == 'DQL':
+
+            # figsize=(12, 12)
+            fig = plt.figure()
+            ax1 = fig.add_subplot(311)
+            ax2 = fig.add_subplot(312)
+            ax3 = fig.add_subplot(313)
+
+            # train splits
+            self.log_df.iloc[init_epoch:][['split random/noisy','split conventional','split NN']].plot.area(stacked=True, ax = ax1)
+
+            # 'average map loss'
+            if self.map_output:
+                ax2.plot(self.log_df.iloc[init_epoch:][indicators[13]])
+                ax2.legend([indicators[13]])
+
+            # qval loss
+            ax3.plot(self.log_df.iloc[init_epoch:][indicators[5]])
+            if qv_loss_log:
+                ax3.set_yscale('log')
+            ax3.legend(['Q-val loss'])
+            
         
         ######################################
-        fig_1 = plt.figure()
-        
-        # 'av. q-val loss'
-        ax1_1 = fig_1.add_subplot(411)
-        ax1_1.plot(self.log_df.iloc[init_epoch:][indicators[5]])
-        if qv_loss_log:
-            ax1_1.set_yscale('log')
-        if not self.map_output:
-            ax1_1.legend(['q-val (AC) / s-val (DQL) loss'])
-        else:
-            ax1_1.legend(['map output loss'])
+        if 'AC' in self.rl_mode:
 
-        # 'av. policy loss'
-        ax2_1 = fig_1.add_subplot(412)
-        ax2_1.plot(self.log_df.iloc[init_epoch:][indicators[6]])
-        if pg_loss_log:
-            ax2_1.set_yscale('symlog')
-        ax2_1.legend([indicators[6]])
-        
-        # 'pg entropy'
-        ax3_1 = fig_1.add_subplot(413)
-        ax3_1.plot(self.log_df.iloc[init_epoch:][indicators[12]])
-        ax3_1.legend([indicators[12]])
-
-        # 'average single-run reward'
-        ax4_1 = fig_1.add_subplot(414)
-        ax4_1.plot(self.log_df.iloc[init_epoch:][indicators[4]])
-        ax4_1.legend([indicators[4]])
+            fig = plt.figure()
+            
+            # 'av. q-val loss'
+            ax1_1 = fig.add_subplot(411)
+            ax1_1.plot(self.log_df.iloc[init_epoch:][indicators[5]])
+            if qv_loss_log:
+                ax1_1.set_yscale('log')
+            ax1_1.legend(['S-val loss (advantage)'])
     
+            # 'av. policy loss'
+            ax2_1 = fig.add_subplot(412)
+            ax2_1.plot(self.log_df.iloc[init_epoch:][indicators[6]])
+            if pg_loss_log:
+                ax2_1.set_yscale('symlog')
+            ax2_1.legend([indicators[6]])
+            
+            # 'pg entropy'
+            ax3_1 = fig.add_subplot(413)
+            ax3_1.plot(100/self.max_entropy*self.log_df.iloc[init_epoch:][indicators[12]])
+            ax3_1.legend([indicators[12]])
+
+            # 'average map loss'
+            ax4_1 = fig.add_subplot(414)
+            if self.map_output:
+                ax4_1.plot(self.log_df.iloc[init_epoch:][indicators[13]])
+                ax4_1.legend([indicators[13]])
+            
+        # complete history
+        """
         if 'AC' in self.rl_mode:
 
             fig_2, ax2 = plt.subplots(5,1)
@@ -1500,8 +1533,9 @@ class Multiprocess_RL_Environment:
                 ax2[4].legend(['map loss'])
             
             return fig, fig_1 , fig_2
+        """
     
-        return fig, fig_1 
+        return fig0, fig 
 
 #%%
 

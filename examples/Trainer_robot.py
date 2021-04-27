@@ -32,24 +32,24 @@ parser = ArgumentParser()
 
 parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC', help="RL mode (AC, DQL, parallelAC)")
 
-parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 2 , help="number of training iterations")
+parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10 , help="number of training iterations")
 
 parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
                     help="ray_parallelize bool")
 
-parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default=5,
+parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default= 5,
                     help="Number of agents to be used")
 
-parser.add_argument("-norm", "--normalize-layers", dest="normalize_layers", type=bool, default=False,
+parser.add_argument("-norm", "--normalize-layers", dest="normalize_layers", type=bool, default=True,
                     help="normalize data between NN layers")
 
-parser.add_argument("-mo", "--map-output", dest="map_output", type=bool, default=False,
+parser.add_argument("-mo", "--map-output", dest="map_output", type=bool, default=True,
                     help="NN has intermediate output with estimated map")
 
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 1000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 10000,
                     help="Replay Memory Size")
 
 parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100, help="net version used")
@@ -67,7 +67,7 @@ parser.add_argument("-msl", "--memory-save-load", dest="memory_save_load", type=
 parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int, default= 500,
                     help="Max n. iterations each agent runs during simulation. Influences the level of exploration which is reached by PG algorithm")
 
-parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default=0, help = "task degree of difficulty")
+parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default=2, help = "task degree of difficulty")
 
 parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=250,
                     help="Length of one successful run in seconds")
@@ -78,15 +78,15 @@ parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_rati
 parser.add_argument("-lr", "--learning-rate", dest="learning_rate", nargs="*", type=float, default=[1e-4, 1e-4],
                     help="NN learning rate")
 
-parser.add_argument("-e", "--epochs-training", dest="n_epochs", type=int, default= 100 , help="Number of epochs per training iteration")
+parser.add_argument("-e", "--epochs-training", dest="n_epochs", type=int, default= 200 , help="Number of epochs per training iteration")
 
-parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size",  nargs="*", type=int, default= 64,
+parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size",  nargs="*", type=int, default= 256,
                     help="Size of the minibatches used for QV training")
 
 parser.add_argument("-y", "--epsilon", dest="epsilon", nargs=2, type=float, default=[0.9995 , 0.2],
                     help="two values: initial epsilon, final epsilon")
 
-parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, default=0.99,
+parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, default=0.995,
                     help="annealing factor of epsilon")
 
 parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=int, default=20,
@@ -95,7 +95,7 @@ parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=
 parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=bool, default=False,
                     help="reset optimizer")
 
-parser.add_argument("-fr", "--frames-number", dest="n_frames", type=int, default= 5,
+parser.add_argument("-fr", "--frames-number", dest="n_frames", type=int, default= 6,
                     help="number of frames considered for convolutional network")
 
 parser.add_argument("-scl", "--share-conv-layers", dest="share_conv_layers", type=bool, default=False,
@@ -103,7 +103,7 @@ parser.add_argument("-scl", "--share-conv-layers", dest="share_conv_layers", typ
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.9, help="GAMMA parameter in QV learning")
 
-parser.add_argument("-b", "--beta", dest="beta", type=float, default= 0.1 , help="BETA parameter for entropy in PG learning")
+parser.add_argument("-b", "--beta", dest="beta", type=float, default= 0.01 , help="BETA parameter for entropy in PG learning")
 
 parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=bool, default=False, 
                     help="latest QV model is always used for Advanatge calculation")

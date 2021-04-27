@@ -128,22 +128,31 @@ class RL_Updater():
         
         print(f'DQL Synchronous update started')
         total_loss = []
+        array_av_loss_map = []
 
         for epoch in tqdm(range(self.n_epochs)):
 
-            loss = self.qValue_loss_update(*self.memory_pool.extractMinibatch()[:-1])
+            loss, av_loss_map = self.qValue_loss_update(*self.memory_pool.extractMinibatch()[:-1])
+            if av_loss_map is not None:
+                array_av_loss_map.append(av_loss_map)
             total_loss.append(loss.cpu().item())
             
         self.model_qv.model_version +=1
+        
+        av_map_loss_out = None
+        if len(array_av_loss_map) > 0:
+            av_map_loss_out = round(sum(array_av_loss_map)/len(array_av_loss_map),3)
 
-        return total_loss
+        return total_loss, av_map_loss_out
         
     
     #################################################
     def qValue_loss_update(self, state_batch, action_batch, reward_batch, state_1_batch, done_batch, info_batch):
         """ DQL update law """
         
+        av_map_loss = None
         map_output=False
+        
         if hasattr(self.model_qv, 'partial_outputs'):
             if self.model_qv.partial_outputs:
                 map_output=True
@@ -178,10 +187,13 @@ class RL_Updater():
         loss_qval = self.model_qv.criterion_MSE(q_value, y_batch)
         
         if map_output:
-            loss_map = self.model_qv.criterion_MSE(map_out, info_batch.cuda())
-            loss_qval = loss_qval/(1e-5+loss_qval.item()) + loss_map/(1e-5+loss_map.item())
+            loss_map = torch.sum((map_out - info_batch.cuda())**2)
+            loss_tot = loss_qval/(1e-5+loss_qval.item()) + loss_map/(1e-5+loss_map.item())
+            av_map_loss = loss_map.item()/self.memory_pool.minibatch_size
+        else:
+            loss_tot = loss_qval
         
-        loss_qval.backward()
+        loss_tot.backward()
         """
         for name, param in self.model_qv.named_parameters():
             FINITE_GRAD = torch.isfinite(param.grad).all() 
@@ -194,7 +206,7 @@ class RL_Updater():
             if torch.isnan(v).any():
                 raise('nan tensor in model after update')
         
-        return loss_qval
+        return loss_qval, av_map_loss
 
 
 def extract_tensor_batch(t, batch_size):
