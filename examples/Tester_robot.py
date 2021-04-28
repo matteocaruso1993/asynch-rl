@@ -27,13 +27,16 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 
-parser.add_argument("-v", "--version", dest="net_version", type = int, default= 503 , help="training version")
+parser.add_argument("-v", "--version", dest="net_version", type = int, default= 0 , help="training version")
 
-parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 117 , help="iteration")
+parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 1960 , help="iteration")
 
-parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type = bool, default= False , help="simulate instance")
+parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type = bool, default= True , help="simulate instance")
 
-parser.add_argument("-d", "--difficulty"   , dest="difficulty"  , type = int, default= 0 , help="difficulty")
+parser.add_argument("-d", "--difficulty"   , dest="difficulty"  , type = int, default= 4 , help="difficulty")
+
+parser.add_argument("-s", "--save-movie"   , dest="save_movie"  , type = bool, default= False , help="save movie")
+
 
 args = parser.parse_args()
 ################
@@ -46,7 +49,7 @@ args = parser.parse_args()
 
 # generate proper discretized bins structure
 
-def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0):
+def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, save_movie = False):
 
     ################
     env_type = 'RobotEnv' 
@@ -154,15 +157,21 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0):
     #%%
     if simulate:
         agent = rl_env.sim_agents_discr[0]
+            
         #agent.live_plot = True
-        
-        #agent.max_steps_single_run = 20000
+        agent.max_steps_single_run = 1000
         
         #
         agent.movie_frequency = 1
         #agent.tot_iterations = 10000
         agent.tot_iterations = 300
         agent.max_n_single_runs = 5
+
+        if save_movie:
+            agent.save_movie = True
+            agent.tot_iterations = 1000
+            agent.max_n_single_runs = 10
+        
         sim_log, single_runs , successful_runs,_, pg_info = agent.run_synch(use_NN = True, test_qv = False)
     
     
@@ -172,7 +181,8 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0):
 
 if __name__ == "__main__":
     
-    main(net_version = args.net_version, iteration = args.iteration, simulate = args.simulate, difficulty = args.difficulty)
+    main(net_version = args.net_version, iteration = args.iteration, simulate = args.simulate, \
+         difficulty = args.difficulty, save_movie=args.save_movie)
 
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)

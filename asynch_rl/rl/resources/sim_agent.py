@@ -40,10 +40,12 @@ class SimulationAgent:
     def __init__(self,sim_agent_id, env = None, rl_mode = 'DQL', model_qv= None, model_pg = None,model_v = None,\
                  n_frames = 1, net_name = 'no_name' ,epsilon = 0.9, ctrlr_probability = 0, save_movie = False, \
                  max_consecutive_env_fails = 3, max_steps_single_run = 200, show_rendering = True, 
-                 use_reinforce = False, \
+                 use_reinforce = False, storage_path = None, \
                  tot_iterations = 1000, live_plot = False, verbosity = 0 , noise_sd = 0.05, \
                  movie_frequency = 10, max_n_single_runs = 1000, save_sequences  = False, reward_history_span = 200):
-                
+        
+        self.storage_path = storage_path
+        
         self.reward_history = []
         self.reward_history_span = reward_history_span
         
@@ -627,20 +629,21 @@ class SimulationAgent:
                     kernel_exec = True
             except Exception:
                 kernel_exec = False
+            
+            ani = None
+            if self.env.env_type == 'RobotEnv':
+                ani , filename , duration=self.getVideoRobotEnv(fig_film)
+            elif self.env.env_type == 'CartPole':
+                ani , filename, duration=self.getVideoCartPole(fig_film)
 
             if not kernel_exec:
-                ani = None
-                if self.env.env_type == 'RobotEnv':
-                    ani , filename , duration=self.getVideoRobotEnv(fig_film)
-                elif self.env.env_type == 'CartPole':
-                    ani , filename, duration=self.getVideoCartPole(fig_film)
-                
-                if ani is not None:
+               if ani is not None:
                     #print(f'duration = {duration}s')
                     plt.show(block=False)
                     plt.waitforbuttonpress(round(duration))
                                 
                     if self.save_movie:
+                        
                         if 'AC' in self.rl_mode :
                             net_type = self.model_pg.net_type
                         elif self.rl_mode == 'DQL':
@@ -648,11 +651,12 @@ class SimulationAgent:
                         else:
                             raise('RL mode not defined')                        
                             
-                        store_path= os.path.join( os.path.dirname(os.path.abspath(__file__)) ,"Data" , self.env.env_type, net_type, 'video'  )
+                        store_path= os.path.join( self.storage_path, 'video'  )
                         createPath(store_path).mkdir(parents=True, exist_ok=True)
                         
                         full_filename = os.path.join(store_path, filename)
                         ani.save(full_filename)
+                        
 
     ##################################################################################
     def getVideoCartPole(self, fig_film):

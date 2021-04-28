@@ -402,11 +402,11 @@ class Multiprocess_RL_Environment:
         if self.ray_parallelize:
             for i in range(self.n_agents_discr):
                 self.sim_agents_discr.append(Ray_SimulationAgent.remote(i, self.generateDiscrActSpace_GymStyleEnv(), rl_mode = self.rl_mode,\
-                                                                    use_reinforce = self.use_reinforce ) )  
+                                                                    use_reinforce = self.use_reinforce, storage_path=self.storage_path ) )  
             #for i in range(self.n_agents_contn):
             #    self.sim_agents_contn.append(Ray_SimulationAgent.remote(i, self.generateContnsHybActSpace_GymStyleEnv(), rl_mode = self.rl_mode ) )                 
         else:
-            self.sim_agents_discr.append(SimulationAgent(0, self.generateDiscrActSpace_GymStyleEnv(), rl_mode = self.rl_mode ) )  #, ,self.model
+            self.sim_agents_discr.append(SimulationAgent(0, self.generateDiscrActSpace_GymStyleEnv(), rl_mode = self.rl_mode , storage_path=self.storage_path) )  #, ,self.model
             #self.sim_agents_contn.append(SimulationAgent(0, self.generateContnsHybActSpace_GymStyleEnv(), rl_mode = self.rl_mode) )  #, ,self.model
                 #, self.model, self.n_frames, self.move_to_cuda, self.net_name, self.epsilon))            
         self.updateAgentsAttributesExcept() #,'model')
