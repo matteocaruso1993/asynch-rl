@@ -29,11 +29,11 @@ parser = ArgumentParser()
 
 parser.add_argument("-v", "--version", dest="net_version", type = int, default= 0 , help="training version")
 
-parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 4113 , help="iteration")
+parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 2270 , help="iteration")
 
 parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= True , help="simulate instance")
 
-parser.add_argument("-d", "--difficulty"   , dest="difficulty"  , type = int, default= 4 , help="difficulty")
+parser.add_argument("-d", "--difficulty"   , dest="difficulty"  , type = int, default= 3 , help="difficulty")
 
 parser.add_argument("-s", "--save-movie"   , dest="save_movie"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= False , help="save movie")
 
@@ -178,12 +178,14 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
         
         sim_log, single_runs , successful_runs,_, pg_info = agent.run_synch(use_NN = True, test_qv = False)
 
+    
     if 'fig_val1' in locals():
         fig_val1.waitforbuttonpress(20)
     
     if 'fig0' in locals():
         fig.waitforbuttonpress(20)
         fig0.waitforbuttonpress(20)
+    
 
 
 #%%

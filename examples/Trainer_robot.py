@@ -67,7 +67,7 @@ parser.add_argument("-msl", "--memory-save-load", dest="memory_save_load", type=
 parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int, default= 500,
                     help="Max n. iterations each agent runs during simulation. Influences the level of exploration which is reached by PG algorithm")
 
-parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default=2, help = "task degree of difficulty")
+parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default= 10, help = "task degree of difficulty. 10 = random")
 
 parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=250,
                     help="Length of one successful run in seconds")
@@ -75,8 +75,8 @@ parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int,
 parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.25,
                     help="Ratio of Memory renewed at each iteration")
 
-parser.add_argument("-lr", "--learning-rate", dest="learning_rate", nargs="*", type=float, default=[1e-4, 1e-4],
-                    help="NN learning rate")
+parser.add_argument("-lr", "--learning-rate", dest="learning_rate", nargs="*", type=float, default=[1e-4, 1e-3],
+                    help="NN learning rate for DQL [0] and A/C [1]")
 
 parser.add_argument("-e", "--epochs-training", dest="n_epochs", type=int, default= 200 , help="Number of epochs per training iteration")
 
@@ -98,7 +98,7 @@ parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=lam
 parser.add_argument("-fr", "--frames-number", dest="n_frames", type=int, default= 6,
                     help="number of frames considered for convolutional network")
 
-parser.add_argument("-scl", "--share-conv-layers", dest="share_conv_layers", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
+parser.add_argument("-scl", "--share-conv-layers", dest="share_conv_layers", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=True,
                     help="Flag to share Convolutional Layers between Actor and Critic")
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.9, help="GAMMA parameter in QV learning")
@@ -110,7 +110,7 @@ parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_q
 
 parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=float, default=[.2, 100, 40] )
 
-parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[40, 40, 20] )
+parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[50, 50, 30] )
 
 parser.add_argument("-ur", "--use-reinforce", dest="use_reinforce", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
                     help="use REINFORCE instead of AC")

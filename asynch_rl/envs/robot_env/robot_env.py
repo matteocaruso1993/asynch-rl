@@ -3,6 +3,8 @@ import os
 import numpy as np
 import numpy.matlib
 
+import random
+
 # matplotlib
 import matplotlib as mpl
 import matplotlib.patches as patches
@@ -75,10 +77,10 @@ class RobotEnv(gym.Env):
                      sim_length = 200, difficulty = 0, scan_noise = [0.005,0.002], n_chunk_sections = 18):
 
         self.n_chunk_sections = n_chunk_sections
-        sparsity_levels = [500, 200 , 100,  50 , 20 ]
         
-        self.peds_sparsity = sparsity_levels[difficulty]
-        self._difficulty = difficulty
+        self.input_difficulty = difficulty
+        self.sparsity_levels = [500, 100 , 50,  35 , 25 ]
+
         # not implemented yet
         
         self.scan_noise = scan_noise  #percentages (1 = 100%) [scan_noise[0]: lost samples, scan_noise[1]: added samples]
@@ -233,7 +235,7 @@ class RobotEnv(gym.Env):
                 
         else:
             self.duration += self.dt
-            reward = self.rewards[0]*(1 - int(saturate_input)  - min(np.sum( (1-info['robot_map'])**2 ),4) )
+            reward = self.rewards[0]*(1 - int(saturate_input)  - min(np.sum( (1-np.array(info['robot_map']))**2 ), 3) )
             done = False
             
 
@@ -242,6 +244,12 @@ class RobotEnv(gym.Env):
     
     #####################################################################################################
     def reset(self,**kwargs):
+        
+        self._difficulty = self.input_difficulty if self.input_difficulty != 10 else random.randint( 1 , len(self.sparsity_levels)-1)
+        self.peds_sparsity = self.sparsity_levels[self._difficulty]
+        
+        #print(f'Simulation difficulty level: {self._difficulty}')
+
         
         self.duration = 0
         self.rotation_counter = 0
