@@ -196,6 +196,8 @@ class RobotEnv(gym.Env):
         
         self.robot.getScan(scan_noise = self.scan_noise)
         self.rotation_counter += np.abs(dot_orient*self.dt)
+        
+        info['robot_map'] = self.robot.chunk(self.n_chunk_sections)
 
         # if pedestrian / obstacle is hit or time expired
         if self.robot.check_pedestrians_collision(.8) or self.robot.check_obstacle_collision() or \
@@ -231,21 +233,9 @@ class RobotEnv(gym.Env):
                 
         else:
             self.duration += self.dt
-            # standard  reward calculation
-            #speed_bonus = np.clip(0.5*(dot_x/self.linear_max)*(1-abs(dot_orient)/self.angular_max) + 0.5*(dist_0-dist_1)/(self.linear_max*self.dt),-0.2,1)
-
-            #ang_speed_penalty = np.abs(dot_orient)/self.angular_max
-            
-            #peds_distances = self.robot.getPedsDistances()
-            #danger_penalty = np.minimum(1 , 0.2* np.sum( 1 - (peds_distances[peds_distances < 2/3*self.lidar_range]/self.lidar_range) )) 
-
-            #reward = self.rewards[0]*int(not saturate_input)*
-            reward = self.rewards[0]*( (dist_0-dist_1)/(self.linear_max*self.dt)  - int(saturate_input)  + (1-min(ranges))*(dot_x/self.linear_max)*int(dist_0>dist_1) )
+            reward = self.rewards[0]*(1 - int(saturate_input)  - min(np.sum( (1-info['robot_map'])**2 ),4) )
             done = False
             
-        info['robot_map'] = self.robot.chunk(self.n_chunk_sections)
-        
-        #print(reward)
 
         return (ranges, rob_state), reward, done, info
     
@@ -274,8 +264,8 @@ class RobotEnv(gym.Env):
                 raise('suitable initial coordinates not found')
             
         # if initial condition is too close (1.5m) to obstacle, pedestrians or target, generate new initial condition
-        while self.robot.check_collision(1.5) or self.robot.checkOutOfBounds(margin = 0.2) or \
-            self.robot.target_rel_position(self.target_coordinates[:2])[0] < (high_bound[0]-low_bound[0])/2 :
+        while self.robot.check_collision(2) or self.robot.checkOutOfBounds(margin = 0.2) or \
+            self.robot.target_rel_position(self.target_coordinates[:2])[0] < (high_bound[0]-low_bound[0])*0.7 :
                 
             init_coordinates = np.random.uniform(low = low_bound, high = high_bound,size=3)
             self.robot.setPosition(init_coordinates[0], init_coordinates[1], init_coordinates[2])
