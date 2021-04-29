@@ -29,13 +29,13 @@ parser = ArgumentParser()
 
 parser.add_argument("-v", "--version", dest="net_version", type = int, default= 0 , help="training version")
 
-parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 1960 , help="iteration")
+parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 4113 , help="iteration")
 
-parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type = bool, default= True , help="simulate instance")
+parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= True , help="simulate instance")
 
 parser.add_argument("-d", "--difficulty"   , dest="difficulty"  , type = int, default= 4 , help="difficulty")
 
-parser.add_argument("-s", "--save-movie"   , dest="save_movie"  , type = bool, default= False , help="save movie")
+parser.add_argument("-s", "--save-movie"   , dest="save_movie"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= False , help="save movie")
 
 
 args = parser.parse_args()
@@ -99,7 +99,7 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
     rl_env.print_NN_parameters_count()
     
     try:
-        rl_env.plot_training_log(1, qv_loss_log = rl_env.rl_mode=='DQL', pg_loss_log = True)
+        fig0, fig  = rl_env.plot_training_log(1, qv_loss_log = rl_env.rl_mode=='DQL', pg_loss_log = True)
     except Exception:
         print('incomplete data for plot generation')
     
@@ -127,8 +127,10 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
             
                 ax4.plot(rl_env.val_history[:,0], rl_env.val_history[:,1])
                 ax4.legend(['successful runs ratio'])
+                
     except Exception:
         pass
+
     
     #%%
     # script to clean up val hist
@@ -168,13 +170,21 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
         agent.max_n_single_runs = 5
 
         if save_movie:
+            rl_env.update_net_name()
+            agent.net_name = rl_env.net_name
             agent.save_movie = True
-            agent.tot_iterations = 1000
+            agent.tot_iterations = 5000
             agent.max_n_single_runs = 10
         
         sim_log, single_runs , successful_runs,_, pg_info = agent.run_synch(use_NN = True, test_qv = False)
+
+    if 'fig_val1' in locals():
+        fig_val1.waitforbuttonpress(20)
     
-    
+    if 'fig0' in locals():
+        fig.waitforbuttonpress(20)
+        fig0.waitforbuttonpress(20)
+
 
 #%%
 ################################################################

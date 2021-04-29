@@ -671,7 +671,7 @@ class SimulationAgent:
         # in case it was a live_plot test
         #if self.live_plot:
         #    self.env.render_mode = 'animation'
-        filename = self.net_name +'_agent_id_'+ str(self.sim_agent_id) +'.mp4'
+        filename = self.net_name +'_'+ str(self.rl_mode) +'.mp4'
         interval = round(0.5*self.env.dt*1000)
         ani = animation.ArtistAnimation(fig_film, self.ims, interval=interval, blit=True)
         duration = round(0.001*len(self.ims)*interval,1)

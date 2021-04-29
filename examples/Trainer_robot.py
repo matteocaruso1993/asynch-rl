@@ -34,16 +34,16 @@ parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC', 
 
 parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10 , help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=bool, default=False,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
                     help="ray_parallelize bool")
 
 parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default= 5,
                     help="Number of agents to be used")
 
-parser.add_argument("-norm", "--normalize-layers", dest="normalize_layers", type=bool, default=True,
+parser.add_argument("-norm", "--normalize-layers", dest="normalize_layers", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=True,
                     help="normalize data between NN layers")
 
-parser.add_argument("-mo", "--map-output", dest="map_output", type=bool, default=True,
+parser.add_argument("-mo", "--map-output", dest="map_output", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=True,
                     help="NN has intermediate output with estimated map")
 
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
@@ -61,7 +61,7 @@ parser.add_argument("-rp", "--ray-password", dest="ray_password", type=str, defa
                     help="Ray password")
 
 #####
-parser.add_argument("-msl", "--memory-save-load", dest="memory_save_load", type=bool, default=False,
+parser.add_argument("-msl", "--memory-save-load", dest="memory_save_load", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
                     help="save memory bool (for debugging purpose)")
 
 parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int, default= 500,
@@ -92,27 +92,27 @@ parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, 
 parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=int, default=20,
                     help="model is validated every -vf iterations")
 
-parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=bool, default=False,
+parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
                     help="reset optimizer")
 
 parser.add_argument("-fr", "--frames-number", dest="n_frames", type=int, default= 6,
                     help="number of frames considered for convolutional network")
 
-parser.add_argument("-scl", "--share-conv-layers", dest="share_conv_layers", type=bool, default=False,
+parser.add_argument("-scl", "--share-conv-layers", dest="share_conv_layers", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
                     help="Flag to share Convolutional Layers between Actor and Critic")
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.9, help="GAMMA parameter in QV learning")
 
 parser.add_argument("-b", "--beta", dest="beta", type=float, default= 0.01 , help="BETA parameter for entropy in PG learning")
 
-parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=bool, default=False, 
+parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False, 
                     help="latest QV model is always used for Advanatge calculation")
 
 parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=float, default=[.2, 100, 40] )
 
 parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[40, 40, 20] )
 
-parser.add_argument("-ur", "--use-reinforce", dest="use_reinforce", type=bool, default=False,
+parser.add_argument("-ur", "--use-reinforce", dest="use_reinforce", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
                     help="use REINFORCE instead of AC")
 
 
