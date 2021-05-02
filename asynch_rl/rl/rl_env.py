@@ -397,12 +397,18 @@ class Multiprocess_RL_Environment:
 
     ##################################################################################
     # sim agent is created with current "model" as NN
+    def createRayActor_Agent(self,i):
+        return Ray_SimulationAgent.remote(i, self.generateDiscrActSpace_GymStyleEnv(), \
+                                          rl_mode = self.rl_mode, use_reinforce = self.use_reinforce, storage_path=self.storage_path )
+
+
+    ##################################################################################
+    # sim agent is created with current "model" as NN
     def addSimAgents(self):
         
         if self.ray_parallelize:
             for i in range(self.n_agents_discr):
-                self.sim_agents_discr.append(Ray_SimulationAgent.remote(i, self.generateDiscrActSpace_GymStyleEnv(), rl_mode = self.rl_mode,\
-                                                                    use_reinforce = self.use_reinforce, storage_path=self.storage_path ) )  
+                self.sim_agents_discr.append(self.createRayActor_Agent(i) )  
             #for i in range(self.n_agents_contn):
             #    self.sim_agents_contn.append(Ray_SimulationAgent.remote(i, self.generateContnsHybActSpace_GymStyleEnv(), rl_mode = self.rl_mode ) )                 
         else:
@@ -770,12 +776,18 @@ class Multiprocess_RL_Environment:
         """ display progress bar on terminal"""
         if self.rl_mode == 'AC':
             if total_log is None:
-                progress(0, 1000)
+                #progress(0, 1000)
+                progress_ratio = 0
             else:
-                progress(round(1000*np.sum(total_log[:,0])/self.memory_turnover_size), 1000)
+                progress_ratio = np.sum(total_log[:,0])/self.memory_turnover_size
+                #progress(round(1000*progress_ratio), 1000)
         else:
-            progress(round(1000*self.shared_memory.fill_ratio), 1000 , f'Fill memory - {self.shared_memory.size}')
+            progress_ratio =self.shared_memory.fill_ratio
+        
+        progress(round(1000*progress_ratio), 1000)
+        #  , f'Fill memory - {self.shared_memory.size}'
 
+        return progress_ratio
 
 
     ##################################################################################
@@ -851,59 +863,77 @@ class Multiprocess_RL_Environment:
                 task_lst[i] = agent.run.remote()
                 
             n_trajectories = 0
+            progress_ratio = 0
     
-            while any(tsk is not None for tsk in task_lst):
+            while any(tsk is not None for tsk in task_lst) and progress_ratio < 5 :
                 
-                self.display_progress(total_log)
-
-                for i, agent in enumerate(self.sim_agents_discr):                
-                    if not ray.get(agent.isRunning.remote()) and (task_lst[i] is not None or task_replacement[i] is not None):
+                progress_ratio = self.display_progress(total_log)
+                for i, agent in enumerate(self.sim_agents_discr):
+                    
+                    try:
+                        agent_running = ray.get(agent.isRunning.remote(), timeout = 0.1)
+                    except Exception:
+                        agent_running = False
+                    
+                    if not agent_running and (task_lst[i] is not None or task_replacement[i] is not None):
                         task = task_lst[i] if task_lst[i] else task_replacement[i]
+                        task_ready, task_not_ready = ray.wait([task], num_returns=1, timeout=0.1)
 
-                        try:
-                            partial_log, single_runs, successful_runs, internal_memory_fill_ratio , pg_info = ray.get(task)
-                            grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i,loss_map_i , valid_model = pg_info
-                        except Exception:
-                            valid_model = False
-                            print('failed remote simulation')
-                        
-                        if valid_model:
-                        # partial_log contains 1) duration and 2) cumulative reward of every single-run
-                            if total_log is None:
-                                total_log = partial_log
-                            else:
-                                total_log = np.append(total_log, partial_log, axis = 0)
-                            total_runs += single_runs
+                        if not task_not_ready:
+
+                            try:
+                                partial_log, single_runs, successful_runs, internal_memory_fill_ratio , pg_info = ray.get(task)
+                                grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i,loss_map_i , valid_model = pg_info
+                            except Exception:
+                                valid_model = False
+                                print('failed remote simulation')
                             
-                            if self.dynamic_grad_weighting:
-                                grad_weight_pg, grad_weight_v = self.dynamic_grad_weight(partial_log)
-                            else:
-                                grad_weight_pg, grad_weight_v = (1,1)
-
-                            temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss = self.update_training_variables(partial_log, \
-                                    policy_loss_i, pg_entropy_i, advantage_i, loss_map_i, temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss)
-                            # update common model gradient
-                            for net1,net2 in zip( grad_dict_pg.items() , self.model_pg.named_parameters() ):
-                                if torch.is_tensor(net1[1]):
-                                    net2[1].grad += grad_weight_pg*net1[1].clone()
-                            if self.rl_mode == 'AC':
-                                for net1,net2 in zip( grad_dict_v.items() , self.model_v.named_parameters() ):
-                                    if torch.is_tensor(net1[1]):
-                                        net2[1].grad += grad_weight_v*net1[1].clone()
-                        
-                            if self.rl_mode != 'AC' and internal_memory_fill_ratio > 0.2:
-                                self.shared_memory.addMemoryBatch( ray.get(agent.emptyLocalMemory.remote()) )
+                            if valid_model:
+                            # partial_log contains 1) duration and 2) cumulative reward of every single-run
+                                if total_log is None:
+                                    total_log = partial_log
+                                else:
+                                    total_log = np.append(total_log, partial_log, axis = 0)
+                                total_runs += single_runs
                                 
-                            n_trajectories += 1
-
-                        task_replacement[i] = agent.run.remote()
-                        task_lst[i] = None
+                                if self.dynamic_grad_weighting:
+                                    grad_weight_pg, grad_weight_v = self.dynamic_grad_weight(partial_log)
+                                else:
+                                    grad_weight_pg, grad_weight_v = (1,1)
+    
+                                temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss = self.update_training_variables(partial_log, \
+                                        policy_loss_i, pg_entropy_i, advantage_i, loss_map_i, temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss)
+                                # update common model gradient
+                                for net1,net2 in zip( grad_dict_pg.items() , self.model_pg.named_parameters() ):
+                                    if torch.is_tensor(net1[1]):
+                                        net2[1].grad += grad_weight_pg*net1[1].clone()
+                                if self.rl_mode == 'AC':
+                                    for net1,net2 in zip( grad_dict_v.items() , self.model_v.named_parameters() ):
+                                        if torch.is_tensor(net1[1]):
+                                            net2[1].grad += grad_weight_v*net1[1].clone()
+                            
+                                if self.rl_mode != 'AC' and internal_memory_fill_ratio > 0.2:
+                                    self.shared_memory.addMemoryBatch( ray.get(agent.emptyLocalMemory.remote()) )
+                                    
+                                n_trajectories += 1
+    
+                            task_replacement[i] = agent.run.remote()
+                            task_lst[i] = None
                             
             for i, agent in enumerate(self.sim_agents_discr):
-                if task_replacement[i] is not None:
+                if (task_replacement[i] is not None) or (task_lst[i] is not None):
+                    tsk = task_replacement[i] if task_replacement[i] is not None else task_lst[i]
+                    
                     agent.force_stop.remote()
-                    ray.get(task_replacement[i])
+                    task_ready, task_not_ready = ray.wait([task], num_returns=1, timeout=1)
+                    if not task_not_ready:
+                        try:
+                            ray.get(tsk, timeout=1)
+                        except Exception:
+                            ray.kill(agent)
+                            self.sim_agents_discr[i] = self.createRayActor_Agent(i) 
                     task_replacement[i] = None
+                    task_lst[i] = None
                     
             if self.env_type == 'RobotEnv':
                 print(f'simulated trajectories: {n_trajectories}')
@@ -1001,7 +1031,14 @@ class Multiprocess_RL_Environment:
             # 2) start parallel simulations
             for i, agent in enumerate(self.sim_agents_discr):
                 # 2.1) get info from complete processes
-                if not ray.get(agent.isRunning.remote()): 
+                    
+                try:
+                    agent_running = ray.get(agent.isRunning.remote(), timeout = 0.1)
+                except Exception:
+                    agent_running = False
+
+                
+                if not agent_running : 
                     if task_lst[i] is not None:
                         partial_log, single_runs, successful_runs,internal_memory_fill_ratio , pg_info = ray.get(task_lst[i])
                         # partial_log contains 1) duration and 2) cumulative reward of every single-run

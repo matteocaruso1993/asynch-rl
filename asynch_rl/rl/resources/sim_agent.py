@@ -494,12 +494,11 @@ class SimulationAgent:
                     break
                 state, use_controller = self.reset_agent(pctg_ctrl, evaluate = use_NN , info = info)
            
-            done, state, force_stop  , loss_pg, info = self.sim_routine(state, loss_pg , use_controller, use_NN, test_qv)
-            
-            if DEBUG and use_NN and self.rl_mode == 'AC':
-                state_value = self.model_v(state)
-                print(f'state value: {state_value}')
-                
+            if 'state' in locals():
+                done, state, force_stop  , loss_pg, info = self.sim_routine(state, loss_pg , use_controller, use_NN, test_qv)
+            else:
+                force_stop = True
+                self.stop_run = True            
 
         single_run_log = self.trainVariablesUpdate(reset_variables = True, info = info)
         self.update_sim_log(single_run_log)
@@ -530,8 +529,12 @@ class SimulationAgent:
                 if self.agent_run_variables['single_run'] >= self.max_n_single_runs+1:
                     break
                 state, use_controller = self.reset_agent(pctg_ctrl, evaluate = use_NN )
-           
-            done, state, force_stop  , loss_pg, info = self.sim_routine(state, loss_pg , use_controller, use_NN, test_qv)
+
+            if 'state' in locals():
+                done, state, force_stop  , loss_pg, info = self.sim_routine(state, loss_pg , use_controller, use_NN, test_qv)
+            else:
+                force_stop = True
+                self.stop_run = True            
 
         single_run_log = self.trainVariablesUpdate(reset_variables = True, info = info)
         self.update_sim_log(single_run_log)
