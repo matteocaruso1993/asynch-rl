@@ -486,7 +486,7 @@ class SimulationAgent:
         force_stop, done, fig_film = self.initialize_run()
         info = {}
         
-        while not (self.stop_run or ( 'AC' in self.rl_mode and done and not use_NN ) ):
+        while not self.stop_run :
                 
             if self.reset_simulation:
                 loss_pg = 0
@@ -498,7 +498,11 @@ class SimulationAgent:
                 done, state, force_stop  , loss_pg, info = self.sim_routine(state, loss_pg , use_controller, use_NN, test_qv)
             else:
                 force_stop = True
-                self.stop_run = True            
+                self.stop_run = True      
+                
+            if 'AC' in self.rl_mode and self.reset_simulation and not (use_NN or done):
+                self.stop_run = True
+                force_stop = True        
 
         single_run_log = self.trainVariablesUpdate(reset_variables = True, info = info)
         self.update_sim_log(single_run_log)
@@ -520,7 +524,7 @@ class SimulationAgent:
         self.is_running = True
         self.external_force_stop = False
         
-        while not (self.stop_run or ( 'AC' in self.rl_mode and done) or self.external_force_stop):
+        while not (self.stop_run or self.external_force_stop):
             
             await asyncio.sleep(0.00001)
                 
@@ -534,7 +538,11 @@ class SimulationAgent:
                 done, state, force_stop  , loss_pg, info = self.sim_routine(state, loss_pg , use_controller, use_NN, test_qv)
             else:
                 force_stop = True
-                self.stop_run = True            
+                self.stop_run = True      
+                
+            if 'AC' in self.rl_mode and self.reset_simulation and not done and not self.stop_run:
+                self.stop_run = True
+                force_stop = True
 
         single_run_log = self.trainVariablesUpdate(reset_variables = True, info = info)
         self.update_sim_log(single_run_log)

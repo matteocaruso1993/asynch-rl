@@ -22,6 +22,8 @@ import torch
 from bashplotlib.scatterplot import plot_scatter
 from pathlib import Path as createPath
 
+from datetime import datetime
+
 from copy import deepcopy
 #%%
 # My Libraries
@@ -48,7 +50,7 @@ class Multiprocess_RL_Environment:
     def __init__(self, env_type , net_type , net_version ,rl_mode = 'DQL', n_agents = 1, ray_parallelize = False , \
                  move_to_cuda = True, show_rendering = False , n_frames=4, learning_rate = [0.0001, 0.001] , \
                  movie_frequency = 20, max_steps_single_run = 200, \
-                 training_session_number = None, save_movie = True, live_plot = False, \
+                 training_session_number = None, save_movie = False, live_plot = False, \
                  display_status_frequency = 50, max_consecutive_env_fails = 3, tot_iterations = 400,\
                  epsilon = 1, epsilon_annealing_factor = 0.95,  \
                  epsilon_min = 0.01 , gamma = 0.99 , discr_env_bins = 10 , N_epochs = 1000, \
@@ -536,12 +538,7 @@ class Multiprocess_RL_Environment:
                     if not os.path.isfile(os.path.join(self.storage_path,self.net_name+ '_state_value.pt')):
                         self.model_v.save_net_params(self.storage_path,self.net_name+'_state_value')
                         
-                with open(os.path.join(self.storage_path,'train_log.txt'), 'a+') as f:
-                    if self.rl_mode != 'AC':
-                        f.writelines(self.net_name + "\n")
-                    if 'AC' in self.rl_mode:
-                        f.writelines(self.net_name+'_policy'+ "\n")
-                        f.writelines(self.net_name+'_state_value'+ "\n")
+                self.log_saved_net()
 
         elif mode == 'update':
             if 'AC' in self.rl_mode:
@@ -561,6 +558,27 @@ class Multiprocess_RL_Environment:
             if print_out:
                 print(f'MODEL UPDATED version: {model_version}')  
         return model_version
+
+
+    ##################################################################################
+    def log_saved_net(self):
+        """log saved net in log file """
+
+        with open(os.path.join(self.storage_path,'train_log.txt'), 'a+') as f:
+
+            now = datetime.now() # current date and time
+            date_time = now.strftime("%m/%d/%Y, %H:%M:%S")
+
+            f.writelines(str(self.training_session_number) + ';' + date_time +"\n")
+
+            
+            """
+            if self.rl_mode != 'AC':
+                f.writelines(self.net_name + "\n")
+            if 'AC' in self.rl_mode:
+                f.writelines(self.net_name+'_policy'+ "\n")
+                f.writelines(self.net_name+'_state_value'+ "\n")
+            """
 
 
     ##################################################################################
@@ -640,6 +658,8 @@ class Multiprocess_RL_Environment:
         if self.qval_loss_history is not None:
             loss_history_file = os.path.join(self.storage_path, 'loss_history_'+ str(self.training_session_number) + '.npy')
             np.save(loss_history_file, self.qval_loss_history)
+            
+        self.log_saved_net()
           
             
     ##################################################################################
@@ -864,68 +884,75 @@ class Multiprocess_RL_Environment:
                 
             n_trajectories = 0
             progress_ratio = 0
+            
+            first_task_completed = False
     
-            while any(tsk is not None for tsk in task_lst) and progress_ratio < 5 :
+            while any(tsk is not None for tsk in task_lst) and progress_ratio < 1.005 :
                 
                 progress_ratio = self.display_progress(total_log)
-                for i, agent in enumerate(self.sim_agents_discr):
+                idx_ready = None
+                
+                task_ready, task_not_ready = ray.wait([i for i in task_lst if i], num_returns=1, timeout= 1)
+                
+                if task_ready:
+                    idx_ready = task_lst.index(task_ready[0])
+                    first_task_completed = True
+                elif first_task_completed and any(tsk is not None for tsk in task_replacement):
+                    task_ready, task_not_ready = ray.wait([i for i in task_replacement if i], num_returns=1, timeout= 1)
+                    if task_ready:
+                        idx_ready = task_replacement.index(task_ready[0])
+                    
+                if idx_ready is not None:
+
+                    task = task_lst[idx_ready] if task_lst[idx_ready] else task_replacement[idx_ready]
                     
                     try:
-                        agent_running = ray.get(agent.isRunning.remote(), timeout = 0.1)
+                        partial_log, single_runs, successful_runs, internal_memory_fill_ratio , pg_info = ray.get(task, timeout=1)
+                        grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i,loss_map_i , valid_model = pg_info
                     except Exception:
-                        agent_running = False
+                        valid_model = False
+                            
+                    if valid_model:
+                    # partial_log contains 1) duration and 2) cumulative reward of every single-run
+                        if total_log is None:
+                            total_log = partial_log
+                        else:
+                            total_log = np.append(total_log, partial_log, axis = 0)
+                        total_runs += single_runs
+                        
+                        if self.dynamic_grad_weighting:
+                            grad_weight_pg, grad_weight_v = self.dynamic_grad_weight(partial_log)
+                        else:
+                            grad_weight_pg, grad_weight_v = (1,1)
+
+                        temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss = self.update_training_variables(partial_log, \
+                                policy_loss_i, pg_entropy_i, advantage_i, loss_map_i, temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss)
+                        # update common model gradient
+                        for net1,net2 in zip( grad_dict_pg.items() , self.model_pg.named_parameters() ):
+                            if torch.is_tensor(net1[1]):
+                                net2[1].grad += grad_weight_pg*net1[1].clone()
+                        if self.rl_mode == 'AC':
+                            for net1,net2 in zip( grad_dict_v.items() , self.model_v.named_parameters() ):
+                                if torch.is_tensor(net1[1]):
+                                    net2[1].grad += grad_weight_v*net1[1].clone()
                     
-                    if not agent_running and (task_lst[i] is not None or task_replacement[i] is not None):
-                        task = task_lst[i] if task_lst[i] else task_replacement[i]
-                        task_ready, task_not_ready = ray.wait([task], num_returns=1, timeout=0.1)
+                        if self.rl_mode != 'AC' and internal_memory_fill_ratio > 0.2:
+                            self.shared_memory.addMemoryBatch( ray.get(agent.emptyLocalMemory.remote()) )
+                            
+                        n_trajectories += 1
 
-                        if not task_not_ready:
-
-                            try:
-                                partial_log, single_runs, successful_runs, internal_memory_fill_ratio , pg_info = ray.get(task)
-                                grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i,loss_map_i , valid_model = pg_info
-                            except Exception:
-                                valid_model = False
-                                print('failed remote simulation')
-                            
-                            if valid_model:
-                            # partial_log contains 1) duration and 2) cumulative reward of every single-run
-                                if total_log is None:
-                                    total_log = partial_log
-                                else:
-                                    total_log = np.append(total_log, partial_log, axis = 0)
-                                total_runs += single_runs
-                                
-                                if self.dynamic_grad_weighting:
-                                    grad_weight_pg, grad_weight_v = self.dynamic_grad_weight(partial_log)
-                                else:
-                                    grad_weight_pg, grad_weight_v = (1,1)
-    
-                                temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss = self.update_training_variables(partial_log, \
-                                        policy_loss_i, pg_entropy_i, advantage_i, loss_map_i, temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss)
-                                # update common model gradient
-                                for net1,net2 in zip( grad_dict_pg.items() , self.model_pg.named_parameters() ):
-                                    if torch.is_tensor(net1[1]):
-                                        net2[1].grad += grad_weight_pg*net1[1].clone()
-                                if self.rl_mode == 'AC':
-                                    for net1,net2 in zip( grad_dict_v.items() , self.model_v.named_parameters() ):
-                                        if torch.is_tensor(net1[1]):
-                                            net2[1].grad += grad_weight_v*net1[1].clone()
-                            
-                                if self.rl_mode != 'AC' and internal_memory_fill_ratio > 0.2:
-                                    self.shared_memory.addMemoryBatch( ray.get(agent.emptyLocalMemory.remote()) )
-                                    
-                                n_trajectories += 1
-    
-                            task_replacement[i] = agent.run.remote()
-                            task_lst[i] = None
-                            
+                    task_replacement[idx_ready] = self.sim_agents_discr[idx_ready].run.remote()
+                    task_lst[idx_ready] = None
+                    
+            if any(tsk is not None for tsk in task_lst):
+                print(f'incomplete original task list: {task_lst}')
+                    
             for i, agent in enumerate(self.sim_agents_discr):
                 if (task_replacement[i] is not None) or (task_lst[i] is not None):
                     tsk = task_replacement[i] if task_replacement[i] is not None else task_lst[i]
                     
                     agent.force_stop.remote()
-                    task_ready, task_not_ready = ray.wait([task], num_returns=1, timeout=1)
+                    task_ready, task_not_ready = ray.wait([tsk], num_returns=1, timeout=1)
                     if not task_not_ready:
                         try:
                             ray.get(tsk, timeout=1)
@@ -1005,6 +1032,8 @@ class Multiprocess_RL_Environment:
                     initial_pg_weights = initial_pg_weights, initial_v_weights= initial_v_weights, \
                     total_runs= total_runs, total_log= total_log, temp_pg_loss= temp_pg_loss, \
                     temp_entropy= temp_entropy, temp_advantage = temp_advantage , temp_map_loss = temp_map_loss)
+            
+        return self.training_session_number>0 and not self.training_session_number % 10
 
 
     ##################################################################################
@@ -1020,6 +1049,9 @@ class Multiprocess_RL_Environment:
         task_lst = [None for _ in self.sim_agents_discr]
         
         while True:
+            
+            self.display_progress()
+            
             # 1) start qv update based on existing memory stored
             if not memory_fill_only:
                 if ray.get(self.nn_updater.hasMemoryPool.remote()) and not qv_update_launched:
@@ -1033,37 +1065,47 @@ class Multiprocess_RL_Environment:
                 # 2.1) get info from complete processes
                     
                 try:
-                    agent_running = ray.get(agent.isRunning.remote(), timeout = 0.1)
+                    agent_running = ray.get(agent.isRunning.remote(), timeout = 1)
                 except Exception:
                     agent_running = False
-
                 
                 if not agent_running : 
-                    if task_lst[i] is not None:
-                        partial_log, single_runs, successful_runs,internal_memory_fill_ratio , pg_info = ray.get(task_lst[i])
-                        # partial_log contains 1) duration and 2) cumulative reward of every single-run
-                        task_lst[i] = None
-                        if total_log is None:
-                            total_log = partial_log
-                        else:
-                            total_log = np.append(total_log, partial_log, axis = 0)
-                        total_runs += single_runs
-                        
-                        self.shared_memory.addMemoryBatch(ray.get(agent.emptyLocalMemory.remote()) )
-                        self.display_progress()
+                    if not task_lst[i] in [None, 'deactivated']:
+                        try:
+                            partial_log, single_runs, successful_runs,internal_memory_fill_ratio , pg_info = ray.get(task_lst[i], timeout = 1)
+                            # partial_log contains 1) duration and 2) cumulative reward of every single-run
+                            task_lst[i] = None
+                            if total_log is None:
+                                total_log = partial_log
+                            else:
+                                total_log = np.append(total_log, partial_log, axis = 0)
+                            total_runs += single_runs
+                            
+                            self.shared_memory.addMemoryBatch(ray.get(agent.emptyLocalMemory.remote()) )
+                            self.display_progress()
+
+                        except Exception:
+                            print('Killing Actor and generating new one')
+                            task_lst[i] = 'deactivated'
+                            ray.kill(agent)
+                            self.sim_agents_discr[i] = self.createRayActor_Agent(i) 
+                            self.sim_agents_discr[i].setAttribute.remote('model_qv', self.model_qv)         
+                            agent = self.sim_agents_discr[i]
                     
                     # 2.1.1) run another task if required
-                    expected_upcoming_memory_ratio = sum(not tsk is None for tsk in task_lst)*self.tot_iterations/self.memory_turnover_size
+                    expected_upcoming_memory_ratio = sum(not tsk in [None, 'deactivated'] for tsk in task_lst)*self.tot_iterations/self.memory_turnover_size
                     min_fill = 0.95-np.clip(expected_upcoming_memory_ratio,0,1)
                     
                     if not self.shared_memory.isPartiallyFull(min_fill):
                         if self.continuous_qv_update and qv_update_launched:
                             model_qv_weights = ray.get(self.nn_updater.get_current_QV_model.remote()).cpu().state_dict()
                             agent.update_model_weights_only.remote(model_qv_weights, 'model_qv')
-                        task_lst[i] = agent.run.remote()
-                    
+                        if task_lst[i] is None:
+                            task_lst[i] = agent.run.remote()
+                            
+
             # if memory is (almost) full and task list empty, inform qv update it can stop
-            if self.shared_memory.isPartiallyFull(0.9) and all(tsk is None for tsk in task_lst):
+            if self.shared_memory.isPartiallyFull(0.9) and all(tsk in [None, 'deactivated'] for tsk in task_lst):
                 if qv_update_launched:
                     self.nn_updater.sentinel.remote()
                     # after iteration extract data from remote QV update process
@@ -1073,6 +1115,10 @@ class Multiprocess_RL_Environment:
         if not memory_fill_only:        
             self.post_iteration_routine(initial_qv_weights = initial_qv_weights, total_runs= total_runs, total_log= total_log)
 
+        if any([tsk == 'deactivated' for tsk in task_lst]) :
+            return True
+        else:
+            return False
 
     ##################################################################################
     def post_iteration_routine(self, initial_qv_weights = None, initial_pg_weights = None, initial_v_weights= None, \
@@ -1176,29 +1222,39 @@ class Multiprocess_RL_Environment:
         total_log = np.zeros((1,2),dtype = np.float)
         min_fill_ratio = 0.95
         total_runs = tot_successful_runs = 0 
+        
+        reload_val = False
 
         while True:
-
-            if np.array([not ray.get(agent.isRunning.remote()) for agent in self.sim_agents_discr]).all() and not self.shared_memory.isPartiallyFull(min_fill_ratio):
-                agents_lst = []
-                [agents_lst.append(agent.run.remote(use_NN = True)) for i, agent in enumerate(self.sim_agents_discr)]
-                for agnt in agents_lst:
-                    #for each single run, partial log includes: 1) steps since start 2) cumulative reward
-                    partial_log, single_runs, successful_runs, _ , _ = ray.get(agnt)
-                    total_log = np.append(total_log, partial_log, axis = 0)
-                    total_runs += single_runs
-                    tot_successful_runs += successful_runs
             
-            if not self.shared_memory.isPartiallyFull(min_fill_ratio):
-                for agent in self.sim_agents_discr:
-                    self.shared_memory.addMemoryBatch(ray.get(agent.emptyLocalMemory.remote()) )
-                    self.display_progress()
+            try:
+
+                if np.array([not ray.get(agent.isRunning.remote(), timeout = 1) for agent in self.sim_agents_discr]).all() and not self.shared_memory.isPartiallyFull(min_fill_ratio):
+                    agents_lst = []
+                    [agents_lst.append(agent.run.remote(use_NN = True)) for i, agent in enumerate(self.sim_agents_discr)]
+                    for agnt in agents_lst:
+                        #for each single run, partial log includes: 1) steps since start 2) cumulative reward
+                        partial_log, single_runs, successful_runs, _ , _ = ray.get(agnt, timeout = 1)
+                        total_log = np.append(total_log, partial_log, axis = 0)
+                        total_runs += single_runs
+                        tot_successful_runs += successful_runs
+                
+                if not self.shared_memory.isPartiallyFull(min_fill_ratio):
+                    for agent in self.sim_agents_discr:
+                        self.shared_memory.addMemoryBatch(ray.get(agent.emptyLocalMemory.remote(), timeout = 1) )
+                        self.display_progress()
+            except Exception:
+                reload_val = True
+                break
     
             if self.shared_memory.isPartiallyFull(min_fill_ratio): # or break_cycle:
                 break
             
         print('')
-        self.end_validation_routine(total_runs, tot_successful_runs, total_log)
+        if not reload_val:
+            self.end_validation_routine(total_runs, tot_successful_runs, total_log)
+        
+        return reload_val
 
 
     ##################################################################################
@@ -1271,13 +1327,15 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     def runSequence(self, n_runs = 5, display_graphs = False, reset_optimizer = False):
         
+        reload_val = False
+        
         self.print_NN_parameters_count()
         
         final_run = self.training_session_number+ n_runs
         
         for i in np.arange(self.training_session_number,final_run+1):
             
-            self.runEnvIterationOnce(reset_optimizer)
+            reload = self.runEnvIterationOnce(reset_optimizer)
             
             print('###################################################################')
             print('###################################################################')
@@ -1292,15 +1350,23 @@ class Multiprocess_RL_Environment:
                 self.plot_training_log()
                 
             if i> 1 and not i % self.val_frequency and self.rl_mode == 'DQL':
-                print('###################################################################')
-                print('validation cycle start...')
-                self.shared_memory.resetMemory(self.validation_set_size)
-                if self.ray_parallelize:
-                    self.validation_parallelized()
+                if not reload:
+                    print('###################################################################')
+                    print('validation cycle start...')
+                    self.shared_memory.resetMemory(self.validation_set_size)
+                    if self.ray_parallelize:
+                        reload_val = self.validation_parallelized()
+                    else:
+                        self.validation_serialized()
+                    print('end of validation cycle')
+                    print('###################################################################')
                 else:
-                    self.validation_serialized()
-                print('end of validation cycle')
-                print('###################################################################')
+                    reload_val = True
+                
+            if reload or reload_val:
+                break
+            
+        return i+int(not reload_val), final_run - i
 
 
     ##################################################################################
@@ -1442,6 +1508,8 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     def runEnvIterationOnce(self, reset_optimizer = False):
         
+        reload = False
+        
         # loading/saving of models, verifying correct model is used at all stages
         self.pre_training_routine(reset_optimizer)
         
@@ -1451,15 +1519,17 @@ class Multiprocess_RL_Environment:
         else:
             # run simulations/training in parallel
             if self.rl_mode == 'DQL':
-                self.runQV_Parallelized()
+                reload = self.runQV_Parallelized()
             else:
-                self.runAC_Parallelized()
+                reload = self.runAC_Parallelized()
         
         # we update the name in order to save it
         self.training_session_number +=1        
         self.update_net_name()
         
         self.end_training_round_routine()
+        
+        return reload
        
         
     ##################################################################################
