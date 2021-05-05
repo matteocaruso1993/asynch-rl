@@ -27,15 +27,15 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 
-parser.add_argument("-v", "--version", dest="net_version", type = int, default= 0 , help="training version")
+parser.add_argument("-v", "--version", dest="net_version", type = int, default= 320 , help="training version")
 
-parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 2270 , help="iteration")
+parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 251 , help="iteration")
 
-parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= True , help="simulate instance")
+parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= False , help="simulate instance")
 
 parser.add_argument("-d", "--difficulty"   , dest="difficulty"  , type = int, default= 3 , help="difficulty")
 
-parser.add_argument("-s", "--save-movie"   , dest="save_movie"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= False , help="save movie")
+parser.add_argument("-s", "--save-movie"   , dest="save_movie"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= True , help="save movie")
 
 
 args = parser.parse_args()
@@ -99,7 +99,8 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
     rl_env.print_NN_parameters_count()
     
     try:
-        fig0, fig  = rl_env.plot_training_log(1, qv_loss_log = rl_env.rl_mode=='DQL', pg_loss_log = True)
+        fig0, fig  = rl_env.plot_training_log(1, qv_loss_log = rl_env.rl_mode=='DQL', pg_loss_log = True, save_fig = save_movie)
+            
     except Exception:
         print('incomplete data for plot generation')
     
@@ -179,12 +180,12 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
         sim_log, single_runs , successful_runs,_, pg_info = agent.run_synch(use_NN = True, test_qv = False)
 
     
-    if 'fig_val1' in locals():
-        fig_val1.waitforbuttonpress(20)
-    
-    if 'fig0' in locals():
-        fig.waitforbuttonpress(20)
-        fig0.waitforbuttonpress(20)
+        if 'fig_val1' in locals():
+            fig_val1.waitforbuttonpress(20)
+        
+        if 'fig0' in locals():
+            fig.waitforbuttonpress(20)
+            fig0.waitforbuttonpress(20)
     
 
 

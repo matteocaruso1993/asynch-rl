@@ -887,7 +887,7 @@ class Multiprocess_RL_Environment:
             
             first_task_completed = False
     
-            while any(tsk is not None for tsk in task_lst) and progress_ratio < 1.005 :
+            while (any(tsk is not None for tsk in task_lst) and progress_ratio < 1.005) or sum(tsk is not None for tsk in task_lst) > 3:
                 
                 progress_ratio = self.display_progress(total_log)
                 idx_ready = None
@@ -1033,7 +1033,6 @@ class Multiprocess_RL_Environment:
                     total_runs= total_runs, total_log= total_log, temp_pg_loss= temp_pg_loss, \
                     temp_entropy= temp_entropy, temp_advantage = temp_advantage , temp_map_loss = temp_map_loss)
             
-        return self.training_session_number>0 and not self.training_session_number % 10
 
 
     ##################################################################################
@@ -1521,7 +1520,7 @@ class Multiprocess_RL_Environment:
             if self.rl_mode == 'DQL':
                 reload = self.runQV_Parallelized()
             else:
-                reload = self.runAC_Parallelized()
+                self.runAC_Parallelized()
         
         # we update the name in order to save it
         self.training_session_number +=1        
@@ -1534,7 +1533,7 @@ class Multiprocess_RL_Environment:
         
     ##################################################################################
     # plot the training history
-    def plot_training_log(self, init_epoch=0, qv_loss_log = False, pg_loss_log = False):
+    def plot_training_log(self, init_epoch=0, qv_loss_log = False, pg_loss_log = False, save_fig = False):
         #log_norm_df=(self.log_df-self.log_df.min())/(self.log_df.max()-self.log_df.min())
         #fig, ax = plt.subplots()
         # (log structure: 
@@ -1542,6 +1541,9 @@ class Multiprocess_RL_Environment:
         # 3: 'average single-run duration', 4: 'average single-run reward' , 5: 'av. q-val loss', 
         # 6: 'av. policy loss', 7: 'N epochs', 8: 'memory size', 9: 'split random/noisy',
         # 10:'split conventional', 11: 'split NN', 12: 'pg_entropy', 13: 'average map loss'] )        
+
+        store_path= os.path.join( self.storage_path, 'video'  )
+        createPath(store_path).mkdir(parents=True, exist_ok=True)
 
         indicators = self.log_df.columns
 
@@ -1556,6 +1558,9 @@ class Multiprocess_RL_Environment:
         # 'average single-run reward'
         ax2_0.plot(self.log_df.iloc[init_epoch:][indicators[4]])
         ax2_0.legend([indicators[4]])
+
+        if save_fig:
+            fig0.savefig(os.path.join( store_path, 'duration_reward.png'), dpi=100)
 
 
         ######################################
@@ -1580,6 +1585,9 @@ class Multiprocess_RL_Environment:
             if qv_loss_log:
                 ax3.set_yscale('log')
             ax3.legend(['Q-val loss'])
+            
+            if save_fig:
+                fig.savefig(os.path.join( store_path, 'DQL_training.png'), dpi=100)
             
         
         ######################################
@@ -1611,6 +1619,10 @@ class Multiprocess_RL_Environment:
             if self.map_output:
                 ax4_1.plot(self.log_df.iloc[init_epoch:][indicators[13]])
                 ax4_1.legend([indicators[13]])
+                
+            if save_fig:
+                fig.savefig(os.path.join( store_path, 'AC_training.png'), dpi=100)
+
             
         # complete history
         """
