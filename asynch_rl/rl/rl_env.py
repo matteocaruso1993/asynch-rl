@@ -447,7 +447,8 @@ class Multiprocess_RL_Environment:
                 self.training_session_number = training_session_number        
             elif training_session_number != 0 and self.log_df.shape[0] >=1:             
                 # if no training session number is given, last iteration is taken
-                self.training_session_number = int(self.log_df.iloc[-1]['training session'])
+                raise("training session not found in .pkl!")
+                #self.training_session_number = int(self.log_df.iloc[-1]['training session'])
             else:
                 self.training_session_number = training_session_number
     
@@ -887,7 +888,7 @@ class Multiprocess_RL_Environment:
             
             first_task_completed = False
     
-            while (any(tsk is not None for tsk in task_lst) and progress_ratio < 1.005) or sum(tsk is not None for tsk in task_lst) > 3:
+            while (any(tsk is not None for tsk in task_lst) and progress_ratio < 1.2) or ( sum(tsk is not None for tsk in task_lst) > 3 and progress_ratio < 1.6):
                 
                 progress_ratio = self.display_progress(total_log)
                 idx_ready = None
@@ -945,11 +946,15 @@ class Multiprocess_RL_Environment:
                     task_lst[idx_ready] = None
                     
             if any(tsk is not None for tsk in task_lst):
-                print(f'incomplete original task list: {task_lst}')
+                incomplete_tsk_list = [ i for i,tsk in enumerate(task_lst) if tsk is not None] 
+                print(f'incomplete original task list: {incomplete_tsk_list}')
                     
             for i, agent in enumerate(self.sim_agents_discr):
                 if (task_replacement[i] is not None) or (task_lst[i] is not None):
                     tsk = task_replacement[i] if task_replacement[i] is not None else task_lst[i]
+                    
+                    #print(f'overdue task: {i}')
+                    failed_get = False
                     
                     agent.force_stop.remote()
                     task_ready, task_not_ready = ray.wait([tsk], num_returns=1, timeout=1)
@@ -957,8 +962,14 @@ class Multiprocess_RL_Environment:
                         try:
                             ray.get(tsk, timeout=1)
                         except Exception:
-                            ray.kill(agent)
-                            self.sim_agents_discr[i] = self.createRayActor_Agent(i) 
+                            print(f'failed get: {i}-th agent. Task will be killed due to failure')
+                            failed_get = True                            
+                            
+                    if not task_ready or failed_get:
+                        #print(f'killing task {i}')
+                        ray.kill(agent)
+                        self.sim_agents_discr[i] = self.createRayActor_Agent(i) 
+                            
                     task_replacement[i] = None
                     task_lst[i] = None
                     
@@ -1560,7 +1571,8 @@ class Multiprocess_RL_Environment:
         ax2_0.legend([indicators[4]])
 
         if save_fig:
-            fig0.savefig(os.path.join( store_path, 'duration_reward.png'), dpi=100)
+            fig_name = 'duration_reward_'+ str(self.net_version) +'.png'
+            fig0.savefig(os.path.join( store_path, fig_name), dpi=100)
 
 
         ######################################
@@ -1587,7 +1599,8 @@ class Multiprocess_RL_Environment:
             ax3.legend(['Q-val loss'])
             
             if save_fig:
-                fig.savefig(os.path.join( store_path, 'DQL_training.png'), dpi=100)
+                fig_name = 'DQL_training'+ str(self.net_version) +'.png'
+                fig.savefig(os.path.join( store_path, fig_name), dpi=100)
             
         
         ######################################
@@ -1621,7 +1634,8 @@ class Multiprocess_RL_Environment:
                 ax4_1.legend([indicators[13]])
                 
             if save_fig:
-                fig.savefig(os.path.join( store_path, 'AC_training.png'), dpi=100)
+                fig_name = 'AC_training'+ str(self.net_version) +'.png'
+                fig.savefig(os.path.join( store_path, fig_name ), dpi=100)
 
             
         # complete history

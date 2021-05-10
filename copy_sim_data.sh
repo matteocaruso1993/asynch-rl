@@ -37,18 +37,22 @@ fi
 
 echo "server string = $server_string"
 
+### enrico local
 source ~/environments/venv_PedEnv/bin/activate
+local_path_string="/home/rodpod21/GitHubRepositories"
+### ros
+#source ~/CrowdNav/bin/activate
+#local_path_string="~/crowd"
+
 
 folder="ConvModel$VERS"
 iteration="_$ITER"
 
-#echo $folder
-#echo $iteration
-
-mkdir /home/rodpod21/GitHubRepositories/asynch-rl/Data/RobotEnv/${folder}
+mkdir ${local_path_string}/asynch-rl/Data/RobotEnv/${folder}
  
 #rm /home/rodpod21/GitHubRepositories/asynch-rl/Data/RobotEnv/${folder}/TrainingLog.pkl
  
-sshpass -p 'abcABC11!?' scp eregolin@172.30.121.${server_string}/asynch-rl/Data/RobotEnv/${folder}/\{'TrainingLog.pkl','train_params.txt','*'$iteration'*','val_history.npy','PG_training.npy'\} /home/rodpod21/GitHubRepositories/asynch-rl/Data/RobotEnv/${folder}/
+sshpass -p 'abcABC11!?' scp eregolin@172.30.121.${server_string}/asynch-rl/Data/RobotEnv/${folder}/\{'TrainingLog.pkl','train_params.txt','*'$iteration'*','val_history.npy','PG_training.npy'\} ${local_path_string}/asynch-rl/Data/RobotEnv/${folder}/
 
-python /home/rodpod21/GitHubRepositories/asynch-rl/examples/Tester_robot.py -v $VERS -i $ITER -sim $SIM -d $DIFF -s $SAVE
+
+python ${local_path_string}/asynch-rl/examples/Tester_robot.py -v $VERS -i $ITER -sim $SIM -d $DIFF -s $SAVE

@@ -38,7 +38,13 @@ echo "RL = $RL"
 server_string="167:GitHub_repos"
 echo "server string = $server_string"
 
+### enrico local
 source ~/environments/venv_PedEnv/bin/activate
+local_path_string="/home/rodpod21/GitHubRepositories"
+### ros
+#source ~/CrowdNav/bin/activate
+#local_path_string="~/crowd"
+
 
 folder="ConvModel$VERS"
 iteration="_$ITER"
@@ -50,8 +56,8 @@ iteration="_$ITER"
  
 #rm /home/rodpod21/GitHubRepositories/asynch-rl/Data/RobotEnv/${folder}/TrainingLog.pkl
 
-sshpass -p 'abcABC11!?' ssh eregolin@172.30.121.167 "ls "
-nohup sshpass -p 'abcABC11!?' ssh eregolin@172.30.121.167 "nohup bash -sl < perform_training.sh VERS='$VERS' ITER='$ITER'" > /home/rodpod21/GitHubRepositories/asynch-rl/Data/RobotEnv/${folder}/nohup.log 2>&1 
+#sshpass -p 'abcABC11!?' ssh eregolin@172.30.121.167 "ls "
+nohup sshpass -p 'abcABC11!?' ssh eregolin@172.30.121.167 "nohup bash -sl < perform_training.sh VERS='$VERS' ITER='$ITER'" > ${local_path_string}/asynch-rl/Data/RobotEnv/${folder}/nohup.log 2>&1 
 
 #nohup command > output.log 2>&1
 

@@ -49,7 +49,7 @@ parser.add_argument("-mo", "--map-output", dest="map_output", type=lambda x: (st
 parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 3000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 4000,
                     help="Replay Memory Size")
 
 parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100, help="net version used")

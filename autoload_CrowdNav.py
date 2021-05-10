@@ -6,8 +6,11 @@ import os
 import subprocess
 import signal
 
+asynch_rl_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
+
 remote_relaunch = True
-net_version = str(330)
+net_version = str(340)
 
 print('preparing to connect')
 c = Connection(host="eregolin@172.30.121.167",connect_kwargs={"password":"abcABC11!?"})
@@ -39,17 +42,22 @@ print(f'last iteration: {last_iteration}')
 
 video_condition = False and not int(last_iteration) % 20
 
-os.system("bash ~/GitHubRepositories/asynch-rl/copy_sim_data.sh VERS='"+ net_version +"' ITER='"+last_iteration+"' DIFF='3' SIM='"+ str(video_condition) +"' SAVE='True' RL='AC'")
+os.system("bash "+ asynch_rl_path +"/asynch-rl/copy_sim_data.sh VERS='"+ net_version +"' ITER='"+last_iteration+"' DIFF='3' SIM='"+ str(video_condition) +"' SAVE='True' RL='AC'")
 
-os.system("cp /home/rodpod21/GitHubRepositories/asynch-rl/Data/RobotEnv/ConvModel"+net_version+"/video/*.png  /home/rodpod21/Dropbox/CrowdNavigationTraining")
+time.sleep(5)
+
+os.system("cp "+ asynch_rl_path +"/asynch-rl/Data/RobotEnv/ConvModel"+net_version+"/video/*.png  ~/Dropbox/CrowdNavigationTraining")
 
 if video_condition:
     time.sleep(200)
-    os.system("cp /home/rodpod21/GitHubRepositories/asynch-rl/Data/RobotEnv/ConvModel"+net_version+"/video/*"+str(last_iteration)+"*  /home/rodpod21/Dropbox/CrowdNavigationTraining")
+    os.system("cp "+ asynch_rl_path +"/asynch-rl/Data/RobotEnv/ConvModel"+net_version+"/video/*"+str(last_iteration)+"*  ~/Dropbox/CrowdNavigationTraining")
+
+
 
 current_duration = round(time.time() - df.iloc[-1]['date'].timestamp())
 
 print(f'current duration: {current_duration}s')
+
 
 
 if current_duration > 180: #3*df[df['duration']<300]['duration'].mean():
@@ -62,8 +70,7 @@ if current_duration > 180: #3*df[df['duration']<300]['duration'].mean():
         except Exception:
             print('pseudo error after kill')
         
-        relaunch_command = "nohup bash /home/rodpod21/GitHubRepositories/asynch-rl/launch_training.sh 'ITER'=" + last_iteration + " 'VERS'=" + net_version + " &" 
-        #relaunch_command = [ "nohup","bash", "/home/rodpod21/GitHubRepositories/asynch-rl/launch_training.sh", "'ITER'="+last_iteration, "'VERS'="+net_version , "&" ]
+        relaunch_command = "nohup bash "+ asynch_rl_path +"/asynch-rl/launch_training.sh 'ITER'=" + last_iteration + " 'VERS'=" + net_version + " &" 
         os.system(relaunch_command)
         time.sleep(150)
         print('########### relaunch completed ###########')
@@ -72,10 +79,8 @@ if current_duration > 180: #3*df[df['duration']<300]['duration'].mean():
     
 else:
     print('########### iteration went well. simulation advancing...###########')
-    os.system("rm /home/rodpod21/Dropbox/CrowdNavigationTraining/last_successful*")
-    os.system("touch /home/rodpod21/Dropbox/CrowdNavigationTraining/last_successful_"+ last_iteration +" &")
+    os.system("rm ~/Dropbox/CrowdNavigationTraining/last_successful*")
+    os.system("touch ~/Dropbox/CrowdNavigationTraining/last_successful_"+ last_iteration +" &")
 
-    #p_list = subprocess.run(["touch", "/home/rodpod21/Dropbox/CrowdNavigationTraining/last_successful_"+ last_iteration])
-    #os.killpg(p_list.pid, signal.SIGTERM)
     
     

@@ -255,6 +255,9 @@ class RobotEnv(gym.Env):
             reward = self.rewards[0]*(1 - int(saturate_input)) 
             done = False
             
+        if done:
+            self.robot = None
+            
 
         return (ranges, rob_state), reward, done, info
     
