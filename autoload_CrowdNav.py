@@ -10,7 +10,8 @@ asynch_rl_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 
 remote_relaunch = True
-net_version = str(340)
+net_version = str(362)
+difficulty = str(0)
 
 print('preparing to connect')
 c = Connection(host="eregolin@172.30.121.167",connect_kwargs={"password":"abcABC11!?"})
@@ -42,7 +43,7 @@ print(f'last iteration: {last_iteration}')
 
 video_condition = False and not int(last_iteration) % 20
 
-os.system("bash "+ asynch_rl_path +"/asynch-rl/copy_sim_data.sh VERS='"+ net_version +"' ITER='"+last_iteration+"' DIFF='3' SIM='"+ str(video_condition) +"' SAVE='True' RL='AC'")
+os.system("bash "+ asynch_rl_path +"/asynch-rl/copy_sim_data.sh VERS='"+ net_version +"' ITER='"+last_iteration+"' DIFF='"+str(difficulty) +"' SIM='"+ str(video_condition) +"' SAVE='True' RL='AC'")
 
 time.sleep(5)
 

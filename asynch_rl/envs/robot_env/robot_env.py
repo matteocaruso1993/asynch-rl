@@ -206,11 +206,13 @@ class RobotEnv(gym.Env):
             self.robot.checkOutOfBounds(margin = 0.01) or self.duration > self.sim_length :
             
             #final_distance_bonus = np.clip((self.distance_init - dist_1) / self.target_distance_max ,-1,1)
-            
             #survival_time_bonus = self.duration/self.sim_length * (np.average(self.robot_state_history[:,0])/self.linear_max )
             #movement_bonus = 2*np.average(self.robot_state_history[:,0]/self.linear_max)-1
             #reward = -self.rewards[1]*( 0.75 + 0.25*(1- np.average(self.robot_state_history[:,0]/self.linear_max)) - 0.5*final_distance_bonus -0.5*survival_time_bonus  )
+            #reward = -self.rewards[1]*( 1 - final_distance_bonus )
+            
             reward = -self.rewards[1]*( 0.75 + dist_1  / self.target_distance_max )
+
 
             done = True
         
@@ -236,27 +238,12 @@ class RobotEnv(gym.Env):
                 
         else:
             self.duration += self.dt
-            
-            """
-            danger_distance = 0.5
-            peds_dist = self.robot.getPedsDistances()
-            
-            if peds_dist.size == 0:
-                closest_ped_penalty = 0
-            elif min(peds_dist)/self.lidar_range >= danger_distance:
-                closest_ped_penalty = 0
-            else:
-                norm_closest_ped_distance = min(min(peds_dist)/self.lidar_range, danger_distance)/danger_distance
-                closest_ped_penalty = - 2*np.sqrt(1-norm_closest_ped_distance)
-
-            reward = self.rewards[0]*(1 - int(saturate_input) + closest_ped_penalty )
-            """
-            
-            reward = self.rewards[0]*(1 - int(saturate_input)) 
+            reward = self.rewards[0]*(int(dot_x>0) - int(saturate_input) )
             done = False
             
-        if done:
-            self.robot = None
+            
+        #if done:
+        #    self.robot = None
             
 
         return (ranges, rob_state), reward, done, info
