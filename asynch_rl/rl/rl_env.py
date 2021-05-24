@@ -426,6 +426,18 @@ class Multiprocess_RL_Environment:
         if printout:
             print(f'NetName : {self.net_name}')
 
+
+    ##################################################################################
+    def load_training_session_data(self, training_session_number = -1):
+        """ load data to resume training """
+        if self.log_df.shape[0] >=1:
+            # create back_up
+            filename_log = os.path.join(self.storage_path, 'TrainingLog_tsn_'+str(int(training_session_number)) + '.pkl')
+            self.log_df.to_pickle(filename_log)
+            self.log_df = self.log_df[:int(training_session_number)]
+        self.training_session_number = training_session_number
+
+
             
     ##################################################################################
     def load(self, training_session_number = -1):
@@ -439,12 +451,9 @@ class Multiprocess_RL_Environment:
         
             self.log_df = pd.read_pickle(filename_log)
             if training_session_number in self.log_df['training session'].values :
-                if self.log_df.shape[0] >=1:
-                    # create back_up
-                    filename_log = os.path.join(self.storage_path, 'TrainingLog_tsn_'+str(int(training_session_number)) + '.pkl')
-                    self.log_df.to_pickle(filename_log)
-                    self.log_df = self.log_df[:int(training_session_number)]
-                self.training_session_number = training_session_number        
+                self.load_training_session_data(training_session_number)
+            elif training_session_number-1 in self.log_df['training session'].values :
+                self.load_training_session_data(training_session_number-1)                
             elif training_session_number != 0 and self.log_df.shape[0] >=1:             
                 # if no training session number is given, last iteration is taken
                 raise("training session not found in .pkl!")
@@ -1350,7 +1359,7 @@ class Multiprocess_RL_Environment:
             print('###################################################################')
             print('###################################################################')
             print(f'Model Saved in {self.storage_path}')
-            print(f'end of iteration: {self.training_session_number -1} of {final_run}')
+            print(f'end of iteration: {self.training_session_number} of {final_run}')
             print('###################################################################')
             print('###################################################################')
             

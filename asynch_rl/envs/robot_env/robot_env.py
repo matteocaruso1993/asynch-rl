@@ -238,7 +238,7 @@ class RobotEnv(gym.Env):
                 
         else:
             self.duration += self.dt
-            reward = self.rewards[0]*(int(dot_x>0) - int(saturate_input) )
+            reward = self.rewards[0]*(int(dist_0>dist_1) - int(saturate_input) )
             done = False
             
             
@@ -273,9 +273,10 @@ class RobotEnv(gym.Env):
         while True:
             self.target_coordinates = np.random.uniform(low = np.array(low_bound), high = np.array(high_bound),size=3)
             if np.amin(np.sqrt(np.sum((self.robot.map.obstaclesCoordinates - self.target_coordinates[:2])**2, axis = 1)))>min_distance:
-                break
+                if self.lidar_range*min(self.robot.chunk(self.n_chunk_sections, peds_only=True)) > 1.5*min_distance:
+                    break
             count +=1
-            if count >= 100:
+            if count >= 1000:
                 raise('suitable initial coordinates not found')
             
         # if initial condition is too close (1.5m) to obstacle, pedestrians or target, generate new initial condition

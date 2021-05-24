@@ -67,7 +67,7 @@ parser.add_argument("-msl", "--memory-save-load", dest="memory_save_load", type=
 parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int, default= 500,
                     help="Max n. iterations each agent runs during simulation. Influences the level of exploration which is reached by PG algorithm")
 
-parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default= 0, help = "task degree of difficulty. 10 = random")
+parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default= 2, help = "task degree of difficulty. 10 = random")
 
 parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=150,
                     help="Length of one successful run in seconds")
@@ -103,7 +103,7 @@ parser.add_argument("-scl", "--share-conv-layers", dest="share_conv_layers", typ
 
 parser.add_argument("-g", "--gamma", dest="gamma", type=float, default=0.9, help="GAMMA parameter in QV learning")
 
-parser.add_argument("-b", "--beta", dest="beta", type=float, default= 0.01 , help="BETA parameter for entropy in PG learning")
+parser.add_argument("-b", "--beta", dest="beta", type=float, default= 0.05 , help="BETA parameter for entropy in PG learning")
 
 parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False, 
                     help="latest QV model is always used for Advanatge calculation")
