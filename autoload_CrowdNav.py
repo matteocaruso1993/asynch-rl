@@ -6,18 +6,22 @@ import os
 import subprocess
 import signal
 
+import server_config
+
 asynch_rl_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 
 remote_relaunch = True
 net_version = str(362)
-difficulty = str(0)
+difficulty = str(2)
 
 print('preparing to connect')
-c = Connection(host="eregolin@172.30.121.167",connect_kwargs={"password":"abcABC11!?"})
+host = server_config.username+"@"+server_config.ip_address
+password = server_config.password
+c = Connection(host=host,connect_kwargs={"password":password})
 print('connection completed')
 
-result=c.run("cat /home/eregolin/GitHub_repos/asynch-rl/Data/RobotEnv/ConvModel"+net_version+"/train_log.txt")
+result=c.run("cat /home/"+server_config.username+"/GitHub_repos/asynch-rl/Data/RobotEnv/ConvModel"+net_version+"/train_log.txt")
 
 print("data extracted")
 
@@ -61,19 +65,19 @@ print(f'current duration: {current_duration}s')
 
 
 
-if current_duration > 180: #3*df[df['duration']<300]['duration'].mean():
-    os.system("rm /home/rodpod21/Dropbox/CrowdNavigationTraining/SIMULATION_STALLED_*")
-    os.system("touch /home/rodpod21/Dropbox/CrowdNavigationTraining/SIMULATION_STALLED_"+ last_iteration)
+if current_duration > 300: #3*df[df['duration']<300]['duration'].mean():
+    os.system("rm ~/Dropbox/CrowdNavigationTraining/SIMULATION_STALLED_*")
+    os.system("touch ~/Dropbox/CrowdNavigationTraining/SIMULATION_STALLED_"+ last_iteration)
     
     if remote_relaunch:
         try:
-            c.run("kill -9 -1 -u eregolin")
+            c.run("kill -9 -1 -u "+server_config.username)
         except Exception:
             print('pseudo error after kill')
         
         relaunch_command = "nohup bash "+ asynch_rl_path +"/asynch-rl/launch_training.sh 'ITER'=" + last_iteration + " 'VERS'=" + net_version + " &" 
         os.system(relaunch_command)
-        time.sleep(150)
+        time.sleep(250)
         print('########### relaunch completed ###########')
         
         

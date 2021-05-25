@@ -647,26 +647,29 @@ class SimulationAgent:
             elif self.env.env_type == 'CartPole':
                 ani , filename, duration=self.getVideoCartPole(fig_film)
 
-            if not kernel_exec:
-               if ani is not None:
+
+            if ani is not None:
+
+                if not kernel_exec:
+
                     #print(f'duration = {duration}s')
                     plt.show(block=False)
                     plt.waitforbuttonpress(round(duration))
                                 
-                    if self.save_movie:
+                if self.save_movie:
+                    
+                    if 'AC' in self.rl_mode :
+                        net_type = self.model_pg.net_type
+                    elif self.rl_mode == 'DQL':
+                        net_type = self.model_qv.net_type
+                    else:
+                        raise('RL mode not defined')                        
                         
-                        if 'AC' in self.rl_mode :
-                            net_type = self.model_pg.net_type
-                        elif self.rl_mode == 'DQL':
-                            net_type = self.model_qv.net_type
-                        else:
-                            raise('RL mode not defined')                        
-                            
-                        store_path= os.path.join( self.storage_path, 'video'  )
-                        createPath(store_path).mkdir(parents=True, exist_ok=True)
-                        
-                        full_filename = os.path.join(store_path, filename)
-                        ani.save(full_filename)
+                    store_path= os.path.join( self.storage_path, 'video'  )
+                    createPath(store_path).mkdir(parents=True, exist_ok=True)
+                    
+                    full_filename = os.path.join(store_path, filename)
+                    ani.save(full_filename)
                         
 
     ##################################################################################

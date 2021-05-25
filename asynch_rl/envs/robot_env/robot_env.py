@@ -3,6 +3,8 @@ import os
 import numpy as np
 import numpy.matlib
 
+import time
+
 import random
 
 # matplotlib
@@ -73,7 +75,7 @@ class RobotEnv(gym.Env):
     def __init__(self, lidar_n_rays = 135, \
                  collision_distance = 0.7, visualization_angle_portion = 0.5, lidar_range = 10,\
                  v_linear_max = 1 , v_angular_max = 1 , rewards = [1,100,40], max_v_x_delta = .5, \
-                 initial_margin = .3,    max_v_rot_delta = .5, dt = None, normalize_obs_state = True, \
+                 initial_margin = .08,    max_v_rot_delta = .5, dt = None, normalize_obs_state = True, \
                      sim_length = 200, difficulty = 0, scan_noise = [0.005,0.002], n_chunk_sections = 18):
 
         self.n_chunk_sections = n_chunk_sections
@@ -269,22 +271,41 @@ class RobotEnv(gym.Env):
         low_bound,high_bound = self._getPositionBounds()   
         
         count = 0
-        min_distance = (high_bound[0]-low_bound[0])/20
+        start_time = time.time()
+        min_distance = (high_bound[0]-low_bound[0])/25
+        
         while True:
-            self.target_coordinates = np.random.uniform(low = np.array(low_bound), high = np.array(high_bound),size=3)
+
+            from_center_distance = 0
+            while from_center_distance < self.target_distance_max*0.5*0.6:
+                random_coords = np.random.uniform(low = np.array(low_bound), high = np.array(high_bound) , size=3)
+                from_center_distance = np.sqrt(sum(random_coords[:2]**2))  
+                count += 1
+                if count >= 1000:
+                    raise('suitable target coordinates not found')
+
+
+            self.target_coordinates = random_coords
+
             if np.amin(np.sqrt(np.sum((self.robot.map.obstaclesCoordinates - self.target_coordinates[:2])**2, axis = 1)))>min_distance:
-                if self.lidar_range*min(self.robot.chunk(self.n_chunk_sections, peds_only=True)) > 1.5*min_distance:
+                #if self.lidar_range*min(self.robot.chunk(self.n_chunk_sections, peds_only=True)) > 1.2*min_distance:
                     break
             count +=1
             if count >= 1000:
-                raise('suitable initial coordinates not found')
+                raise('suitable target coordinates not found')
+
             
+        count = 0
         # if initial condition is too close (1.5m) to obstacle, pedestrians or target, generate new initial condition
         while self.robot.check_collision(2) or self.robot.checkOutOfBounds(margin = 0.2) or \
-            self.robot.target_rel_position(self.target_coordinates[:2])[0] < (high_bound[0]-low_bound[0])*0.7 :
+            self.robot.target_rel_position(self.target_coordinates[:2])[0] < (high_bound[0]-low_bound[0])*0.8 :
                 
             init_coordinates = np.random.uniform(low = low_bound, high = high_bound,size=3)
             self.robot.setPosition(init_coordinates[0], init_coordinates[1], init_coordinates[2])
+            count += 1
+            if count >= 1000:
+                raise('suitable initial coordinates not found')
+
             
             
         # initialize Scan to get dimension of state (depends on ray cast) 
