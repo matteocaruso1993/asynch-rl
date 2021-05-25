@@ -10,9 +10,8 @@ import server_config
 
 asynch_rl_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
-
 remote_relaunch = True
-net_version = str(362)
+net_version = str(1002)
 difficulty = str(2)
 
 print('preparing to connect')
@@ -46,17 +45,27 @@ print(f'last iteration: {last_iteration}')
 
 
 video_condition = False and not int(last_iteration) % 20
+    
+makedir_string = "mkdir "+asynch_rl_path+"/asynch-rl/Data/RobotEnv/ConvModel"+net_version+"/"
+ 
+copy_string = "sshpass -p "+server_config.password+" scp "+server_config.username+"@"+server_config.ip_address+":GitHub_repos/asynch-rl/Data/RobotEnv/ConvModel"\
+    +net_version+"/\{'TrainingLog.pkl','train_params.txt','*'$iteration'*','val_history.npy','PG_training.npy'\} "+asynch_rl_path+"/asynch-rl/Data/RobotEnv/ConvModel"+net_version+"/"
 
-os.system("bash "+ asynch_rl_path +"/asynch-rl/copy_sim_data.sh VERS='"+ net_version +"' ITER='"+last_iteration+"' DIFF='"+str(difficulty) +"' SIM='"+ str(video_condition) +"' SAVE='True' RL='AC'")
+os.system(makedir_string)
+os.system(copy_string)
+
+os.system("bash "+ asynch_rl_path +"/asynch-rl/launch_test.sh VERS='"+ net_version +"' ITER='"+last_iteration+"' DIFF='"+str(difficulty) +"' SIM='"+ str(video_condition) +"' SAVE='True' RL='AC'")
 
 time.sleep(5)
 
+
 os.system("cp "+ asynch_rl_path +"/asynch-rl/Data/RobotEnv/ConvModel"+net_version+"/video/*.png  ~/Dropbox/CrowdNavigationTraining")
 
+"""
 if video_condition:
     time.sleep(200)
     os.system("cp "+ asynch_rl_path +"/asynch-rl/Data/RobotEnv/ConvModel"+net_version+"/video/*"+str(last_iteration)+"*  ~/Dropbox/CrowdNavigationTraining")
-
+"""
 
 
 current_duration = round(time.time() - df.iloc[-1]['date'].timestamp())
@@ -75,12 +84,15 @@ if current_duration > 300: #3*df[df['duration']<300]['duration'].mean():
         except Exception:
             print('pseudo error after kill')
         
-        relaunch_command = "nohup bash "+ asynch_rl_path +"/asynch-rl/launch_training.sh 'ITER'=" + last_iteration + " 'VERS'=" + net_version + " &" 
-        os.system(relaunch_command)
+        relaunch_string =  "nohup sshpass -p '"+password+"' ssh "+host+" \"nohup bash -sl < perform_training.sh VERS='"+net_version+"' ITER='"+last_iteration+"'\" > "+asynch_rl_path+\
+            "/asynch-rl/Data/RobotEnv/ConvModel" +net_version+"/nohup.log 2>&1 "
+
+        os.system(relaunch_string)               
+
+        #relaunch_command = "nohup bash "+ asynch_rl_path +"/asynch-rl/launch_training.sh 'ITER'=" + last_iteration + " 'VERS'=" + net_version + " &" 
+        #os.system(relaunch_command)
         time.sleep(250)
         print('########### relaunch completed ###########')
-        
-        
     
 else:
     print('########### iteration went well. simulation advancing...###########')
