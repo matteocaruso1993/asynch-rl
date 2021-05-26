@@ -240,7 +240,11 @@ class RobotEnv(gym.Env):
                 
         else:
             self.duration += self.dt
-            reward = self.rewards[0]*(int(dist_0>dist_1) - int(saturate_input) )
+            
+            obstacles_proximity_penalty = np.sum((1-np.array(self.robot.chunk(self.n_chunk_sections, peds_only=True)))**3)
+            #print(obstacles_proximity_penalty)
+            
+            reward = self.rewards[0]*(int(dist_0>dist_1) - int(saturate_input) -  2*obstacles_proximity_penalty  )
             done = False
             
             
