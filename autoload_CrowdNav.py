@@ -84,7 +84,7 @@ if current_duration > 300: #3*df[df['duration']<300]['duration'].mean():
         except Exception:
             print('pseudo error after kill')
         
-        relaunch_string =  "nohup sshpass -p '"+password+"' ssh "+host+" \"nohup bash -sl < perform_training.sh VERS='"+net_version+"' ITER='"+last_iteration+"'\" > "+asynch_rl_path+\
+        relaunch_string =  "nohup sshpass -p '"+password+"' ssh "+host+" \"nohup bash -sl < perform_training.sh DIFF='"+difficulty+"' VERS='"+net_version+"' ITER='"+last_iteration+"'\" > "+asynch_rl_path+\
             "/asynch-rl/Data/RobotEnv/ConvModel" +net_version+"/nohup.log 2>&1 "
 
         os.system(relaunch_string)               
