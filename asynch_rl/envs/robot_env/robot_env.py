@@ -74,7 +74,7 @@ class RobotEnv(gym.Env):
     #####################################################################################################
     def __init__(self, lidar_n_rays = 135, \
                  collision_distance = 0.7, visualization_angle_portion = 0.5, lidar_range = 10,\
-                 v_linear_max = 1 , v_angular_max = 1 , rewards = [1,100,40], max_v_x_delta = .5, \
+                 v_linear_max = 1 , v_angular_max = 1 , rewards = [1,100,2], max_v_x_delta = .5, \
                  initial_margin = .08,    max_v_rot_delta = .5, dt = None, normalize_obs_state = True, \
                      sim_length = 200, difficulty = 0, scan_noise = [0.005,0.002], n_chunk_sections = 18):
 
@@ -213,7 +213,7 @@ class RobotEnv(gym.Env):
             #reward = -self.rewards[1]*( 0.75 + 0.25*(1- np.average(self.robot_state_history[:,0]/self.linear_max)) - 0.5*final_distance_bonus -0.5*survival_time_bonus  )
             #reward = -self.rewards[1]*( 1 - final_distance_bonus )
             
-            reward = -self.rewards[1]*( 0.75 + dist_1  / self.target_distance_max )
+            reward = -self.rewards[1] #*( 0.75 + dist_1  / self.target_distance_max )
 
 
             done = True
@@ -221,6 +221,7 @@ class RobotEnv(gym.Env):
         # if target is reached            
         elif self.robot.check_target_reach(self.target_coordinates[:2], tolerance = 1):
 
+            """
             # "0<=a<=1" indicates how much the initial distance has to be weighted in the reward
             a = 0.5
             weight = (1-a)+a*self.distance_init/self.target_distance_max
@@ -235,16 +236,17 @@ class RobotEnv(gym.Env):
             
             # reward is proportional to distance covered / speed in getting to target
             reward = np.maximum( self.rewards[1]/2 , self.rewards[1] - rotations_penalty )
-            #reward = self.rewards[1] - rotations_penalty
+            """
+            reward = self.rewards[1] #- rotations_penalty
             done = True
                 
         else:
             self.duration += self.dt
             
-            obstacles_proximity_penalty = np.sum((1-np.array(self.robot.chunk(self.n_chunk_sections, peds_only=True)))**3)
+            obstacles_proximity_penalty = np.sum((1-np.array(self.robot.chunk(self.n_chunk_sections, peds_only=True)))**3) 
             #print(obstacles_proximity_penalty)
             
-            reward = self.rewards[0]*(int(dist_0>dist_1) - int(saturate_input) -  2*obstacles_proximity_penalty  )
+            reward = self.rewards[0]*(int(dist_0>dist_1) - int(saturate_input) -  self.rewards[2]*obstacles_proximity_penalty  )
             done = False
             
             
