@@ -179,9 +179,6 @@ class RobotEnv(gym.Env):
             saturate_input = True
             dot_orient = np.clip( dot_orient ,-self.angular_max , self.angular_max)
         
-        #print(f'orientation = {round(self.robot.current_pose["orientation"]["z"],3)}')
-        #print(f'angular speed = {round(self.robot.current_speed["angular"]["z"],3)}')
-        
         if self.robot_state_history is None:
             self.robot_state_history = np.array([[dot_x, dot_orient]])
         else:
@@ -207,54 +204,72 @@ class RobotEnv(gym.Env):
         if self.robot.check_pedestrians_collision(.8) or self.robot.check_obstacle_collision() or \
             self.robot.checkOutOfBounds(margin = 0.01) or self.duration > self.sim_length :
             
-            #final_distance_bonus = np.clip((self.distance_init - dist_1) / self.target_distance_max ,-1,1)
-            #survival_time_bonus = self.duration/self.sim_length * (np.average(self.robot_state_history[:,0])/self.linear_max )
-            #movement_bonus = 2*np.average(self.robot_state_history[:,0]/self.linear_max)-1
-            #reward = -self.rewards[1]*( 0.75 + 0.25*(1- np.average(self.robot_state_history[:,0]/self.linear_max)) - 0.5*final_distance_bonus -0.5*survival_time_bonus  )
-            #reward = -self.rewards[1]*( 1 - final_distance_bonus )
-            
-            reward = -self.rewards[1] #*( 0.75 + dist_1  / self.target_distance_max )
-
-
+            reward = -self.rewards[1]*( 0.75 + dist_1  / self.target_distance_max )
             done = True
         
         # if target is reached            
         elif self.robot.check_target_reach(self.target_coordinates[:2], tolerance = 1):
 
-            """
-            # "0<=a<=1" indicates how much the initial distance has to be weighted in the reward
-            a = 0.5
-            weight = (1-a)+a*self.distance_init/self.target_distance_max
-            
-            t_max= self.sim_length
-            t_min = self.distance_init/self.linear_max
-            t = self.duration
-            rel_rew = 0.25+0.75*(t_max-t)/(t_max - t_min)
-
-            cum_rotations = (self.rotation_counter/(2*np.pi))
-            rotations_penalty = self.rewards[2] * cum_rotations / (1e-5+self.duration)
-            
-            # reward is proportional to distance covered / speed in getting to target
-            reward = np.maximum( self.rewards[1]/2 , self.rewards[1] - rotations_penalty )
-            """
             reward = self.rewards[1] #- rotations_penalty
             done = True
                 
         else:
             self.duration += self.dt
-            
             obstacles_proximity_penalty = np.sum((1-np.array(self.robot.chunk(self.n_chunk_sections, peds_only=True)))**3) 
-            #print(obstacles_proximity_penalty)
-            
             reward = self.rewards[0]*(int(dist_0>dist_1) - int(saturate_input) -  self.rewards[2]*obstacles_proximity_penalty  )
             done = False
             
-            
         #if done:
         #    self.robot = None
-            
 
         return (ranges, rob_state), reward, done, info
+    
+    
+    #####################################################################################################
+    def generate_initial_and_target_coords(self, low_bound, high_bound):
+    
+        min_distance = (high_bound[0]-low_bound[0])/25
+        count = 0    
+        failed = False
+    
+        while True:
+
+            from_center_distance = 0
+            while from_center_distance < self.target_distance_max*0.5*0.6:
+                random_coords = np.random.uniform(low = np.array(low_bound), high = np.array(high_bound) , size=3)
+                from_center_distance = np.sqrt(sum(random_coords[:2]**2))  
+                count += 1
+                if count >= 1000:
+                    failed = True
+                    print('suitable target coordinates not found')
+                    break
+
+            self.target_coordinates = random_coords
+
+            if np.amin(np.sqrt(np.sum((self.robot.map.obstaclesCoordinates - self.target_coordinates[:2])**2, axis = 1)))>min_distance:
+                #if self.lidar_range*min(self.robot.chunk(self.n_chunk_sections, peds_only=True)) > 1.2*min_distance:
+                    break
+                
+            count +=1
+            if count >= 1000:
+                failed = True
+                print('suitable target coordinates not found')
+                break
+
+        count = 0
+        # if initial condition is too close (1.5m) to obstacle, pedestrians or target, generate new initial condition
+        while not failed and self.robot.check_collision(2) or self.robot.checkOutOfBounds(margin = 0.2) or \
+            self.robot.target_rel_position(self.target_coordinates[:2])[0] < (high_bound[0]-low_bound[0])*0.8 :
+                
+            init_coordinates = np.random.uniform(low = low_bound, high = high_bound,size=3)
+            self.robot.setPosition(init_coordinates[0], init_coordinates[1], init_coordinates[2])
+            count += 1
+            if count >= 1000:
+                failed = True
+                print('suitable initial coordinates not found')
+                break 
+            
+        return not failed
     
     
     #####################################################################################################
@@ -262,9 +277,6 @@ class RobotEnv(gym.Env):
         
         self._difficulty = self.input_difficulty if self.input_difficulty != 10 else random.randint( 1 , len(self.sparsity_levels)-1)
         self.peds_sparsity = self.sparsity_levels[self._difficulty]
-        
-        #print(f'Simulation difficulty level: {self._difficulty}')
-
         
         self.duration = 0
         self.rotation_counter = 0
@@ -276,47 +288,12 @@ class RobotEnv(gym.Env):
 
         low_bound,high_bound = self._getPositionBounds()   
         
-        count = 0
+        succeeded = False
         start_time = time.time()
-        min_distance = (high_bound[0]-low_bound[0])/25
-        
-        while True:
-
-            from_center_distance = 0
-            while from_center_distance < self.target_distance_max*0.5*0.6:
-                random_coords = np.random.uniform(low = np.array(low_bound), high = np.array(high_bound) , size=3)
-                from_center_distance = np.sqrt(sum(random_coords[:2]**2))  
-                count += 1
-                if count >= 1000:
-                    raise('suitable target coordinates not found')
-
-
-            self.target_coordinates = random_coords
-
-            if np.amin(np.sqrt(np.sum((self.robot.map.obstaclesCoordinates - self.target_coordinates[:2])**2, axis = 1)))>min_distance:
-                #if self.lidar_range*min(self.robot.chunk(self.n_chunk_sections, peds_only=True)) > 1.2*min_distance:
-                    break
-            count +=1
-            if count >= 1000:
-                raise('suitable target coordinates not found')
-
-            
-        count = 0
-        # if initial condition is too close (1.5m) to obstacle, pedestrians or target, generate new initial condition
-        while self.robot.check_collision(2) or self.robot.checkOutOfBounds(margin = 0.2) or \
-            self.robot.target_rel_position(self.target_coordinates[:2])[0] < (high_bound[0]-low_bound[0])*0.8 :
-                
-            init_coordinates = np.random.uniform(low = low_bound, high = high_bound,size=3)
-            self.robot.setPosition(init_coordinates[0], init_coordinates[1], init_coordinates[2])
-            count += 1
-            if count >= 1000:
-                raise('suitable initial coordinates not found')
-
-            
-            
-        # initialize Scan to get dimension of state (depends on ray cast) 
-        #self.robot.getScan()
-        #self.size = len(self.robot.scanner.scan_structure['data']['angles'])
+        while not succeeded:
+            succeeded = self.generate_initial_and_target_coords(low_bound, high_bound)
+            if time.time() - start_time > 20:
+                raise('initialization failed')
 
         self.distance_init = self.robot.target_rel_position(self.target_coordinates[:2])[0]
         

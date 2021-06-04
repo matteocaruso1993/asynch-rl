@@ -164,8 +164,8 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
     if ray_parallelize:
         # Start Ray.
         
-        #replay_memory_size *= agents_number
-        replay_memory_size *= 25 # (to ensure same epoch length between DQL on cluster and AC on eracle )
+        replay_memory_size *= agents_number
+        #replay_memory_size *= 25 # (to ensure same epoch length between DQL on cluster and AC on eracle )
         
         try:
             ray.shutdown()
