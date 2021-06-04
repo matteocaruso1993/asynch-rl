@@ -978,8 +978,11 @@ class Multiprocess_RL_Environment:
 
 
     ##################################################################################
-    def clear_task_lists(self, task_lst, task_replacement):
+    def clear_task_lists(self, task_lst, task_replacement = None ):
         """ clear task lists"""
+
+        if task_replacement is None:
+            task_replacement = len(task_lst)*[None]
 
         # check if any task is left from the original task list                    
         if any(tsk is not None for tsk in task_lst):
@@ -1150,14 +1153,13 @@ class Multiprocess_RL_Environment:
                     self.qval_loss_hist_iteration, self.av_map_loss = np.array(ray.get(updating_process))
                 break
 
+        self.clear_task_lists(task_lst)
+
         if not memory_fill_only:        
             self.post_iteration_routine(initial_qv_weights = initial_qv_weights, total_runs= total_runs, total_log= total_log)
 
-        if any([tsk == 'deactivated' for tsk in task_lst]) :
-            return True
-        else:
-            return False
-
+        
+                              
     ##################################################################################
     def post_iteration_routine(self, initial_qv_weights = None, initial_pg_weights = None, initial_v_weights= None, \
                                total_runs= None, total_log= None, temp_pg_loss= None, temp_entropy= None, \
@@ -1289,10 +1291,13 @@ class Multiprocess_RL_Environment:
                 break
             
         print('')
-        if not reload_val:
-            self.end_validation_routine(total_runs, tot_successful_runs, total_log)
         
-        return reload_val
+        if reload_val:
+            self.clear_task_lists(agents_lst)
+
+        self.end_validation_routine(total_runs, tot_successful_runs, total_log)
+        
+
 
 
     ##################################################################################
@@ -1365,15 +1370,13 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     def runSequence(self, n_runs = 5, display_graphs = False, reset_optimizer = False):
         
-        reload_val = False
-        
         self.print_NN_parameters_count()
         
         final_run = self.training_session_number+ n_runs
         
         for i in np.arange(self.training_session_number,final_run+1):
             
-            reload = self.runEnvIterationOnce(reset_optimizer)
+            self.runEnvIterationOnce(reset_optimizer)
             
             print('###################################################################')
             print('###################################################################')
@@ -1388,24 +1391,16 @@ class Multiprocess_RL_Environment:
                 self.plot_training_log()
                 
             if i> 1 and not i % self.val_frequency and self.rl_mode == 'DQL':
-                if not reload:
-                    print('###################################################################')
-                    print('validation cycle start...')
-                    self.shared_memory.resetMemory(self.validation_set_size)
-                    if self.ray_parallelize:
-                        reload_val = self.validation_parallelized()
-                    else:
-                        self.validation_serialized()
-                    print('end of validation cycle')
-                    print('###################################################################')
+                print('###################################################################')
+                print('validation cycle start...')
+                self.shared_memory.resetMemory(self.validation_set_size)
+                if self.ray_parallelize:
+                    self.validation_parallelized()
                 else:
-                    reload_val = True
-                
-            if reload or reload_val:
-                break
-            
-        return i+int(not reload_val), final_run - i
-
+                    self.validation_serialized()
+                print('end of validation cycle')
+                print('###################################################################')
+                            
 
     ##################################################################################
     def updateProbabilities(self, print_out = False):
@@ -1557,7 +1552,7 @@ class Multiprocess_RL_Environment:
         else:
             # run simulations/training in parallel
             if self.rl_mode == 'DQL':
-                reload = self.runQV_Parallelized()
+                self.runQV_Parallelized()
             else:
                 self.runA3C()
         
@@ -1566,9 +1561,7 @@ class Multiprocess_RL_Environment:
         self.update_net_name()
         
         self.end_training_round_routine()
-        
-        return reload
-       
+               
         
     ##################################################################################
     # plot the training history

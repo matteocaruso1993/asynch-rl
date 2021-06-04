@@ -186,38 +186,38 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
 
     
     # second run is to test parallel computation fo simulations and NN update
-    while n_iterations > 1: 
         
+    if load_iteration > 0:
         print('###################################################################')
-        print(f'Reloading Environment. iteration: {load_iteration}')
+        print(f'Loading Environment. iteration: {load_iteration}')
         print('###################################################################')
-    
-        rl_env = Multiprocess_RL_Environment(env_type , model_type , net_version , rl_mode = rl_mode, \
-                            ray_parallelize=ray_parallelize, move_to_cuda=True, n_frames = n_frames, \
-                            replay_memory_size = replay_memory_size, n_agents = agents_number,\
-                            tot_iterations = tot_iterations, discr_env_bins = 2 , \
-                            use_reinforce = use_reinforce,  epsilon_annealing_factor=epsilon_annealing_factor,  layers_width= layers_width,\
-                            N_epochs = n_epochs, epsilon = epsilon[0] , epsilon_min = epsilon[1] , rewards = rewards, \
-                            mini_batch_size = mini_batch_size, share_conv_layers = share_conv_layers, \
-                            difficulty = difficulty, learning_rate = learning_rate, sim_length_max = sim_length_max, \
-                            memory_turnover_ratio = memory_turnover_ratio, val_frequency = val_frequency ,\
-                            gamma = gamma, beta_PG = beta , continuous_qv_update = continuous_qv_update , \
-                            memory_save_load = memory_save_load , normalize_layers = normalize_layers, \
-                                map_output = map_output) 
-    
-        rl_env.resume_epsilon = resume_epsilon
-    
-        # always update agents params after rl_env params are changed
-        rl_env.updateAgentsAttributesExcept('env')
-    
-    
-        if load_iteration != 0:
-            rl_env.load( load_iteration)
+
+    rl_env = Multiprocess_RL_Environment(env_type , model_type , net_version , rl_mode = rl_mode, \
+                        ray_parallelize=ray_parallelize, move_to_cuda=True, n_frames = n_frames, \
+                        replay_memory_size = replay_memory_size, n_agents = agents_number,\
+                        tot_iterations = tot_iterations, discr_env_bins = 2 , \
+                        use_reinforce = use_reinforce,  epsilon_annealing_factor=epsilon_annealing_factor,  layers_width= layers_width,\
+                        N_epochs = n_epochs, epsilon = epsilon[0] , epsilon_min = epsilon[1] , rewards = rewards, \
+                        mini_batch_size = mini_batch_size, share_conv_layers = share_conv_layers, \
+                        difficulty = difficulty, learning_rate = learning_rate, sim_length_max = sim_length_max, \
+                        memory_turnover_ratio = memory_turnover_ratio, val_frequency = val_frequency ,\
+                        gamma = gamma, beta_PG = beta , continuous_qv_update = continuous_qv_update , \
+                        memory_save_load = memory_save_load , normalize_layers = normalize_layers, \
+                            map_output = map_output) 
+
+    rl_env.resume_epsilon = resume_epsilon
+
+    # always update agents params after rl_env params are changed
+    rl_env.updateAgentsAttributesExcept('env')
+
+
+    if load_iteration != 0:
+        rl_env.load( load_iteration)
+        
+    else:
+        store_train_params(rl_env, function_inputs)
             
-        else:
-            store_train_params(rl_env, function_inputs)
-            
-        load_iteration, n_iterations = rl_env.runSequence(n_iterations, reset_optimizer=reset_optimizer) 
+    rl_env.runSequence(n_iterations, reset_optimizer=reset_optimizer) 
 
     pr.disable()
     s = io.StringIO()
