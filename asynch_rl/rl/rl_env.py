@@ -998,8 +998,13 @@ class Multiprocess_RL_Environment:
                 failed_get = False
                 
                 agent.force_stop.remote()
-                task_ready, task_not_ready = ray.wait([tsk], num_returns=1, timeout=1)
-                if not task_not_ready:
+                if type(tsk) != str:
+                    task_ready, task_not_ready = ray.wait([tsk], num_returns=1, timeout=1)
+                else:
+                    task_ready = task_not_ready = False
+                    failed_get = True  
+                    
+                if not task_not_ready and not failed_get:
                     try:
                         ray.get(tsk, timeout=1)
                     except Exception:
