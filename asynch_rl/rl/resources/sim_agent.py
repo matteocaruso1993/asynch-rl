@@ -277,6 +277,7 @@ class SimulationAgent:
     ##################################################################################
     def initialize_pg_lists(self):
         self.traj_rewards = []
+        self.traj_output_maps = []
         self.traj_state_value = []
         self.traj_log_prob = []
         self.traj_entropy = []
@@ -289,10 +290,11 @@ class SimulationAgent:
 
     
     ##################################################################################
-    def pg_calculation(self, reward, state_0, prob, action_idx, done, info):
+    def pg_calculation(self, reward, state_0, prob_distr_map, action_idx, done, info):
         """ core of PG functionality. here gradients are calculated (model update occurs in rl_env)"""
         
         valid = (info['outcome'] != 'fail')
+        prob, out_map = prob_distr_map
         
         if valid:
             loss_pg = 0
@@ -312,6 +314,8 @@ class SimulationAgent:
                     self.traj_state_value.append(torch.max(self.model_qv(state_0)))
                     
             self.traj_log_prob.append(torch.log(prob[:,action_idx]))
+            self.traj_output_maps.append(out_map)
+            
             self.traj_entropy.append(entropy)
             self.state_sequences.append(state_0) 
             
@@ -332,11 +336,11 @@ class SimulationAgent:
                         
                     #self.advantage_loss += (  R - torch.max(self.model_qv(self.state_sequences[-1-i].float())) )**2
                     if self.rl_mode == 'AC':
-                        state_value, output_map = self.model_v(self.state_sequences[-1-i], return_map = True) #.float())
+                        state_value, output_map_v = self.model_v(self.state_sequences[-1-i], return_map = True) #.float())
                         self.advantage_loss += (  R -  state_value )**2
                         
-                        if self.env.env_type == 'RobotEnv' and info['robot_map'] is not None and output_map is not None:
-                            self.map_est_loss += torch.sum( (torch.tensor(info['robot_map'])- output_map)**2 )
+                        if self.env.env_type == 'RobotEnv' and info['robot_map'] is not None: # and output_map is not None:
+                            self.map_est_loss += 1/2*torch.sum( (torch.tensor(info['robot_map'])- self.traj_output_maps[-1-i])**2 + (torch.tensor(info['robot_map'])- output_map_v)**2 )
                             map_loss_scalar = self.map_est_loss.item()
                         else:
                             map_loss_scalar = 0
@@ -409,7 +413,7 @@ class SimulationAgent:
         
         force_stop = False
         
-        action, action_index, noise_added, prob_distrib = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN, test_qv=test_qv )
+        action, action_index, noise_added, prob_distr_map = self.getNextAction(state, use_controller=use_controller, use_NN = use_NN, test_qv=test_qv )
         
         if use_NN and DEBUG:
             print(f'action_index: {action_index}')
@@ -420,7 +424,7 @@ class SimulationAgent:
             self.agent_run_variables['successful_runs'] += 1
             
         if 'AC' in self.rl_mode:
-            loss_pg, entropy_i, advantage, loss_map = self.pg_calculation(reward_np, state, prob_distrib, action_index, done, info )
+            loss_pg, entropy_i, advantage, loss_map = self.pg_calculation(reward_np, state, prob_distr_map, action_index, done, info )
             force_stop = np.isnan(loss_pg)
             self.entropy_hist.append(entropy_i)
             if done:
@@ -699,7 +703,7 @@ class SimulationAgent:
         action = torch.zeros([self.n_actions], dtype=torch.bool)
         # PG only uses greedy approach            
         if 'AC' in self.rl_mode:
-            prob_distrib = self.model_pg.cpu()(state)
+            prob_distrib, map_output = self.model_pg.cpu()(state, return_map = True)
 
             try:
                 action_index = torch.multinomial(prob_distrib, 1, replacement=True)
@@ -725,7 +729,7 @@ class SimulationAgent:
             
         action[action_index] = 1
         
-        return action, action_index, noise_added, (prob_distrib if 'AC' in self.rl_mode else None )
+        return action, action_index, noise_added, (prob_distrib, map_output) if 'AC' in self.rl_mode else None
 
             
     ##################################################################################

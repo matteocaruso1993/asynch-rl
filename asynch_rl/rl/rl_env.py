@@ -1265,44 +1265,40 @@ class Multiprocess_RL_Environment:
     def validation_parallelized(self):
         
         total_log = np.zeros((1,2),dtype = np.float)
-        min_fill_ratio = 0.95
+        min_fill_ratio = 0.9
         total_runs = tot_successful_runs = 0 
         
         reload_val = False
 
+        agents_lst = []
+        [agents_lst.append(agent.run.remote(use_NN = True)) for i, agent in enumerate(self.sim_agents_discr)]
+
         while True:
             
-            try:
+            task_ready, task_not_ready = ray.wait([i for i in agents_lst if i], num_returns=1, timeout= 1)
+            
+            if task_ready:
+                idx_ready = agents_lst.index(task_ready[0])
+            
+                partial_log, single_runs, successful_runs, _ , _ = ray.get(agents_lst[idx_ready])
+                total_log = np.append(total_log, partial_log, axis = 0)
+                total_runs += single_runs
+                tot_successful_runs += successful_runs
 
-                if np.array([not ray.get(agent.isRunning.remote(), timeout = 1) for agent in self.sim_agents_discr]).all() and not self.shared_memory.isPartiallyFull(min_fill_ratio):
-                    agents_lst = []
-                    [agents_lst.append(agent.run.remote(use_NN = True)) for i, agent in enumerate(self.sim_agents_discr)]
-                    for agnt in agents_lst:
-                        #for each single run, partial log includes: 1) steps since start 2) cumulative reward
-                        partial_log, single_runs, successful_runs, _ , _ = ray.get(agnt, timeout = 1)
-                        total_log = np.append(total_log, partial_log, axis = 0)
-                        total_runs += single_runs
-                        tot_successful_runs += successful_runs
-                
+                self.shared_memory.addMemoryBatch(ray.get(self.sim_agents_discr[idx_ready].emptyLocalMemory.remote(), timeout = 1) )
+                self.display_progress()
+
                 if not self.shared_memory.isPartiallyFull(min_fill_ratio):
-                    for agent in self.sim_agents_discr:
-                        self.shared_memory.addMemoryBatch(ray.get(agent.emptyLocalMemory.remote(), timeout = 1) )
-                        self.display_progress()
-            except Exception:
-                reload_val = True
-                break
+                    agents_lst[idx_ready] = self.sim_agents_discr[idx_ready].run.remote(use_NN = True)
     
-            if self.shared_memory.isPartiallyFull(min_fill_ratio): # or break_cycle:
+            if self.shared_memory.isFull() or all([i is None for i in agents_lst]): # or break_cycle:
                 break
             
         print('')
-        
-        if reload_val:
-            self.clear_task_lists(agents_lst)
+        self.clear_task_lists(agents_lst)
 
         self.end_validation_routine(total_runs, tot_successful_runs, total_log)
         
-
 
 
     ##################################################################################
@@ -1381,6 +1377,8 @@ class Multiprocess_RL_Environment:
         
         for i in np.arange(self.training_session_number,final_run+1):
             
+            print(f'simulating with {self.n_agents_discr} agents')
+            
             self.runEnvIterationOnce(reset_optimizer)
             
             print('###################################################################')
@@ -1399,6 +1397,12 @@ class Multiprocess_RL_Environment:
                 print('###################################################################')
                 print('validation cycle start...')
                 self.shared_memory.resetMemory(self.validation_set_size)
+                
+                if self.update_model_cpu():
+                    self.updateAgentsAttributesExcept(print_attribute=['env','env','model','model_version'])
+                else:
+                    raise('Loading error')
+                
                 if self.ray_parallelize:
                     self.validation_parallelized()
                 else:

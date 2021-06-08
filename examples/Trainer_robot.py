@@ -89,7 +89,7 @@ parser.add_argument("-y", "--epsilon", dest="epsilon", nargs=2, type=float, defa
 parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, default=0.995,
                     help="annealing factor of epsilon")
 
-parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=int, default=20,
+parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=int, default=10,
                     help="model is validated every -vf iterations")
 
 parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
@@ -138,7 +138,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
     
     env_type = 'RobotEnv' 
     model_type = 'ConvModel'
-    overwrite_params = ['rewards', 'rl_mode', 'share_conv_layers', 'n_frames' , 'layers_width', 'map_output', 'normalize_layers']
+    overwrite_params = ['rewards', 'rl_mode', 'share_conv_layers', 'n_frames' , 'layers_width', 'map_output', 'normalize_layers', 'agents_number']
     
     # trick used to resume epsilon status if not declared explicitly
     if epsilon[0] == -1:
