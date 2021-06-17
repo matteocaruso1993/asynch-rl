@@ -206,12 +206,23 @@ class RobotEnv(gym.Env):
             
             reward = -self.rewards[1]*( 0.75 + dist_1  / self.target_distance_max )
             done = True
+            
+            if self.duration > self.sim_length:
+                info['termination'] = 'timeout'
+            else:
+                if self.robot.check_pedestrians_collision(.8):
+                    info['termination'] = 'pedestrian'
+                elif self.robot.check_obstacle_collision():
+                    info['termination'] = 'obstacle'
+                else:
+                    info['termination'] = 'margin'
         
         # if target is reached            
         elif self.robot.check_target_reach(self.target_coordinates[:2], tolerance = 1):
 
             reward = self.rewards[1] #- rotations_penalty
             done = True
+            info['termination'] = 'success'
                 
         else:
             self.duration += self.dt

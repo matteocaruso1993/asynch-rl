@@ -96,6 +96,7 @@ class Multiprocess_RL_Environment:
         self.env_type = env_type
         self.rl_mode = rl_mode
         
+        self.traj_stats = []
          
         if 'AC' in self.rl_mode:
             self.global_pg_loss = []
@@ -476,6 +477,13 @@ class Multiprocess_RL_Environment:
         # this loads models' params (both qv and pg)
         self.update_model_cpu(reload = True)
         
+        filename_stats = os.path.join(self.storage_path, 'traj_stats.txt')
+        if os.path.isfile(filename_stats):
+            lines = [[v for v in line.split()] for line in open(filename_stats)]
+            if len(lines) > self.training_session_number+1:
+                self.traj_stats = lines[:self.training_session_number+1]
+        
+        
         # loss history file
         loss_history_file = os.path.join(self.storage_path, 'loss_history_'+ str(self.training_session_number) + '.npy')
         if os.path.isfile(loss_history_file):
@@ -634,6 +642,10 @@ class Multiprocess_RL_Environment:
                 else:
                     self.memory_stored.save(self.storage_path, self.net_type + str(self.net_version) )
         
+        if len(self.traj_stats)>0:
+            with open(os.path.join(self.storage_path,'traj_stats.txt'), 'w') as x:
+                x.write('\n'.join(' '.join(map(str, row)) for row in self.traj_stats))
+        
             
         # in this case PG net is not saved by the updater, but is locally in the main thread
         if 'AC' in self.rl_mode:
@@ -732,15 +744,18 @@ class Multiprocess_RL_Environment:
         while True: 
             self.display_progress(total_log)
             
-            partial_log, single_runs , successful_runs, internal_memory_fill_ratio , pg_info = self.sim_agents_discr[0].run_synch()
+            partial_log, single_runs , successful_runs,traj_stats, internal_memory_fill_ratio , pg_info = self.sim_agents_discr[0].run_synch()
             
             valid_model = True
             # implementation for A3C
             if 'AC' in self.rl_mode :
                 grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i, loss_map_i ,  valid_model = pg_info
                 if valid_model:
+                    
+                    self.traj_stats.append(traj_stats)
+                    
                     invalid_occurred = False
-                    temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss = self.update_training_variables(partial_log, \
+                    temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss = self.update_training_variables( partial_log, \
                                     policy_loss_i, pg_entropy_i, advantage_i, loss_map_i, temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss)                    
 
                         # update common model gradient
@@ -778,6 +793,9 @@ class Multiprocess_RL_Environment:
                         invalid_occurred = True
 
             if valid_model:
+                
+                self.traj_stats.append(traj_stats)
+                
                 if total_log is None:
                     total_log = partial_log
                 else:
@@ -914,13 +932,16 @@ class Multiprocess_RL_Environment:
                 task = task_lst[idx_ready] if task_lst[idx_ready] else task_replacement[idx_ready]
                 
                 try:
-                    partial_log, single_runs, successful_runs, internal_memory_fill_ratio , pg_info = ray.get(task, timeout=1)
+                    partial_log, single_runs, successful_runs, traj_stats, internal_memory_fill_ratio , pg_info = ray.get(task, timeout=1)
                     grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i,loss_map_i , valid_model = pg_info
                 except Exception:
                     valid_model = False
                         
                 if valid_model:
-                # partial_log contains 1) duration and 2) cumulative reward of every single-run
+                    
+                    self.traj_stats.append(traj_stats)
+                    # partial_log contains 1) duration and 2) cumulative reward of every single-run
+
                     if total_log is None:
                         total_log = partial_log
                     else:
@@ -1118,7 +1139,7 @@ class Multiprocess_RL_Environment:
                 if not agent_running : 
                     if not task_lst[i] in [None, 'deactivated']:
                         try:
-                            partial_log, single_runs, successful_runs,internal_memory_fill_ratio , pg_info = ray.get(task_lst[i], timeout = 1)
+                            partial_log, single_runs, successful_runs,traj_stats,internal_memory_fill_ratio , pg_info = ray.get(task_lst[i], timeout = 1)
                             # partial_log contains 1) duration and 2) cumulative reward of every single-run
                             task_lst[i] = None
                             if total_log is None:
@@ -1246,7 +1267,9 @@ class Multiprocess_RL_Environment:
         while not self.shared_memory.isFull():
             self.display_progress()
             
-            partial_log, single_runs, successful_runs, _ , _ = self.sim_agents_discr[0].run_synch(use_NN = True)
+            partial_log, single_runs, successful_runs, traj_stats , _, _ = self.sim_agents_discr[0].run_synch(use_NN = True)
+            self.traj_stats.append(traj_stats)
+            
             # partial log: steps_since_start, cum_reward
             
             total_log = np.append(total_log, partial_log, axis = 0)
@@ -1283,7 +1306,8 @@ class Multiprocess_RL_Environment:
             if task_ready:
                 idx_ready = agents_lst.index(task_ready[0])
                 try:
-                    partial_log, single_runs, successful_runs, _ , _ = ray.get(agents_lst[idx_ready], timeout = 5)
+                    partial_log, single_runs, successful_runs, traj_stats, _ , _ = ray.get(agents_lst[idx_ready], timeout = 5)
+                    self.traj_stats.append(traj_stats)
                     agents_lst[idx_ready] = None
                     failures[idx_ready] = None
                     total_log = np.append(total_log, partial_log, axis = 0)

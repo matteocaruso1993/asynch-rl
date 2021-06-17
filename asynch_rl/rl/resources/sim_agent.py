@@ -403,6 +403,7 @@ class SimulationAgent:
         self.advantage_hist = []
         self.loss_map_hist = []
         done = False
+        self.traj_stats = []
         
         return force_stop, done, fig_film
 
@@ -430,11 +431,10 @@ class SimulationAgent:
             if done:
                 self.pg_loss_hist.append(loss_pg)
                 self.advantage_hist.append(advantage)
-                self.loss_map_hist.append(loss_map)
-        
+                self.loss_map_hist.append(loss_map)        
         if self.verbosity > 0:
             self.displayStatus()                    
-        self.trainVariablesUpdate(reward_np, done, force_stop, no_step = ('no step' in info) )
+        self.trainVariablesUpdate(reward_np, done, force_stop, no_step = ('no step' in info), info = info )
         
         state = state_1
 
@@ -515,7 +515,8 @@ class SimulationAgent:
         
         pg_info = self.extract_gradients(force_stop)
 
-        return self.simulation_log, self.agent_run_variables['single_run'], self.agent_run_variables['successful_runs'], self.internal_memory.fill_ratio,  pg_info #[0]
+        return self.simulation_log, self.agent_run_variables['single_run'], self.agent_run_variables['successful_runs'], \
+            self.traj_stats, self.internal_memory.fill_ratio,  pg_info #[0]
         # self.simulation_log contains duration and cumulative reward of every single-run
 
 
@@ -556,7 +557,8 @@ class SimulationAgent:
         pg_info = self.extract_gradients(self.external_force_stop or force_stop)
         self.is_running = False
 
-        return self.simulation_log, self.agent_run_variables['single_run'], self.agent_run_variables['successful_runs'], self.internal_memory.fill_ratio,  pg_info #[0]
+        return self.simulation_log, self.agent_run_variables['single_run'], self.agent_run_variables['successful_runs'], \
+            self.traj_stats , self.internal_memory.fill_ratio,  pg_info #[0]
         # self.simulation_log contains duration and cumulative reward of every single-run
 
 
@@ -778,6 +780,8 @@ class SimulationAgent:
             # update of reset_simulation and stop_run
             if self.agent_run_variables['failed_iteration'] or done or self.agent_run_variables['steps_since_start'] > self.max_steps_single_run +1 :  # (+1 is added to be able to verify the condition in the next step)
                 self.reset_simulation = True
+                if 'termination' in info:
+                    self.traj_stats.append(info['termination'])
 
                 if self.agent_run_variables['consecutive_fails'] >= self.max_consecutive_env_fails or self.agent_run_variables['iteration'] >= self.tot_iterations or force_stop:
                     self.stop_run = True
