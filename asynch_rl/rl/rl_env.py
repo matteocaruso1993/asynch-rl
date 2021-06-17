@@ -1151,7 +1151,7 @@ class Multiprocess_RL_Environment:
                             
 
             # if memory is (almost) full and task list empty, inform qv update it can stop
-            if self.shared_memory.isPartiallyFull(0.9) and all(tsk in [None, 'deactivated'] for tsk in task_lst):
+            if self.shared_memory.isFull() or all(tsk in [None, 'deactivated'] for tsk in task_lst) :
                 if qv_update_launched:
                     self.nn_updater.sentinel.remote()
                     # after iteration extract data from remote QV update process
@@ -1271,7 +1271,10 @@ class Multiprocess_RL_Environment:
         reload_val = False
 
         agents_lst = []
+        failures = len(self.sim_agents_discr)*[None]
         [agents_lst.append(agent.run.remote(use_NN = True)) for i, agent in enumerate(self.sim_agents_discr)]
+        
+        start_time = time.time()
 
         while True:
             
@@ -1279,19 +1282,26 @@ class Multiprocess_RL_Environment:
             
             if task_ready:
                 idx_ready = agents_lst.index(task_ready[0])
-            
-                partial_log, single_runs, successful_runs, _ , _ = ray.get(agents_lst[idx_ready])
-                total_log = np.append(total_log, partial_log, axis = 0)
-                total_runs += single_runs
-                tot_successful_runs += successful_runs
+                try:
+                    partial_log, single_runs, successful_runs, _ , _ = ray.get(agents_lst[idx_ready], timeout = 5)
+                    agents_lst[idx_ready] = None
+                    failures[idx_ready] = None
+                    total_log = np.append(total_log, partial_log, axis = 0)
+                    total_runs += single_runs
+                    tot_successful_runs += successful_runs
+                    self.shared_memory.addMemoryBatch(ray.get(self.sim_agents_discr[idx_ready].emptyLocalMemory.remote(), timeout = 5) )
+                    self.display_progress()
 
-                self.shared_memory.addMemoryBatch(ray.get(self.sim_agents_discr[idx_ready].emptyLocalMemory.remote(), timeout = 1) )
-                self.display_progress()
+                except Exception:
+                    failures[idx_ready] = True
+                    print('memory download fail!')
 
-                if not self.shared_memory.isPartiallyFull(min_fill_ratio):
-                    agents_lst[idx_ready] = self.sim_agents_discr[idx_ready].run.remote(use_NN = True)
+                #if not self.shared_memory.isPartiallyFull(min_fill_ratio):
+                #    agents_lst[idx_ready] = self.sim_agents_discr[idx_ready].run.remote(use_NN = True)
     
-            if self.shared_memory.isFull() or all([i is None for i in agents_lst]): # or break_cycle:
+            if all([i is None for i in agents_lst]) or \
+               all([ failures[i]  for i,ag in enumerate(agents_lst) if ag is not None  ]) or \
+                time.time() - start_time > 300: 
                 break
             
         print('')
@@ -1596,9 +1606,23 @@ class Multiprocess_RL_Environment:
         ax1_0.plot(self.log_df.iloc[init_epoch:][indicators[3]])
         ax1_0.legend([indicators[3]])
         
+        ma_window = 100
+        
         # 'average single-run reward'
-        ax2_0.plot(self.log_df.iloc[init_epoch:][indicators[4]])
-        ax2_0.legend([indicators[4]])
+        reward_av = self.log_df.iloc[init_epoch:][indicators[4]]
+        shp = reward_av.shape
+        ax2_0.plot(reward_av)
+        
+        if shp[0] > 1000:
+            ax2_0.plot( np.convolve(reward_av, np.ones(ma_window), 'valid') / ma_window , 'r')
+            
+            ax2_0.plot(np.zeros(shp), 'k')
+            ax2_0.plot(25*np.ones(shp), 'k')
+            ax2_0.plot(50*np.ones(shp), 'k')
+            ax2_0.plot(75*np.ones(shp), 'k')
+            ax2_0.legend([indicators[4], str(ma_window)+' moving av.'])
+        else:
+            ax2_0.legend([indicators[4]])
 
         if save_fig:
             fig_name = 'duration_reward_'+ str(self.net_version) +'.png'
