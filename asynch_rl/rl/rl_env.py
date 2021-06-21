@@ -52,7 +52,7 @@ class Multiprocess_RL_Environment:
                  movie_frequency = 20, max_steps_single_run = 200, \
                  training_session_number = None, save_movie = False, live_plot = False, \
                  display_status_frequency = 50, max_consecutive_env_fails = 3, tot_iterations = 400,\
-                 epsilon = 1, epsilon_annealing_factor = 0.95,  \
+                 epsilon_annealing_factor = 0.95,  \
                  epsilon_min = 0.01 , gamma = 0.99 , discr_env_bins = 10 , N_epochs = 1000, \
                  replay_memory_size = 10000, mini_batch_size = 512, sim_length_max = 100, \
                  ctrlr_prob_annealing_factor = .9,  ctrlr_probability = 0, difficulty = 0, \
@@ -122,7 +122,7 @@ class Multiprocess_RL_Environment:
             
         self.val_frequency = val_frequency
         self.ray_parallelize = ray_parallelize
-        self.resume_epsilon = False
+        self.resume_epsilon = True
         self.share_conv_layers = share_conv_layers
         
         ####################### storage options        
@@ -183,9 +183,10 @@ class Multiprocess_RL_Environment:
 
         #######################
         # epsilon/ctrl parameters
-        self.epsilon = epsilon  # works also as initial epsilon in case of annealing
+        #self.epsilon = epsilon  # works also as initial epsilon in case of annealing
         self.epsilon_annealing_factor = epsilon_annealing_factor #○ epsilon reduction after every epoch [0<fact<=1]
         self.epsilon_min = epsilon_min
+        self.epsilon = self.epsilon_max = 0.9
         
         self.ctrlr_probability = ctrlr_probability
         self.ctrlr_prob_annealing_factor = ctrlr_prob_annealing_factor
@@ -386,6 +387,7 @@ class Multiprocess_RL_Environment:
             new_eps = np.round(self.epsilon*self.epsilon_annealing_factor, 3)
         else:
             new_eps = eps
+        
         self.epsilon = np.maximum(new_eps, self.epsilon_min)
 
 
@@ -451,10 +453,14 @@ class Multiprocess_RL_Environment:
         if os.path.isfile(filename_log):
         
             self.log_df = pd.read_pickle(filename_log)
+            
+            if training_session_number == -1:
+                training_session_number = int((self.log_df['training session'].values)[-1])
+            
             if training_session_number in self.log_df['training session'].values :
                 self.load_training_session_data(training_session_number)
-            elif training_session_number-1 in self.log_df['training session'].values :
-                self.load_training_session_data(training_session_number-1)                
+            #elif training_session_number-1 in self.log_df['training session'].values :
+            #    self.load_training_session_data(training_session_number-1)                
             elif training_session_number != 0 and self.log_df.shape[0] >=1:             
                 # if no training session number is given, last iteration is taken
                 raise("training session not found in .pkl!")
@@ -1474,8 +1480,8 @@ class Multiprocess_RL_Environment:
         
         if print_out:
 
-            print(f'y = {self.epsilon}')
-            print(f'c = {self.ctrlr_probability}')
+            #print(f'y = {self.epsilon}')
+            #print(f'c = {self.ctrlr_probability}')
 
             print(f'Random share: {split_random}%')
             print(f'Conventional ctl share: {split_conventional_ctrl}%')
@@ -1490,7 +1496,7 @@ class Multiprocess_RL_Environment:
         #it's resetted at every new cycle. 
         #after the first fill, only the portion defined by "memory_turnover_size" is filled
         self.shared_memory.resetMemory(bool(self.memory_stored)*self.memory_turnover_size)
-        self.updateProbabilities(print_out = True)
+        self.updateProbabilities(print_out = (self.rl_mode == 'DQL') )
         
         # update epsilon and model of the Sim agents
         if self.training_session_number == 0 or first_pg_training:
@@ -1598,9 +1604,7 @@ class Multiprocess_RL_Environment:
 
     ##################################################################################
     def runEnvIterationOnce(self, reset_optimizer = False):
-        
-        reload = False
-        
+                
         # loading/saving of models, verifying correct model is used at all stages
         self.pre_training_routine(reset_optimizer)
         
@@ -1623,7 +1627,7 @@ class Multiprocess_RL_Environment:
         
     ##################################################################################
     # plot the training history
-    def plot_training_log(self, init_epoch=0, qv_loss_log = False, pg_loss_log = False, save_fig = False):
+    def plot_training_log(self, init_epoch=0, qv_loss_log = False, pg_loss_log = False, save_fig = False, eps_format = False):
         #log_norm_df=(self.log_df-self.log_df.min())/(self.log_df.max()-self.log_df.min())
         #fig, ax = plt.subplots()
         # (log structure: 
@@ -1632,69 +1636,93 @@ class Multiprocess_RL_Environment:
         # 6: 'av. policy loss', 7: 'N epochs', 8: 'memory size', 9: 'split random/noisy',
         # 10:'split conventional', 11: 'split NN', 12: 'pg_entropy', 13: 'average map loss'] )        
 
+        chosen_format = 'eps' if eps_format else 'png'
+
         store_path= os.path.join( self.storage_path, 'video'  )
         createPath(store_path).mkdir(parents=True, exist_ok=True)
 
         indicators = self.log_df.columns
 
-        fig0 = plt.figure()
-        ax1_0 = fig0.add_subplot(211)
-        ax2_0 = fig0.add_subplot(212)
-
-        # 'average single-run duration'
-        ax1_0.plot(self.log_df.iloc[init_epoch:][indicators[3]])
-        ax1_0.legend([indicators[3]])
-        
-        ma_window = 100
-        
-        # 'average single-run reward'
-        reward_av = self.log_df.iloc[init_epoch:][indicators[4]]
-        shp = reward_av.shape
-        ax2_0.plot(reward_av)
-        
-        if shp[0] > 1000:
-            ax2_0.plot( np.convolve(reward_av, np.ones(ma_window), 'valid') / ma_window , 'r')
-            
-            ax2_0.plot(np.zeros(shp), 'k')
-            ax2_0.plot(25*np.ones(shp), 'k')
-            ax2_0.plot(50*np.ones(shp), 'k')
-            ax2_0.plot(75*np.ones(shp), 'k')
-            ax2_0.legend([indicators[4], str(ma_window)+' moving av.'])
-        else:
-            ax2_0.legend([indicators[4]])
-
-        if save_fig:
-            fig_name = 'duration_reward_'+ str(self.net_version) +'.png'
-            fig0.savefig(os.path.join( store_path, fig_name), dpi=100)
-
-
+        # pre-elaborate trajectory stats        
         if len(self.traj_stats)>0:
-            
-            unique_data = {x for l in self.traj_stats for x in l}
-            
-            fig_st,ax_st = plt.subplots()
-            
+            unique_data = sorted(list({x for l in self.traj_stats for x in l}))
             data_list = []
             for l in self.traj_stats:
-                data_list.append([ l.count(n) for n in unique_data ])
+                data_list.append([ 100*l.count(n)/len(l) for n in unique_data ])
+            data_arrays = [ d for d in np.array(data_list).T]
                 
             mult = 1 if 'AC' in self.rl_mode else self.val_frequency
             x = np.arange(1, mult*(1+np.array(data_list).shape[0]), mult)
             if not 'AC' in self.rl_mode:
                 x = x[1:]
                 
-            ax_st.stackplot( x , *[ d for d in np.array(data_list).T]  )
-            ax_st.legend(list(unique_data))            
-            
-            
+            stats_fontsize = 7
+                            
 
-            #.plot.area(stacked=True, ax = ax_st)
 
-        ######################################
+        ##################################################################
+        fig0 = plt.figure()        
+        ax1_0 = fig0.add_subplot(311)
+        ax2_0 = fig0.add_subplot(312)
+        ax3_0 = fig0.add_subplot(313)
+
+        if 'AC' in self.rl_mode:
+    
+            # 'average single-run duration'
+            ax1_0.plot(self.log_df.iloc[init_epoch:][indicators[3]])
+            ax1_0.legend([indicators[3]])
+            
+            ma_window = 100
+            
+            # 'average single-run reward'
+            reward_av = self.log_df.iloc[init_epoch:][indicators[4]]
+            shp = reward_av.shape
+            ax2_0.plot(reward_av)
+            
+            if shp[0] > 1000:
+                reward_av_padded = np.pad(reward_av, (ma_window//2, ma_window-1-ma_window//2), mode='edge')
+                ax2_0.plot( np.convolve(reward_av_padded, np.ones(ma_window), 'valid') / ma_window , 'r')
+                
+                ax2_0.plot(np.zeros(shp), 'k')
+                ax2_0.plot(25*np.ones(shp), 'k')
+                ax2_0.plot(50*np.ones(shp), 'k')
+                ax2_0.plot(75*np.ones(shp), 'k')
+                ax2_0.legend([indicators[4], str(ma_window)+' moving av.'])
+            else:
+                ax2_0.legend([indicators[4]])
+                
+            ax3_0.stackplot( x , *data_arrays  )
+            #ax3_0.legend(unique_data, loc = 'lower left', fontsize = stats_fontsize)
+            ax3_0.legend(unique_data, loc = (.2,.05), fontsize = stats_fontsize)
+
+
+        ##################################################################
+        if 'AC' not in self.rl_mode and hasattr(self, 'val_history'):
+            
+            if self.val_history is not None:
+                # 0) iteration ---- 1) average duration   ---- 2)average single run reward   ---- 3) average loss
+                    
+                ax1_0.plot(self.val_history[:,0], self.val_history[:,3])
+                ax1_0.legend([indicators[3]])
+                
+                ax2_0.plot(self.val_history[:,0], self.val_history[:,4])
+                ax2_0.legend([indicators[4]])
+            
+                ax3_0.stackplot( x , *data_arrays  )
+                #ax3_0.legend(unique_data, loc = 'lower left', fontsize = stats_fontsize ) 
+                ax3_0.legend(unique_data, loc = (.1,.05), fontsize = stats_fontsize)
+
+        if save_fig:
+            fig_name = 'duration_reward_'+ str(self.net_version) 
+            fig_name = fig_name+'.eps' if eps_format  else fig_name +'.png'
+            fig0.savefig(os.path.join( store_path, fig_name), dpi=100, format= chosen_format)
+
+
+
+        fig = plt.figure()
+        ##################################################################
         if self.rl_mode == 'DQL':
 
-            # figsize=(12, 12)
-            fig = plt.figure()
             ax1 = fig.add_subplot(311)
             ax2 = fig.add_subplot(312)
             ax3 = fig.add_subplot(313)
@@ -1714,14 +1742,12 @@ class Multiprocess_RL_Environment:
             ax3.legend(['Q-val loss'])
             
             if save_fig:
-                fig_name = 'DQL_training'+ str(self.net_version) +'.png'
-                fig.savefig(os.path.join( store_path, fig_name), dpi=100)
-            
+                fig_name = 'DQL_training'+ str(self.net_version) 
+                fig_name = fig_name+'.eps' if eps_format  else fig_name +'.png'
+                fig.savefig(os.path.join( store_path, fig_name), dpi=100, format= chosen_format)
         
         ######################################
         if 'AC' in self.rl_mode:
-
-            fig = plt.figure()
             
             # 'av. q-val loss'
             ax1_1 = fig.add_subplot(411)
@@ -1749,10 +1775,10 @@ class Multiprocess_RL_Environment:
                 ax4_1.legend([indicators[13]])
                 
             if save_fig:
-                fig_name = 'AC_training'+ str(self.net_version) +'.png'
-                fig.savefig(os.path.join( store_path, fig_name ), dpi=100)
+                fig_name = 'AC_training'+ str(self.net_version) 
+                fig_name = fig_name+'.eps' if eps_format  else fig_name +'.png'
+                fig.savefig(os.path.join( store_path, fig_name), dpi=100, format= chosen_format)
 
-            
         # complete history
         """
         if 'AC' in self.rl_mode:
@@ -1783,7 +1809,7 @@ class Multiprocess_RL_Environment:
             return fig, fig_1 , fig_2
         """
     
-        return fig0, fig, fig_st 
+        return fig0, fig
 
 #%%
 

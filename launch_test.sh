@@ -27,6 +27,6 @@ source ~/environments/venv_PedEnv/bin/activate
 local_path_string="/home/rodpod21/GitHubRepositories"
 ### ros
 #source ~/CrowdNav/bin/activate
-#local_path_string="~/crowd"
+#local_path_string="/home/ros/crowd"
 
 python ${local_path_string}/asynch-rl/examples/Tester_robot.py -v $VERS -i $ITER -sim $SIM -d $DIFF -s $SAVE

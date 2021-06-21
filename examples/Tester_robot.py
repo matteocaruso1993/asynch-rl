@@ -27,29 +27,25 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 
-parser.add_argument("-v", "--version", dest="net_version", type = int, default= 61 , help="training version")
+parser.add_argument("-v", "--version", dest="net_version", type = int, default= 10 , help="training version")
 
-parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 42 , help="iteration")
+parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= -1 , help="iteration")
 
 parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= False , help="simulate instance")
 
 parser.add_argument("-d", "--difficulty"   , dest="difficulty"  , type = int, default= 2 , help="difficulty")
 
-parser.add_argument("-s", "--save-movie"   , dest="save_movie"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= False , help="save movie")
+parser.add_argument("-s", "--save-movie"   , dest="save_movie"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= True , help="save movie")
 
+parser.add_argument("-e", "--eps-format"   , dest="eps_format"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= False , help="eps_format")
 
 args = parser.parse_args()
 ################
 
 
-# df loader
-#net_version = 902
-#iteration   = 27
-
-
 # generate proper discretized bins structure
 
-def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, save_movie = False):
+def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, save_movie = False, eps_format = False):
 
     ################
     env_type = 'RobotEnv' 
@@ -99,38 +95,14 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
     rl_env.print_NN_parameters_count()
     
     try:
-        fig0, fig, fig_st  = rl_env.plot_training_log(1, qv_loss_log = rl_env.rl_mode=='DQL', pg_loss_log = True, save_fig = save_movie)
+        fig0, fig, fig_st  = rl_env.plot_training_log(1, qv_loss_log = rl_env.rl_mode=='DQL', \
+                                                      pg_loss_log = True, save_fig = save_movie, eps_format=eps_format)
             
     except Exception:
         print('incomplete data for plot generation')
     
     
-    try:
-        if hasattr(rl_env, 'val_history'):
-            
-            if rl_env.val_history is not None:
-                # 0) iteration ---- 1) average duration   ---- 2)average single run reward   ---- 3) average loss
-                
-                fig_val1 = plt.figure()
-                ax1 = fig_val1.add_subplot(4,1,1)
-                ax2 = fig_val1.add_subplot(4,1,2)
-                ax3 = fig_val1.add_subplot(4,1,3)
-                ax4 = fig_val1.add_subplot(4,1,4)
-            
-                ax1.plot(rl_env.val_history[:,0], rl_env.val_history[:,2])
-                ax1.legend(['total runs'])
-                    
-                ax2.plot(rl_env.val_history[:,0], rl_env.val_history[:,3])
-                ax2.legend(['average duration'])
-                
-                ax3.plot(rl_env.val_history[:,0], rl_env.val_history[:,4])
-                ax3.legend(['average cum reward'])
-            
-                ax4.plot(rl_env.val_history[:,0], rl_env.val_history[:,1])
-                ax4.legend(['successful runs ratio'])
-                
-    except Exception:
-        pass
+
 
     
     #%%
@@ -196,7 +168,7 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
 if __name__ == "__main__":
     
     main(net_version = args.net_version, iteration = args.iteration, simulate = args.simulate, \
-         difficulty = args.difficulty, save_movie=args.save_movie)
+         difficulty = args.difficulty, save_movie=args.save_movie, eps_format=args.eps_format)
 
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)
