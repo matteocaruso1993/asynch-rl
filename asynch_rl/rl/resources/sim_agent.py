@@ -743,12 +743,14 @@ class SimulationAgent:
 
             if self.agent_run_variables['single_run']>0: 
                 cum_reward_data = self.agent_run_variables['cum_reward']
+                """
                 if self.env.env_type == 'Frx' and self.agent_run_variables['steps_since_start']>0:
                     if info is not None:
                         cum_reward_data = info['return']
                         #print(f'single run return: {cum_reward_data}')
                     else:
                         cum_reward_data = 0
+                """
                 single_run_log = np.array([self.agent_run_variables['steps_since_start'] , cum_reward_data ] )[np.newaxis,:]
                     
             else:
@@ -780,7 +782,7 @@ class SimulationAgent:
             # update of reset_simulation and stop_run
             if self.agent_run_variables['failed_iteration'] or done or self.agent_run_variables['steps_since_start'] > self.max_steps_single_run +1 :  # (+1 is added to be able to verify the condition in the next step)
                 self.reset_simulation = True
-                if 'termination' in info:
+                if done and 'termination' in info:
                     self.traj_stats.append(info['termination'])
 
                 if self.agent_run_variables['consecutive_fails'] >= self.max_consecutive_env_fails or self.agent_run_variables['iteration'] >= self.tot_iterations or force_stop:

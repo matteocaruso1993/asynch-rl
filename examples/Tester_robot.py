@@ -27,11 +27,11 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 
-parser.add_argument("-v", "--version", dest="net_version", type = int, default= 2 , help="training version")
+parser.add_argument("-v", "--version", dest="net_version", type = int, default= 61 , help="training version")
 
-parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 10786 , help="iteration")
+parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= 42 , help="iteration")
 
-parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= True , help="simulate instance")
+parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= False , help="simulate instance")
 
 parser.add_argument("-d", "--difficulty"   , dest="difficulty"  , type = int, default= 2 , help="difficulty")
 
@@ -99,7 +99,7 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
     rl_env.print_NN_parameters_count()
     
     try:
-        fig0, fig  = rl_env.plot_training_log(1, qv_loss_log = rl_env.rl_mode=='DQL', pg_loss_log = True, save_fig = save_movie)
+        fig0, fig, fig_st  = rl_env.plot_training_log(1, qv_loss_log = rl_env.rl_mode=='DQL', pg_loss_log = True, save_fig = save_movie)
             
     except Exception:
         print('incomplete data for plot generation')
@@ -186,6 +186,7 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
         if 'fig0' in locals():
             fig.waitforbuttonpress(20)
             fig0.waitforbuttonpress(20)
+            fig_st.waitforbuttonpress(20)
     
 
 

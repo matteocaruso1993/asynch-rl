@@ -46,10 +46,10 @@ parser.add_argument("-norm", "--normalize-layers", dest="normalize_layers", type
 parser.add_argument("-mo", "--map-output", dest="map_output", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=True,
                     help="NN has intermediate output with estimated map")
 
-parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0,
+parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=2,
                     help="start simulations and training from a given iteration")
 
-parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 4000,
+parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 400,
                     help="Replay Memory Size")
 
 parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100, help="net version used")
@@ -75,7 +75,7 @@ parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int,
 parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.25,
                     help="Ratio of Memory renewed at each iteration")
 
-parser.add_argument("-lr", "--learning-rate", dest="learning_rate", nargs="*", type=float, default=[1e-4, 1e-3],
+parser.add_argument("-lr", "--learning-rate", dest="learning_rate", nargs="*", type=float, default=[1e-4, 2e-3],
                     help="NN learning rate for DQL [0] and A/C [1]")
 
 parser.add_argument("-e", "--epochs-training", dest="n_epochs", type=int, default= 200 , help="Number of epochs per training iteration")

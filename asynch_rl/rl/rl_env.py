@@ -480,6 +480,7 @@ class Multiprocess_RL_Environment:
         filename_stats = os.path.join(self.storage_path, 'traj_stats.txt')
         if os.path.isfile(filename_stats):
             lines = [[v for v in line.split()] for line in open(filename_stats)]
+            self.traj_stats = lines
             if len(lines) > self.training_session_number+1:
                 self.traj_stats = lines[:self.training_session_number+1]
         
@@ -972,7 +973,7 @@ class Multiprocess_RL_Environment:
                     if self.rl_mode != 'AC' and internal_memory_fill_ratio > 0.2:
                         self.shared_memory.addMemoryBatch( ray.get(agent.emptyLocalMemory.remote()) )
                         
-                    n_trajectories += 1
+                    n_trajectories += len(traj_stats)
 
                 task_replacement[idx_ready] = self.sim_agents_discr[idx_ready].run.remote()
                 task_lst[idx_ready] = None
@@ -1298,7 +1299,7 @@ class Multiprocess_RL_Environment:
     def validation_parallelized(self):
         
         total_log = np.zeros((1,2),dtype = np.float)
-        min_fill_ratio = 0.9
+        min_fill_ratio = 0.85
         total_runs = tot_successful_runs = 0 
         
         reload_val = False
@@ -1319,24 +1320,25 @@ class Multiprocess_RL_Environment:
                 try:
                     partial_log, single_runs, successful_runs, traj_stats, _ , _ = ray.get(agents_lst[idx_ready], timeout = 5)
                     iter_traj_stats.extend(traj_stats)
-                    agents_lst[idx_ready] = None
-                    failures[idx_ready] = None
                     total_log = np.append(total_log, partial_log, axis = 0)
                     total_runs += single_runs
                     tot_successful_runs += successful_runs
                     self.shared_memory.addMemoryBatch(ray.get(self.sim_agents_discr[idx_ready].emptyLocalMemory.remote(), timeout = 5) )
                     self.display_progress()
+                    agents_lst[idx_ready] = None
+                    failures[idx_ready] = None
 
                 except Exception:
                     failures[idx_ready] = True
                     print('memory download fail!')
 
-                #if not self.shared_memory.isPartiallyFull(min_fill_ratio):
-                #    agents_lst[idx_ready] = self.sim_agents_discr[idx_ready].run.remote(use_NN = True)
+                if not self.shared_memory.isPartiallyFull(min_fill_ratio):
+                    agents_lst[idx_ready] = self.sim_agents_discr[idx_ready].run.remote(use_NN = True)
     
+            
             if all([i is None for i in agents_lst]) or \
                all([ failures[i]  for i,ag in enumerate(agents_lst) if ag is not None  ]) or \
-                time.time() - start_time > 300: 
+                time.time() - start_time > 600: 
                 break
             
         self.traj_stats.append(iter_traj_stats)
@@ -1666,6 +1668,28 @@ class Multiprocess_RL_Environment:
             fig0.savefig(os.path.join( store_path, fig_name), dpi=100)
 
 
+        if len(self.traj_stats)>0:
+            
+            unique_data = {x for l in self.traj_stats for x in l}
+            
+            fig_st,ax_st = plt.subplots()
+            
+            data_list = []
+            for l in self.traj_stats:
+                data_list.append([ l.count(n) for n in unique_data ])
+                
+            mult = 1 if 'AC' in self.rl_mode else self.val_frequency
+            x = np.arange(1, mult*(1+np.array(data_list).shape[0]), mult)
+            if not 'AC' in self.rl_mode:
+                x = x[1:]
+                
+            ax_st.stackplot( x , *[ d for d in np.array(data_list).T]  )
+            ax_st.legend(list(unique_data))            
+            
+            
+
+            #.plot.area(stacked=True, ax = ax_st)
+
         ######################################
         if self.rl_mode == 'DQL':
 
@@ -1759,7 +1783,7 @@ class Multiprocess_RL_Environment:
             return fig, fig_1 , fig_2
         """
     
-        return fig0, fig 
+        return fig0, fig, fig_st 
 
 #%%
 
