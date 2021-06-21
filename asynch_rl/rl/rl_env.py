@@ -741,6 +741,8 @@ class Multiprocess_RL_Environment:
         temp_advantage = []
         temp_map_loss = []
         
+        iter_traj_stats = []
+        
         while True: 
             self.display_progress(total_log)
             
@@ -751,9 +753,7 @@ class Multiprocess_RL_Environment:
             if 'AC' in self.rl_mode :
                 grad_dict_pg, grad_dict_v, policy_loss_i, pg_entropy_i, advantage_i, loss_map_i ,  valid_model = pg_info
                 if valid_model:
-                    
-                    self.traj_stats.append(traj_stats)
-                    
+                                        
                     invalid_occurred = False
                     temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss = self.update_training_variables( partial_log, \
                                     policy_loss_i, pg_entropy_i, advantage_i, loss_map_i, temp_pg_loss, temp_entropy, temp_advantage, temp_map_loss)                    
@@ -794,7 +794,7 @@ class Multiprocess_RL_Environment:
 
             if valid_model:
                 
-                self.traj_stats.append(traj_stats)
+                iter_traj_stats.extend(traj_stats)
                 
                 if total_log is None:
                     total_log = partial_log
@@ -811,6 +811,9 @@ class Multiprocess_RL_Environment:
         self.display_progress(total_log)
         print('')
         # end of iteration
+        
+        
+        self.traj_stats.append(iter_traj_stats)
 
         if not memory_fill_only:        
             self.post_iteration_routine(initial_qv_weights = initial_qv_weights, \
@@ -913,6 +916,8 @@ class Multiprocess_RL_Environment:
         
         progress_ratio = self.display_progress(total_log)
         first_task_completed = False
+        
+        iter_traj_stats = []        
 
         # simulation loop    
         while  any(tsk is not None for tsk in task_lst) or progress_ratio < 1.0 : # 
@@ -939,7 +944,7 @@ class Multiprocess_RL_Environment:
                         
                 if valid_model:
                     
-                    self.traj_stats.append(traj_stats)
+                    iter_traj_stats.extend(traj_stats)
                     # partial_log contains 1) duration and 2) cumulative reward of every single-run
 
                     if total_log is None:
@@ -974,6 +979,8 @@ class Multiprocess_RL_Environment:
                 progress_ratio = self.display_progress(total_log)
 
         
+        self.traj_stats.append(iter_traj_stats)
+
         # clear task lists
         self.clear_task_lists(task_lst, task_replacement)
                     
@@ -1263,12 +1270,13 @@ class Multiprocess_RL_Environment:
         total_log = np.zeros((1,2),dtype = np.float)
         total_runs = 0
         tot_successful_runs = 0
+        iter_traj_stats = []
             
         while not self.shared_memory.isFull():
             self.display_progress()
             
             partial_log, single_runs, successful_runs, traj_stats , _, _ = self.sim_agents_discr[0].run_synch(use_NN = True)
-            self.traj_stats.append(traj_stats)
+            iter_traj_stats.extend(traj_stats)
             
             # partial log: steps_since_start, cum_reward
             
@@ -1278,6 +1286,8 @@ class Multiprocess_RL_Environment:
             
             if not self.shared_memory.isFull():
                 self.shared_memory.addMemoryBatch(self.sim_agents_discr[0].emptyLocalMemory() )
+                
+        self.traj_stats.append(iter_traj_stats)
                 
         print('')
         print('')           
@@ -1298,6 +1308,7 @@ class Multiprocess_RL_Environment:
         [agents_lst.append(agent.run.remote(use_NN = True)) for i, agent in enumerate(self.sim_agents_discr)]
         
         start_time = time.time()
+        iter_traj_stats = []
 
         while True:
             
@@ -1307,7 +1318,7 @@ class Multiprocess_RL_Environment:
                 idx_ready = agents_lst.index(task_ready[0])
                 try:
                     partial_log, single_runs, successful_runs, traj_stats, _ , _ = ray.get(agents_lst[idx_ready], timeout = 5)
-                    self.traj_stats.append(traj_stats)
+                    iter_traj_stats.extend(traj_stats)
                     agents_lst[idx_ready] = None
                     failures[idx_ready] = None
                     total_log = np.append(total_log, partial_log, axis = 0)
@@ -1327,6 +1338,8 @@ class Multiprocess_RL_Environment:
                all([ failures[i]  for i,ag in enumerate(agents_lst) if ag is not None  ]) or \
                 time.time() - start_time > 300: 
                 break
+            
+        self.traj_stats.append(iter_traj_stats)
             
         print('')
         self.clear_task_lists(agents_lst)
