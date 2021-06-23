@@ -84,7 +84,7 @@ parser.add_argument("-ym", "--epsilon-min", dest="epsilon_min", type=float, defa
 parser.add_argument("-yd", "--epsilon-decay", dest="epsilon_decay", type=float, default=0.995,
                     help="annealing factor of epsilon")
 
-parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=int, default=10, help="model is validated every -vf iterations")
+parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=int, default=5, help="model is validated every -vf iterations")
 
 parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
                     help="reset optimizer")

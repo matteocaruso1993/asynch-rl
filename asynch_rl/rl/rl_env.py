@@ -1118,16 +1118,17 @@ class Multiprocess_RL_Environment:
 
 
     ##################################################################################
-    def runQV_Parallelized(self, memory_fill_only = False):
+    def runQV_Parallelized(self, validate_DQL = False, memory_fill_only = False):
         """ parallelized implementation of single iteration"""
         
         initial_qv_weights = None
         qv_update_launched = False        
 
         total_log = None
-        total_runs = 0        
+        total_runs = tot_successful_runs = 0         
 
         task_lst = [None for _ in self.sim_agents_discr]
+        iter_traj_stats = []
         
         while True:
             
@@ -1164,6 +1165,9 @@ class Multiprocess_RL_Environment:
                             
                             self.shared_memory.addMemoryBatch(ray.get(agent.emptyLocalMemory.remote()) )
                             self.display_progress()
+                            
+                            if validate_DQL:
+                                iter_traj_stats.extend(traj_stats)
 
                         except Exception:
                             print('Killing Actor and generating new one')
@@ -1182,7 +1186,7 @@ class Multiprocess_RL_Environment:
                             model_qv_weights = ray.get(self.nn_updater.get_current_QV_model.remote()).cpu().state_dict()
                             agent.update_model_weights_only.remote(model_qv_weights, 'model_qv')
                         if task_lst[i] is None:
-                            task_lst[i] = agent.run.remote()
+                            task_lst[i] = agent.run.remote(use_NN = validate_DQL)
                             
 
             # if memory is (almost) full and task list empty, inform qv update it can stop
@@ -1190,10 +1194,14 @@ class Multiprocess_RL_Environment:
                 if qv_update_launched:
                     self.nn_updater.sentinel.remote()
                     # after iteration extract data from remote QV update process
-                    self.qval_loss_hist_iteration, self.av_map_loss = np.array(ray.get(updating_process))
+                    self.qval_loss_hist_iteration, self.av_map_loss , self.n_epochs = np.array(ray.get(updating_process))
                 break
-
+            
         self.clear_task_lists(task_lst)
+
+        if validate_DQL:
+            self.traj_stats.append(iter_traj_stats)
+            self.end_validation_routine(total_runs, tot_successful_runs, total_log)
 
         if not memory_fill_only:        
             self.post_iteration_routine(initial_qv_weights = initial_qv_weights, total_runs= total_runs, total_log= total_log)
@@ -1359,12 +1367,14 @@ class Multiprocess_RL_Environment:
     ##################################################################################
     def end_validation_routine(self, total_runs, tot_successful_runs, total_log):
         
+        """
         new_memory = self.shared_memory.getMemoryAndEmpty()
-        turnover_pctg_act = np.round(100*self.memory_stored.addMemoryBatch(new_memory),2)
+        #turnover_pctg_act = np.round(100*self.memory_stored.addMemoryBatch(new_memory),2)
         if self.ray_parallelize :
             self.nn_updater.update_memory_pool.remote(new_memory)
         else:
             self.nn_updater.update_memory_pool(new_memory)
+        """
         
         #total log includes (for all runs): 1) steps since start 2) cumulative reward
         self.get_log(total_runs, total_log)
@@ -1382,14 +1392,16 @@ class Multiprocess_RL_Environment:
         else:
             self.val_history = np.append(self.val_history, val_history[np.newaxis,:], axis = 0)
             
+        """
         if self.bashplot and self.val_history.shape[0] > 5:
             np.savetxt("val_hist.csv", self.val_history[:,[0,3]], delimiter=",")
             plot_scatter(f = "val_hist.csv",xs = None, ys = None, size = 20, colour = 'yellow',pch = '*', title = 'validation history')
+        """
             
         self.saveValIteration()
         
         print(f'training iteration         = {val_history[0]}')
-        print(f'test samples               = {round(self.shared_memory.fill_ratio*self.shared_memory.size)}')
+        #print(f'test samples               = {round(self.shared_memory.fill_ratio*self.shared_memory.size)}')
         print(f'total single runs          = {val_history[2]}')
         print(f'success ratio              = {val_history[1]}')
         print(f'average steps since start  = {val_history[3]}')
@@ -1433,8 +1445,9 @@ class Multiprocess_RL_Environment:
         for i in np.arange(self.training_session_number,final_run+1):
             
             print(f'simulating with {self.n_agents_discr} agents')
+            validate_DQL = (not i % self.val_frequency) and self.rl_mode == 'DQL'
             
-            self.runEnvIterationOnce(reset_optimizer)
+            self.runEnvIterationOnce(validate_DQL, reset_optimizer)
             
             print('###################################################################')
             print('###################################################################')
@@ -1447,8 +1460,9 @@ class Multiprocess_RL_Environment:
                 reset_optimizer = False
             if display_graphs:
                 self.plot_training_log()
-                
-            if i> 1 and not i % self.val_frequency and self.rl_mode == 'DQL':
+            
+            """
+            if not i % self.val_frequency and self.rl_mode == 'DQL':
                 print('###################################################################')
                 print('validation cycle start...')
                 self.shared_memory.resetMemory(self.validation_set_size)
@@ -1464,7 +1478,7 @@ class Multiprocess_RL_Environment:
                     self.validation_serialized()
                 print('end of validation cycle')
                 print('###################################################################')
-                            
+            """
 
     ##################################################################################
     def updateProbabilities(self, print_out = False):
@@ -1603,7 +1617,7 @@ class Multiprocess_RL_Environment:
 
 
     ##################################################################################
-    def runEnvIterationOnce(self, reset_optimizer = False):
+    def runEnvIterationOnce(self, validate_DQL = False, reset_optimizer = False):
                 
         # loading/saving of models, verifying correct model is used at all stages
         self.pre_training_routine(reset_optimizer)
@@ -1614,7 +1628,7 @@ class Multiprocess_RL_Environment:
         else:
             # run simulations/training in parallel
             if self.rl_mode == 'DQL':
-                self.runQV_Parallelized()
+                self.runQV_Parallelized(validate_DQL)
             else:
                 self.runA3C()
         
@@ -1728,19 +1742,22 @@ class Multiprocess_RL_Environment:
             ax3 = fig.add_subplot(313)
 
             # train splits
-            self.log_df.iloc[init_epoch:][['split random/noisy','split conventional','split NN']].plot.area(stacked=True, ax = ax1)
+            #self.log_df.iloc[init_epoch:][['split random/noisy','split conventional','split NN']].plot.area(stacked=True, ax = ax1)
+            ax1.plot(self.log_df.iloc[init_epoch:]['split random/noisy']/100)
+            ax1.legend(['epsilon'])
+            ax1.set_ylim(0,1)
+            
+            # qval loss
+            ax2.plot(self.log_df.iloc[init_epoch:][indicators[5]])
+            if qv_loss_log:
+                ax2.set_yscale('log')
+            ax2.legend(['Q-val loss'])
 
             # 'average map loss'
             if self.map_output:
-                ax2.plot(self.log_df.iloc[init_epoch:][indicators[13]])
-                ax2.legend([indicators[13]])
+                ax3.plot(self.log_df.iloc[init_epoch:][indicators[13]])
+                ax3.legend([indicators[13]])
 
-            # qval loss
-            ax3.plot(self.log_df.iloc[init_epoch:][indicators[5]])
-            if qv_loss_log:
-                ax3.set_yscale('log')
-            ax3.legend(['Q-val loss'])
-            
             if save_fig:
                 fig_name = 'DQL_training'+ str(self.net_version) 
                 fig_name = fig_name+'.eps' if eps_format  else fig_name +'.png'

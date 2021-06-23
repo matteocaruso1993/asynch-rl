@@ -727,7 +727,10 @@ class SimulationAgent:
                 else:
                     # this function allows to randomly choose other good performing q_values
                     qvals = self.model_qv.cpu()(state)
-                    action_index = prob_action_idx_qval(qvals)     
+                    #action_index = prob_action_idx_qval(qvals)     
+                    
+                    prob_distrib = torch.softmax(qvals,-1)
+                    action_index = torch.multinomial(prob_distrib, 1, replacement=True)
             
         action[action_index] = 1
         

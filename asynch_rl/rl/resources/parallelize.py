@@ -55,7 +55,7 @@ class Ray_RL_Updater(RL_Updater):
 
             await asyncio.sleep(0.00001)
             
-            stop_update = self.sim_complete and (epochs >= self.n_epochs)
+            stop_update =  ( self.sim_complete and (epochs >= self.n_epochs) ) or epochs >= self.n_epochs_max
             
         print('')
         print(f'Training iteration completed. n_epochs: {epochs}')
@@ -65,7 +65,7 @@ class Ray_RL_Updater(RL_Updater):
         if len(array_av_loss_map) > 0:
             av_map_loss_out = round(sum(array_av_loss_map)/len(array_av_loss_map),3)
         
-        return total_loss, av_map_loss_out
+        return total_loss, av_map_loss_out, epochs
         
 
 

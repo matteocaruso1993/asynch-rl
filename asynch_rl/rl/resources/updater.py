@@ -38,6 +38,8 @@ class RL_Updater():
         self.storage_path      = None
         # only "initial" training session number is actually used inside RL_Updater
         self.training_session_number = None
+        
+        self.n_epochs_max = 600
 
         
     ##################################################################################        
