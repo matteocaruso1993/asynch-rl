@@ -76,7 +76,7 @@ parser.add_argument("-lr", "--learning-rate", dest="learning_rate", nargs="*", t
 
 parser.add_argument("-e", "--epochs-training", dest="n_epochs", type=int, default= 200 , help="Number of epochs per training iteration")
 
-parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size",  nargs="*", type=int, default= 256,
+parser.add_argument("-mb", "--minibatch-size", dest="minibatch_size",  type=int, default= 256,
                     help="Size of the minibatches used for QV training")
 
 parser.add_argument("-ym", "--epsilon-min", dest="epsilon_min", type=float, default=0.2, help="minimum epsilon")
