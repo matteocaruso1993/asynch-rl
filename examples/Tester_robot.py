@@ -27,7 +27,7 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 
-parser.add_argument("-v", "--version", dest="net_version", type = int, default= 10 , help="training version")
+parser.add_argument("-v", "--version", dest="net_version", type = int, default= 70 , help="training version")
 
 parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= -1 , help="iteration")
 
@@ -52,7 +52,9 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
     model_type = 'ConvModel'
     #rl_mode = 'AC'
     
-    overwrite_params = ['rewards', 'rl_mode', 'share_conv_layers', 'n_frames' , 'layers_width', 'map_output', 'normalize_layers']
+    overwrite_params = ['rewards', 'rl_mode', 'share_conv_layers', 'n_frames' ,\
+                        'layers_width', 'map_output', 'normalize_layers', \
+                            'val_frequency']
         
     my_dict = load_train_params(env_type, model_type, overwrite_params, net_version)
     local_vars = locals()
@@ -78,7 +80,7 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
                                          move_to_cuda=False, n_frames = local_vars['n_frames'], show_rendering = True, discr_env_bins=2,\
                                         difficulty= difficulty, map_output = local_vars['map_output'], \
                                           layers_width = local_vars['layers_width'], normalize_layers = local_vars['normalize_layers'] ,\
-                                              rewards=local_vars['rewards']) #, \
+                                              rewards=local_vars['rewards'], val_frequency=local_vars['val_frequency']) #, \
                                       #    #replay_memory_size = 500, N_epochs = 100)
     
     
@@ -95,8 +97,8 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
     rl_env.print_NN_parameters_count()
     
     try:
-        fig0, fig, fig_st  = rl_env.plot_training_log(1, qv_loss_log = rl_env.rl_mode=='DQL', \
-                                                      pg_loss_log = True, save_fig = save_movie, eps_format=eps_format)
+        fig0, fig, fig_st  = rl_env.plot_training_log(0, qv_loss_log = False, \
+                                                      pg_loss_log = False, save_fig = save_movie, eps_format=eps_format)
             
     except Exception:
         print('incomplete data for plot generation')
@@ -150,16 +152,19 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
             agent.max_n_single_runs = 10
         
         sim_log, single_runs , successful_runs,_,_, pg_info = agent.run_synch(use_NN = True, test_qv = False)
-
-    
-        if 'fig_val1' in locals():
-            fig_val1.waitforbuttonpress(20)
         
         if 'fig0' in locals():
             fig.waitforbuttonpress(20)
             fig0.waitforbuttonpress(20)
             fig_st.waitforbuttonpress(20)
-    
+
+
+    stats = []
+    n_samples = 40
+    for i in range(1,n_samples):
+        pctg_success = (round(100*rl_env.traj_stats[-i].count('success')/len(rl_env.traj_stats[-i])))
+        stats.append(pctg_success)
+    print(f'success percentage last {n_samples}: {sum(stats)/len(stats)}%')
 
 
 #%%

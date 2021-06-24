@@ -131,7 +131,9 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
     
     env_type = 'RobotEnv' 
     model_type = 'ConvModel'
-    overwrite_params = ['rewards', 'rl_mode', 'share_conv_layers', 'n_frames' , 'layers_width', 'map_output', 'normalize_layers', 'agents_number']
+    overwrite_params = ['rewards', 'rl_mode', 'share_conv_layers', 'n_frames' ,\
+                        'layers_width', 'map_output', 'normalize_layers', 'agents_number',\
+                            'val_frequency']
 
         
     # initialize required net and model parameters if loading from saved values

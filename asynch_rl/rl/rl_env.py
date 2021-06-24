@@ -1670,7 +1670,7 @@ class Multiprocess_RL_Environment:
             if not 'AC' in self.rl_mode:
                 x = x[1:]
                 
-            stats_fontsize = 7
+            stats_fontsize = 8
                             
 
 
@@ -1685,6 +1685,7 @@ class Multiprocess_RL_Environment:
             # 'average single-run duration'
             ax1_0.plot(self.log_df.iloc[init_epoch:][indicators[3]])
             ax1_0.legend([indicators[3]])
+            ax1_0.set_xticks([])
             
             ma_window = 100
             
@@ -1697,17 +1698,26 @@ class Multiprocess_RL_Environment:
                 reward_av_padded = np.pad(reward_av, (ma_window//2, ma_window-1-ma_window//2), mode='edge')
                 ax2_0.plot( np.convolve(reward_av_padded, np.ones(ma_window), 'valid') / ma_window , 'r')
                 
-                ax2_0.plot(np.zeros(shp), 'k')
-                ax2_0.plot(25*np.ones(shp), 'k')
-                ax2_0.plot(50*np.ones(shp), 'k')
-                ax2_0.plot(75*np.ones(shp), 'k')
+                k_linewidth = 0.7
+                start_point_k = 200
+                ax2_0.plot(np.arange(start_point_k,shp[0]), np.zeros(shp)[start_point_k:]  , 'k', linewidth=k_linewidth)
+                ax2_0.plot(np.arange(start_point_k,shp[0]), 25*np.ones(shp)[start_point_k:], 'k', linewidth=k_linewidth)
+                ax2_0.plot(np.arange(start_point_k,shp[0]), 50*np.ones(shp)[start_point_k:], 'k', linewidth=k_linewidth)
+                ax2_0.plot(np.arange(start_point_k,shp[0]), 75*np.ones(shp)[start_point_k:], 'k', linewidth=k_linewidth)
                 ax2_0.legend([indicators[4], str(ma_window)+' moving av.'])
+                ax2_0.set_ylim(-150, 105)
+                ax2_0.text(0, 70, r'$75$', fontsize=7)
+                ax2_0.text(0, 45, r'$50$', fontsize=7)
+                ax2_0.text(0, 20, r'$25$', fontsize=7)
+                ax2_0.text(0, -5, r'$0$', fontsize=7)
             else:
                 ax2_0.legend([indicators[4]])
                 
+            ax2_0.set_xticks([])
+                
             ax3_0.stackplot( x , *data_arrays  )
             #ax3_0.legend(unique_data, loc = 'lower left', fontsize = stats_fontsize)
-            ax3_0.legend(unique_data, loc = (.2,.05), fontsize = stats_fontsize)
+            ax3_0.legend(unique_data, loc = (.2,.1), fontsize = stats_fontsize)
 
 
         ##################################################################
@@ -1718,13 +1728,15 @@ class Multiprocess_RL_Environment:
                     
                 ax1_0.plot(self.val_history[:,0], self.val_history[:,3])
                 ax1_0.legend([indicators[3]])
+                ax1_0.set_xticks([])
                 
                 ax2_0.plot(self.val_history[:,0], self.val_history[:,4])
                 ax2_0.legend([indicators[4]])
+                ax2_0.set_xticks([])
             
                 ax3_0.stackplot( x , *data_arrays  )
                 #ax3_0.legend(unique_data, loc = 'lower left', fontsize = stats_fontsize ) 
-                ax3_0.legend(unique_data, loc = (.1,.05), fontsize = stats_fontsize)
+                ax3_0.legend(unique_data, loc = (.25,.1), fontsize = stats_fontsize)
 
         if save_fig:
             fig_name = 'duration_reward_'+ str(self.net_version) 
@@ -1746,12 +1758,14 @@ class Multiprocess_RL_Environment:
             ax1.plot(self.log_df.iloc[init_epoch:]['split random/noisy']/100)
             ax1.legend(['epsilon'])
             ax1.set_ylim(0,1)
+            ax1.set_xticks([])
             
             # qval loss
             ax2.plot(self.log_df.iloc[init_epoch:][indicators[5]])
             if qv_loss_log:
                 ax2.set_yscale('log')
             ax2.legend(['Q-val loss'])
+            ax2.set_xticks([])
 
             # 'average map loss'
             if self.map_output:
@@ -1769,9 +1783,8 @@ class Multiprocess_RL_Environment:
             # 'av. q-val loss'
             ax1_1 = fig.add_subplot(411)
             ax1_1.plot(self.log_df.iloc[init_epoch:][indicators[5]])
-            if qv_loss_log:
-                ax1_1.set_yscale('log')
             ax1_1.legend(['S-val loss (advantage)'])
+            ax1_1.set_xticks([])
     
             # 'av. policy loss'
             ax2_1 = fig.add_subplot(412)
@@ -1779,17 +1792,19 @@ class Multiprocess_RL_Environment:
             if pg_loss_log:
                 ax2_1.set_yscale('symlog')
             ax2_1.legend([indicators[6]])
-            
-            # 'pg entropy'
-            ax3_1 = fig.add_subplot(413)
-            ax3_1.plot(100/self.max_entropy*self.log_df.iloc[init_epoch:][indicators[12]])
-            ax3_1.legend([indicators[12]])
+            ax2_1.set_xticks([])
 
             # 'average map loss'
-            ax4_1 = fig.add_subplot(414)
+            ax3_1 = fig.add_subplot(413)
             if self.map_output:
-                ax4_1.plot(self.log_df.iloc[init_epoch:][indicators[13]])
-                ax4_1.legend([indicators[13]])
+                ax3_1.plot(self.log_df.iloc[init_epoch:][indicators[13]])
+                ax3_1.legend([indicators[13]])
+            ax3_1.set_xticks([])
+
+            # 'pg entropy'
+            ax4_1 = fig.add_subplot(414)
+            ax4_1.plot(1/self.max_entropy*self.log_df.iloc[init_epoch:][indicators[12]])
+            ax4_1.legend([indicators[12]])
                 
             if save_fig:
                 fig_name = 'AC_training'+ str(self.net_version) 
