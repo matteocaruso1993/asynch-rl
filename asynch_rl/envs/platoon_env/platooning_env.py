@@ -73,7 +73,7 @@ class PlatoonEnv(gym.Env):
             
         self.observation_space = spaces.Box(low= np.array([0,0,0]), high=self.max_state) # , shape=(len(state_max),))
 
-        # initialize state
+        # initialize state (distance, leader speed, follower speed)
         self.state = np.zeros(3) # in gym-like env state has to include target
         self.duration = None
 
@@ -219,40 +219,23 @@ class PlatoonEnv(gym.Env):
         if  self.state[0] < (self.ref_distance - self.max_tracking_error)  :
             done = True
             reward = -self.rewards[0]
-            info['outcome'] = 'fail'
+            info['termination'] = 'too-close'
         # too far, penalize
         elif  self.state[0] > self.ref_distance + round(1.5*self.max_tracking_error):
             done = True
             reward = -self.rewards[0]
-            info['outcome'] = 'fail'
+            info['termination'] = 'too-far'
         elif self.duration >= self.sim_length_max:
             done = True
             energy_reward = self.rewards[2] * (1-cum_energy/(self.states_sequence.shape[0]*self.dt*self.max_power))
             ctrl_reward = self.rewards[3] *( 1 - np.sum(np.diff(self.ctrl_sequence[:,0])**2)/(2*self.states_sequence.shape[0])  )
-            reward = (energy_reward + ctrl_reward).item()
-            info['outcome'] = 'finalized'
+            reward = self.rewards[0]  + (energy_reward + ctrl_reward).item()
+            info['termination'] = 'success'
             
-            """
-            print(f'done! final reward = {reward}')
-            print(f'done! energy_reward = {energy_reward}')
-            print(f'done! ctrl_reward = {ctrl_reward}')
-            """
         else:
             done = False
-            """
-            #reward = 1 - (np.abs(self.state[2]-self.state[1])/ (self.state[1] + 0.01 ) )**(1/2)
-            if np.abs(self.state[0] - self.ref_distance) < 15:
-                relative_v_err = np.abs(self.state[2]-self.state[1])/ (self.state[1] + 1e-8 ) 
-                reward = self.rewards[1] *(0.7 - (np.clip(relative_v_err, -3,3))**(1/4))
-            elif self.state[0] > self.ref_distance:
-                reward =  self.rewards[1] *0.05*((self.state[2] - self.state[1])**3) *np.abs(norm_tracking_error)
-            elif self.state[0] < self.ref_distance:
-                reward =  self.rewards[1]*((self.state[1] - self.state[2])**3)*np.abs(norm_tracking_error)
-            reward = np.clip(reward, -2, 0)
-            """
-
-                        
-            reward = -self.rewards[1] *(np.clip(np.abs(self.state[2]-self.state[1])/ (self.state[1] + 0.01 ), 0,1 ))**(3)
+            reward = self.rewards[1] * (1 - 2*np.abs(norm_tracking_error) )
+            #*(np.clip(np.abs(self.state[2]-self.state[1])/ (self.state[1] + 0.01 ), 0,1 ))**(3)
 
         self.duration += self.dt
         
@@ -304,7 +287,7 @@ class PlatoonEnv(gym.Env):
 
         
     #####################################################################################################
-    def reset(self, save_history = False):
+    def reset(self, save_history = False, **kwargs):
                 
         self.duration = 0
         initial_distance =  self.ref_distance + (2*np.random.random()-1)*0.8*self.max_tracking_error

@@ -230,7 +230,7 @@ class Car():
         
         if self.change_gears:
             self.current_gear = int(gear_n)
-            print(self._max_velocity[self.current_gear])
+            #print(self._max_velocity[self.current_gear])
         
         #Differential equation for updating the state of the car
         if torch.is_tensor(norm_e_torque):
