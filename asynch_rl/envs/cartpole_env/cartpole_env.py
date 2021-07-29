@@ -122,12 +122,12 @@ class CartPoleEnv(gym.Env):
         if  np.abs(self.state[2]) > np.pi/2:
             done = True
             reward = -self.done_reward[0]*(1-0.5*duration_prize) # 50   # 
-            info['outcome'] = 'lost'
+            info['termination'] = 'lost-balance'
         
         elif self.duration/self.sim_length_max > 1/4 and np.abs(self.state[0]-self.x_target) > self.max_distance:
             done = True
             reward = -self.done_reward[1]*(1 - 0.5*duration_prize + np.average(np.array(self.target_dist_hist)) )
-            info['outcome'] = 'lost'
+            info['termination'] = 'lost-tracking'
             
         else:
             #print(f'current time = {self.duration}, max time = {self.sim_length_max}')
@@ -149,7 +149,7 @@ class CartPoleEnv(gym.Env):
             if self.duration >= self.sim_length_max:
                 reward += self.done_reward[2] * (1 - np.average(np.array(self.target_dist_hist)) )
                 done = True
-                info['outcome'] = 'success'
+                info['termination'] = 'success'
             else:
                 done = False
         

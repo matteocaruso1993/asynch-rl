@@ -24,8 +24,8 @@ import os
 import asyncio
 
 # df loader
-net_version = 0
-iteration = 500
+net_version = 100
+iteration = -1
 
 # generate proper discretized bins structure
 ################
@@ -92,7 +92,7 @@ agent.tot_iterations = 400
 agent.max_n_single_runs = 10
 
 
-sim_log, single_runs , successful_runs,_, pg_info= agent.run_synch(use_NN = True, test_qv = False)
+sim_log, single_runs , successful_runs,_,_, pg_info= agent.run_synch(use_NN = True, test_qv = False)
 
 agent.env.env.cartpole.plot_graphs(dt=agent.env.env.dt, save = False, no_norm = False, ml_ctrl = True)
 #agent.env.env.plot_graphs()
