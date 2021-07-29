@@ -28,7 +28,7 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 
-parser.add_argument("-v", "--version", dest="net_version", type = int, default= 3 , help="training version")
+parser.add_argument("-v", "--version", dest="net_version", type = int, default= 100 , help="training version")
 
 parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= -1 , help="iteration")
 
@@ -54,7 +54,7 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
     ################
     env_type = 'Platoon' 
     model_type = 'LinearModel'
-    overwrite_params = ['layers_width','discr_act_bins', 'change_gears', 'rewards', 'rl_mode', 'normalize_layers', 'val_frequency']
+    overwrite_params = ['layers_width','discr_act_bins', 'n_gears', 'rewards', 'rl_mode', 'normalize_layers', 'val_frequency']
         
     my_dict = load_train_params(env_type, model_type, overwrite_params, net_version)
     local_vars = locals()
@@ -68,7 +68,7 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
     import inspect
     inspect.signature(Multiprocess_RL_Environment.__init__)
     
-    env_options = {'change_gears' : local_vars['change_gears']}
+    env_options = {'n_gears' : local_vars['n_gears']}
     
     #discr_act_bins = local_vars['discr_act_bins']
     

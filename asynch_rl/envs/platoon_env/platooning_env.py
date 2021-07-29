@@ -22,9 +22,9 @@ class PlatoonEnv(gym.Env):
         
         self.env_type = 'Platoon'
         
-        self.change_gears = False
-        if 'change_gears' in options:
-            self.change_gears = options['change_gears']
+        self.n_gears = 1
+        if 'n_gears' in options:
+            self.n_gears = options['n_gears']
         
         #crash/lost track, prize, energy, control
         
@@ -56,7 +56,7 @@ class PlatoonEnv(gym.Env):
             self.max_acceleration = 10
         
         self.leader = Car(initial_speed = 30, max_acceleration = self.max_acceleration)
-        self.follower = Car(initial_speed = 30, max_acceleration = self.max_acceleration, change_gears =self.change_gears)
+        self.follower = Car(initial_speed = 30, max_acceleration = self.max_acceleration, n_gears =self.n_gears )
         
         self.max_power = self.leader.e_motor.getMaxPower()
 
@@ -64,8 +64,8 @@ class PlatoonEnv(gym.Env):
         self.max_vel = self.leader._max_velocity
         self.max_state = np.array([self.max_vel,self.max_vel,  self.ref_distance + 1.2*self.max_tracking_error])
 
-        if self.change_gears:
-            self.action_space = spaces.Box(low=np.array([-1,0, 0]), high=np.array([1,1, 1]))
+        if self.n_gears>1:
+            self.action_space = spaces.Box(low=np.array([-1,0, 0]), high=np.array([1,1, self.n_gears-1]))
             self.n_actions = 3
         else:
             self.action_space = spaces.Box(low=np.array([-1,0]), high=np.array([1,1])) #, shape=(size__,))
@@ -122,7 +122,7 @@ class PlatoonEnv(gym.Env):
             ctrl_steps = np.linspace(-1,1,bins[0]+1)
             norm_e_torque = ctrl_steps[ np.abs(ctrl_steps - norm_e_torque).argmin()]
            
-        if self.change_gears:
+        if self.n_gears>1:
             #print(self.follower.current_gear== 0, self.follower.velocity> 24)
             if self.follower.current_gear == 0 and self.follower.velocity > 24:
                 gear_n = 1
@@ -133,7 +133,7 @@ class PlatoonEnv(gym.Env):
 
         self.previous_def_e_tq = norm_e_torque
         
-        if self.change_gears:
+        if self.n_gears>1:
             return np.array([norm_e_torque, norm_br_torque, gear_n])
         else:
             return np.array([norm_e_torque, norm_br_torque])
@@ -149,7 +149,7 @@ class PlatoonEnv(gym.Env):
 
     #####################################################################################################            
     def no_action(self):
-        if self.change_gears:
+        if self.n_gears>1:
             return np.array([0,0,0])
         else:
             return np.array([0,0])
@@ -173,7 +173,7 @@ class PlatoonEnv(gym.Env):
         
         self.leader.update(self.dt, att_input[0], att_input[1], 0)
         
-        if self.change_gears:
+        if self.n_gears>1:
             self.follower.update(self.dt, action[0], action[1], gear_n=action[2])
         else:
             self.follower.update(self.dt, action[0], action[1], 0)
@@ -227,10 +227,22 @@ class PlatoonEnv(gym.Env):
             info['termination'] = 'too-far'
         elif self.duration >= self.sim_length_max:
             done = True
+            
+            ma_window = 4
+            ctrl_seq_padded = np.pad(np.diff(self.states_sequence[:,5]/(self.n_gears-1))**2, (ma_window//2, ma_window-1-ma_window//2), mode='edge')
+            norm_gear_change_frequency = np.convolve(ctrl_seq_padded, np.ones(ma_window), 'valid')/ ma_window
+            
             energy_reward = self.rewards[2] * (1-cum_energy/(self.states_sequence.shape[0]*self.dt*self.max_power))
-            ctrl_reward = self.rewards[3] *( 1 - np.sum(np.diff(self.ctrl_sequence[:,0])**2)/(2*self.states_sequence.shape[0])  )
+
+            gear_change_bonus = (1-4*np.sum(norm_gear_change_frequency)/self.states_sequence.shape[0])
+            e_motor_smoothness_bonus = ( 1 - np.sum(np.diff(self.ctrl_sequence[:,0])**2)/ self.states_sequence.shape[0]  )
+
+            ctrl_reward = self.rewards[3] * (gear_change_bonus + e_motor_smoothness_bonus)
             reward = self.rewards[0]  + (energy_reward + ctrl_reward).item()
             info['termination'] = 'success'
+            
+            #print(f'energy reward norm {(1-cum_energy/(self.states_sequence.shape[0]*self.dt*self.max_power))}')
+            #print(f'control reward norm {(1 - np.sum(np.diff(self.ctrl_sequence[:,0])**2)/(2*self.states_sequence.shape[0]))}')
             
         else:
             done = False
@@ -238,8 +250,6 @@ class PlatoonEnv(gym.Env):
             #*(np.clip(np.abs(self.state[2]-self.state[1])/ (self.state[1] + 0.01 ), 0,1 ))**(3)
 
         self.duration += self.dt
-        
-        
         
         
         if done:
@@ -261,6 +271,9 @@ class PlatoonEnv(gym.Env):
                                  self.state[1]/self.max_vel, \
                                  self.state[2]/self.max_vel ], \
                                  dtype = np.float)
+            
+        if self.n_gears>1:
+            state_norm = np.append(state_norm, self.follower.current_gear/(self.n_gears-1))
         
         return state_norm, reward, done, info
 
@@ -299,7 +312,7 @@ class PlatoonEnv(gym.Env):
         self.state = np.array([ initial_distance, leader_initial_speed, follower_initial_speed], dtype = np.float)
 
         self.leader = Car(initial_speed = self.state[1], max_acceleration = self.max_acceleration)
-        self.follower = Car(initial_speed = self.state[2], max_acceleration = self.max_acceleration, change_gears = self.change_gears)
+        self.follower = Car(initial_speed = self.state[2], max_acceleration = self.max_acceleration, n_gears = self.n_gears )
 
         self.states_sequence = None
         self.ctrl_sequence = None

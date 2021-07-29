@@ -167,9 +167,9 @@ fig.savefig('efficiency_map.eps')
 #%%
 class Car():
     """ Describes the physical behaviour of the vehicle """
-    def __init__(self, initial_speed = 0.0, max_acceleration = 5, change_gears = False):
+    def __init__(self, initial_speed = 0.0, max_acceleration = 5, n_gears = 1):
         #self.device=device
-        self.change_gears = change_gears
+        self.n_gears = n_gears
 
         self.gravity = 9.81 #m/s^2
         self.position = 0
@@ -183,10 +183,12 @@ class Car():
         self.veh_surface  = 2  #equivalent vehicle surface
         self.rr_coeff =  8e-3     #rolling resistance coefficient
         
-        if self.change_gears:
-            self.gear_ratio = [12, 7]
-        else:
+        if self.n_gears == 1:
             self.gear_ratio = [10]
+        elif self.n_gears == 2:
+            self.gear_ratio = [12, 7]
+        elif self.n_gears == 3:
+            self.gear_ratio = [14, 8.5, 5.5]
         
         self.wheel_radius = 0.3  #effective wheel radius
         self._max_whl_brk_torque = 4000  #Nm
@@ -228,7 +230,7 @@ class Car():
 
     def update(self, dt, norm_e_torque, norm_br_torque, gear_n = 0):
         
-        if self.change_gears:
+        if self.n_gears > 1:
             self.current_gear = int(gear_n)
             #print(self._max_velocity[self.current_gear])
         

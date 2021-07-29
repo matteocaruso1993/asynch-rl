@@ -100,8 +100,8 @@ parser.add_argument("-ur", "--use-reinforce", dest="use_reinforce", type=lambda 
 
 parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[40, 40, 20] )
 
-parser.add_argument("-gc", "--change-gears", dest="change_gears", type=bool, default=True,
-                    help="change gears")
+parser.add_argument("-ng", "--gears-number", dest="n_gears", type=int, default=3,
+                    help="number of gears")
 
 parser.add_argument(
   "-rw", "--rewards",  nargs="*",  # 0 or more values expected => creates a list
@@ -128,7 +128,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
             share_conv_layers = False, n_frames = 4, rl_mode = 'DQL', beta = 0.001, epsilon_min = 0.2, \
                 gamma = 0.99,  continuous_qv_update = False, tot_iterations = 400, layers_width= (100,100), \
                     ray_password = None,  head_address = None, memory_save_load = False, \
-                        use_reinforce = False, normalize_layers = False, change_gears = False, discr_act_bins = [5, 1]):
+                        use_reinforce = False, normalize_layers = False, n_gears = 0, discr_act_bins = [5, 1]):
 
 
     function_inputs = locals().copy()
@@ -138,12 +138,12 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
 
     overwrite_params = ['rewards', 'rl_mode', 'share_conv_layers', 'n_frames' ,\
                         'layers_width', 'normalize_layers', 'agents_number',\
-                            'val_frequency','discr_act_bins', 'change_gears']
+                            'val_frequency','discr_act_bins', 'n_gears']
         
-    env_options = {'change_gears' : change_gears}
+    env_options = {'n_gears' : n_gears}
     
-    if change_gears:
-        discr_act_bins.append(1)
+    if n_gears > 1:
+        discr_act_bins.append(n_gears-1)
 
         
     # initialize required net and model parameters if loading from saved values
@@ -240,7 +240,7 @@ if __name__ == "__main__":
                tot_iterations = args.tot_iterations, head_address = args.head_address, ray_password = args.ray_password ,\
                memory_save_load = args.memory_save_load, layers_width= args.layers_list, normalize_layers = args.normalize_layers, \
                use_reinforce = args.use_reinforce,   epsilon_min = args.epsilon_min , \
-                   change_gears = args.change_gears, discr_act_bins = args.discr_act_bins)
+                   n_gears = args.n_gears, discr_act_bins = args.discr_act_bins)
 
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)

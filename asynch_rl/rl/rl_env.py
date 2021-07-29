@@ -1694,7 +1694,7 @@ class Multiprocess_RL_Environment:
             shp = reward_av.shape
             ax2_0.plot(reward_av)
             
-            if shp[0] > 1000:
+            if shp[0] > 1000 and self.env_type=='RobotEnv':
                 reward_av_padded = np.pad(reward_av, (ma_window//2, ma_window-1-ma_window//2), mode='edge')
                 ax2_0.plot( np.convolve(reward_av_padded, np.ones(ma_window), 'valid') / ma_window , 'r')
                 
