@@ -22,6 +22,8 @@ class PlatoonEnv(gym.Env):
         
         self.env_type = 'Platoon'
         
+        self.too_far_tolerance = 1.5
+        
         self.n_gears = 1
         if 'n_gears' in options:
             self.n_gears = options['n_gears']
@@ -213,6 +215,11 @@ class PlatoonEnv(gym.Env):
         #[0] crash/lost track, [1] prize, [2] energy, [3] control
         norm_tracking_error = (self.ref_distance - self.state[0])/self.max_tracking_error
         
+        gear_chattering_penalty = int(self.states_sequence[-1,5] in self.states_sequence[-4:-2,5] and self.states_sequence[-1,5]!=self.states_sequence[-2,5])
+        
+        if gear_chattering_penalty :
+            stophere = 1
+        
         info = {'outcome':None}
 
         # too close  --> end simulation
@@ -221,7 +228,7 @@ class PlatoonEnv(gym.Env):
             reward = -self.rewards[0]
             info['termination'] = 'too-close'
         # too far, penalize
-        elif  self.state[0] > self.ref_distance + round(1.5*self.max_tracking_error):
+        elif  self.state[0] > self.ref_distance + round(self.too_far_tolerance*self.max_tracking_error):
             done = True
             reward = -self.rewards[0]
             info['termination'] = 'too-far'
@@ -229,15 +236,16 @@ class PlatoonEnv(gym.Env):
             done = True
             
             ma_window = 4
-            ctrl_seq_padded = np.pad(np.diff(self.states_sequence[:,5]/(self.n_gears-1))**2, (ma_window//2, ma_window-1-ma_window//2), mode='edge')
-            norm_gear_change_frequency = np.convolve(ctrl_seq_padded, np.ones(ma_window), 'valid')/ ma_window
+            
+            #norm_gear_change_frequency = ma_abs_filter(self.states_sequence[:,5]/(self.n_gears-1), ma_window)
+            norm_e_motor_change_frequency    = ma_abs_filter(self.ctrl_sequence[:,0], ma_window)
             
             energy_reward = self.rewards[2] * (1-cum_energy/(self.states_sequence.shape[0]*self.dt*self.max_power))
 
-            gear_change_bonus = (1-4*np.sum(norm_gear_change_frequency)/self.states_sequence.shape[0])
-            e_motor_smoothness_bonus = ( 1 - np.sum(np.diff(self.ctrl_sequence[:,0])**2)/ self.states_sequence.shape[0]  )
+            #gear_change_bonus = (1-4*np.sum(norm_gear_change_frequency)/self.states_sequence.shape[0])
+            e_motor_smoothness_bonus = ( 1 - 4*np.sum(norm_e_motor_change_frequency)/ self.states_sequence.shape[0]  )
 
-            ctrl_reward = self.rewards[3] * (gear_change_bonus + e_motor_smoothness_bonus)
+            ctrl_reward = self.rewards[3] * (0+ e_motor_smoothness_bonus)
             reward = self.rewards[0]  + (energy_reward + ctrl_reward).item()
             info['termination'] = 'success'
             
@@ -246,7 +254,7 @@ class PlatoonEnv(gym.Env):
             
         else:
             done = False
-            reward = self.rewards[1] * (1 - 2*np.abs(norm_tracking_error) )
+            reward = self.rewards[1] * (1 - np.abs(norm_tracking_error) - gear_chattering_penalty)
             #*(np.clip(np.abs(self.state[2]-self.state[1])/ (self.state[1] + 0.01 ), 0,1 ))**(3)
 
         self.duration += self.dt
@@ -303,8 +311,8 @@ class PlatoonEnv(gym.Env):
     def reset(self, save_history = False, **kwargs):
                 
         self.duration = 0
-        initial_distance =  self.ref_distance + (2*np.random.random()-1)*0.8*self.max_tracking_error
-        a = 0.2
+        initial_distance =  self.ref_distance + (2*np.random.random()-1)*0.5*self.max_tracking_error
+        a = 0.4
         # initial speeds uniformally distributed between 20% and 80% of the max possible speed
         leader_initial_speed = a*self.max_vel + (1-2*a)*self.max_vel*np.random.random()
         follower_initial_speed = a*self.max_vel + (1-2*a)*self.max_vel*np.random.random()
@@ -343,19 +351,29 @@ class PlatoonEnv(gym.Env):
         ax_0.plot(dist_err)
         ax_0.plot(0*np.ones((journey_length,1)), 'k',linewidth=0.5)
         ax_0.plot(self.max_tracking_error*np.ones((journey_length,1)), 'r')
-        #ax_0.plot(-20*np.ones((journey_length,1)))
-        ax_0.legend(['distancing error','reference','crash safety line' ])
+        ax_0.plot(-self.too_far_tolerance*self.max_tracking_error*np.ones((journey_length,1)), 'r')
         
+        #ax_0.plot(-20*np.ones((journey_length,1)))
+        ax_0.legend(['err.','ref','bound' ], fontsize = 8)
+        
+        """
         ax_1.plot(self.states_sequence[:,3])
         ax_1.plot(self.states_sequence[:,4])
         ax_1.legend(['leader pos','car position'])
+        """
+        ax_1.plot(self.stored_ctrl_sequence[:,6])
+        #ax_1.plot(self.states_sequence[:,4])
+        ax_1.legend(['e-motor speed'])
+
         
         ax_2.plot(self.states_sequence[:,1])
         ax_2.plot(self.states_sequence[:,2])
         ax_2.legend(['leader vel','car vel'])
 
-        ax_3.plot(self.states_sequence[:,5])
-        ax_3.legend(['inserted gear'])
+        ax_3.plot(self.stored_ctrl_sequence[:,5])
+        ax_3.legend(['cum energy'])
+
+
         
         plt.show()
  
@@ -369,8 +387,8 @@ class PlatoonEnv(gym.Env):
         ax0.plot(self.stored_ctrl_sequence[:,4])
         ax0.legend(['power'])
         
-        ax1.plot(self.stored_ctrl_sequence[:,5])
-        ax1.legend(['cum energy'])
+        ax1.plot(self.states_sequence[:,5])
+        ax1.legend(['inserted gear'])
         
         ax2.plot(self.stored_ctrl_sequence[:,0])
         ax2.plot(self.stored_ctrl_sequence[:,1])
@@ -396,6 +414,11 @@ class PlatoonEnv(gym.Env):
         pass
 
         
+def ma_abs_filter(input_sequence, ma_window):
+
+    seq_padded = np.pad(np.diff(input_sequence)**2, (ma_window//2, ma_window-1-ma_window//2), mode='edge')
+    return np.convolve(seq_padded, np.ones(ma_window), 'valid')/ ma_window
+
 
 
 #%%

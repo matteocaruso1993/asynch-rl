@@ -188,7 +188,7 @@ class Car():
         elif self.n_gears == 2:
             self.gear_ratio = [12, 7]
         elif self.n_gears == 3:
-            self.gear_ratio = [14, 8.5, 5.5]
+            self.gear_ratio = [14, 10, 7]
         
         self.wheel_radius = 0.3  #effective wheel radius
         self._max_whl_brk_torque = 4000  #Nm
