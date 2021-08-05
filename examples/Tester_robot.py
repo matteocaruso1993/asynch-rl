@@ -27,7 +27,7 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 
-parser.add_argument("-v", "--version", dest="net_version", type = int, default= 70 , help="training version")
+parser.add_argument("-v", "--version", dest="net_version", type = int, default= 200 , help="training version")
 
 parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= -1 , help="iteration")
 
@@ -97,7 +97,7 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
     rl_env.print_NN_parameters_count()
     
     try:
-        fig0, fig, fig_st  = rl_env.plot_training_log(0, qv_loss_log = False, \
+        fig0, fig  = rl_env.plot_training_log(0, qv_loss_log = False, \
                                                       pg_loss_log = False, save_fig = save_movie, eps_format=eps_format)
             
     except Exception:
@@ -156,15 +156,16 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
         if 'fig0' in locals():
             fig.waitforbuttonpress(20)
             fig0.waitforbuttonpress(20)
-            fig_st.waitforbuttonpress(20)
+            #fig_st.waitforbuttonpress(20)
 
-
+    """
     stats = []
     n_samples = 40
     for i in range(1,n_samples):
         pctg_success = (round(100*rl_env.traj_stats[-i].count('success')/len(rl_env.traj_stats[-i])))
         stats.append(pctg_success)
     print(f'success percentage last {n_samples}: {sum(stats)/len(stats)}%')
+    """
 
 
 #%%

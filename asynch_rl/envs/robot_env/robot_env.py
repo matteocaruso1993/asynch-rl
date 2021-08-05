@@ -48,7 +48,7 @@ def initialize_robot(visualization_angle_portion, lidar_range, lidar_n_rays, ini
     robotMap.update_from_peds_sim()
     
     #initialize robot with map
-    robot = DifferentialDrive(rob_collision_radius = robot_collision_radius)
+    robot = DifferentialDrive(rob_collision_radius = robot_collision_radius, wheel_rad = 0.13375, interaxis = 0.507)
     robot.initializeMap(robotMap)
     robot.setPosition(init_state[0], init_state[1], init_state[2])
     #robot.setPosition(0, -10, 0)
@@ -72,10 +72,10 @@ class RobotEnv(gym.Env):
     #metadata = {'render.modes': ['human']}
 
     #####################################################################################################
-    def __init__(self, lidar_n_rays = 135, \
-                 collision_distance = 0.7, visualization_angle_portion = 0.5, lidar_range = 10,\
-                 v_linear_max = 1 , v_angular_max = 1 , rewards = [1,100,2], max_v_x_delta = .5, \
-                 initial_margin = .08,    max_v_rot_delta = .5, dt = None, normalize_obs_state = True, \
+    def __init__(self, lidar_n_rays = int(536/2), \
+                 collision_distance = 0.7, visualization_angle_portion = 0.75, lidar_range = 15,\
+                 v_linear_max = 0.5 , v_angular_max = .6 , rewards = [1,100,2], max_v_x_delta = .25, \
+                 initial_margin = .08,    max_v_rot_delta = .3, dt = None, normalize_obs_state = True, \
                      sim_length = 200, difficulty = 0, scan_noise = [0.005,0.002], n_chunk_sections = 18):
 
         self.n_chunk_sections = n_chunk_sections
