@@ -20,6 +20,10 @@ from gym.utils import seeding
 #rendering
 from PIL import Image
 
+import tempfile
+import toml
+
+
 #%%
 # imports from robot_sf package
 from robot_sf.map import BinaryOccupancyGrid , fill_surrounding
@@ -33,12 +37,22 @@ from robot_sf.extenders_py_sf.extender_sim import ExtdSimulator
 
 #%%
 
-def initialize_robot(visualization_angle_portion, lidar_range, lidar_n_rays, init_state, robot_collision_radius, peds_sparsity, diff):
+def initialize_robot(visualization_angle_portion, lidar_range, lidar_n_rays, init_state, robot_collision_radius, peds_sparsity, diff, step_size = None):
     
     # odd number & lidar_n_rays % 3 (or 5) = 0!! (3 or 5 used as stride in conv_net)
     # allowed lidar_n_rays = 105, 135, 165, 195,...
 
-    sim_env = ExtdSimulator(difficulty=diff)
+    if step_size is not None and False:
+        
+        with tempfile.NamedTemporaryFile(suffix='.toml') as temp_fp:
+            tmp = dict()
+            tmp['step_width']= step_size
+            toml.dump(tmp, temp_fp)
+        
+            sim_env = ExtdSimulator(difficulty=diff, config_file = temp_fp.name)
+    else:
+        sim_env = ExtdSimulator(difficulty=diff)
+                                
     sim_env.setPedSparsity(peds_sparsity)
     #initialize map
     robotMap = BinaryOccupancyGrid(map_height = 2*sim_env.box_size, map_length = 2*sim_env.box_size, peds_sim_env = sim_env)
@@ -72,8 +86,8 @@ class RobotEnv(gym.Env):
     #metadata = {'render.modes': ['human']}
 
     #####################################################################################################
-    def __init__(self, lidar_n_rays = int(536/2), \
-                 collision_distance = 0.7, visualization_angle_portion = 0.75, lidar_range = 15,\
+    def __init__(self, lidar_n_rays = 135, \
+                 collision_distance = 0.7, visualization_angle_portion = 0.75, lidar_range = 10,\
                  v_linear_max = 0.5 , v_angular_max = .6 , rewards = [1,100,2], max_v_x_delta = .25, \
                  initial_margin = .08,    max_v_rot_delta = .3, dt = None, normalize_obs_state = True, \
                      sim_length = 200, difficulty = 0, scan_noise = [0.005,0.002], n_chunk_sections = 18):
@@ -294,7 +308,8 @@ class RobotEnv(gym.Env):
         
         self.robot_state_history = None
         
-        self.robot = initialize_robot(self.visualization_angle_portion, self.lidar_range,self.lidar_n_rays, [0,0,0], self.collision_distance, self.peds_sparsity, self._difficulty)
+        self.robot = initialize_robot(self.visualization_angle_portion, self.lidar_range,self.lidar_n_rays, [0,0,0], \
+                                      self.collision_distance, self.peds_sparsity, self._difficulty , step_size = self.dt)
         self.robot.setMaxSpeed(self.linear_max, self.angular_max)
 
         low_bound,high_bound = self._getPositionBounds()   

@@ -39,13 +39,15 @@ parser.add_argument("-s", "--save-movie"   , dest="save_movie"  , type=lambda x:
 
 parser.add_argument("-e", "--eps-format"   , dest="eps_format"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= False , help="eps_format")
 
+parser.add_argument("-dt", "--step-size"   , dest="step_size"  , type = float, default= 0.4 , help="simulation step size")
+
 args = parser.parse_args()
 ################
 
 
 # generate proper discretized bins structure
 
-def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, save_movie = False, eps_format = False):
+def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, save_movie = False, eps_format = False, step_size = 0.4):
 
     ################
     env_type = 'RobotEnv' 
@@ -80,7 +82,7 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
                                          move_to_cuda=False, n_frames = local_vars['n_frames'], show_rendering = True, discr_env_bins=2,\
                                         difficulty= difficulty, map_output = local_vars['map_output'], \
                                           layers_width = local_vars['layers_width'], normalize_layers = local_vars['normalize_layers'] ,\
-                                              rewards=local_vars['rewards'], val_frequency=local_vars['val_frequency']) #, \
+                                              rewards=local_vars['rewards'], val_frequency=local_vars['val_frequency'], step_size = step_size) #, \
                                       #    #replay_memory_size = 500, N_epochs = 100)
     
     
@@ -136,19 +138,19 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
         agent = rl_env.sim_agents_discr[0]
             
         #agent.live_plot = True
-        agent.max_steps_single_run = 1000
+        agent.max_steps_single_run = int(1000*0.4/step_size)
         
         #
         agent.movie_frequency = 1
         #agent.tot_iterations = 10000
-        agent.tot_iterations = 300
+        agent.tot_iterations = int(500*0.4/step_size)
         agent.max_n_single_runs = 5
 
         if save_movie:
             rl_env.update_net_name()
             agent.net_name = rl_env.net_name
             agent.save_movie = True
-            agent.tot_iterations = 2500
+            agent.tot_iterations = int(2500*0.4/step_size)
             agent.max_n_single_runs = 10
         
         sim_log, single_runs , successful_runs,_,_, pg_info = agent.run_synch(use_NN = True, test_qv = False)
@@ -174,7 +176,7 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
 if __name__ == "__main__":
     
     main(net_version = args.net_version, iteration = args.iteration, simulate = args.simulate, \
-         difficulty = args.difficulty, save_movie=args.save_movie, eps_format=args.eps_format)
+         difficulty = args.difficulty, save_movie=args.save_movie, eps_format=args.eps_format, step_size = args.step_size)
 
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)
