@@ -19,11 +19,6 @@ from .dice_poker import DicePoker
 
 from .cartpole_env.cartpole_env import CartPoleEnv
 from .platoon_env.platooning_env import PlatoonEnv
-from .chess_env.chess_env import Chess
-from .connect4_env.connect_four_env import ConnectFour
-
-from .frx_env.frx_env import FrxTrdr
-
 
 
 try:
@@ -88,21 +83,6 @@ class DiscrGymStylePlatoon(DiscretizedActionWrapper):
         env = PlatoonEnv(**kwargs)
         super().__init__(env, n_bins_act[:env.n_actions], low_act, high_act)
         
-        
-class GymstyleChess(DiscretizedActionWrapper):
-    def __init__(self, n_bins_act=[15,7,7], **kwargs):
-        
-        env = Chess(**kwargs)
-        super().__init__(env, n_bins_act)
-        env.act_nD_flattened = self.act_nD_flattened
-    
-
-class GymstyleConnect4(DiscretizedActionWrapper):
-    def __init__(self, **kwargs):
-        
-        env = ConnectFour(**kwargs)
-        super().__init__(env, env.width-1)
-        
 
 class GymstyleDicePoker(DiscretizedActionWrapper):
     def __init__(self):
@@ -110,22 +90,6 @@ class GymstyleDicePoker(DiscretizedActionWrapper):
         env = DicePoker()
         super().__init__(env, 1)
         
-        
-class GymstyleFrx(DiscretizedActionWrapper):
-    def __init__(self,  n_frames, max_n_moves,initial_account,low_act=None, high_act=None, **kwargs):
-        
-        env = FrxTrdr(n_samples = n_frames, max_n_moves = max_n_moves, initial_account = initial_account , **kwargs)
-        super().__init__(env, [2, env.n_actions-1], low_act, high_act)
-        
-    def get_observations_structure(self):
-        return None,None
-    
-    # get FRX specific NN input tensor
-    def get_net_input(self, state_obs, **kwargs):
-        #transforms env state output into compatible tensor with Network
-        return ( torch.tensor(state_obs[0].T).unsqueeze(0).float(), torch.tensor(state_obs[1]).unsqueeze(0).float() )
-    
-       
 
         
 #%%

@@ -28,10 +28,9 @@ from copy import deepcopy
 #%%
 # My Libraries
 from ..envs.gymstyle_envs import DiscrGymStyleRobot, DiscrGymStyleCartPole, \
-    DiscrGymStylePlatoon, GymstyleChess, GymstyleConnect4, GymstyleDicePoker, GymstyleFrx
+    DiscrGymStylePlatoon, GymstyleDicePoker
 from ..nns.custom_networks import LinearModel
 from ..nns.robot_net import ConvModel
-from ..nns.nn_frx import NN_frx
 
 from .resources.memory import ReplayMemory
 from .resources.sim_agent import SimulationAgent
@@ -84,7 +83,7 @@ class Multiprocess_RL_Environment:
         
         ####################### net/environment initialization
         # check if env/net types make sense
-        allowed_envs = ['RobotEnv', 'CartPole', 'Platoon', 'Chess', 'Connect4', 'DicePoker','Frx']
+        allowed_envs = ['RobotEnv', 'CartPole', 'Platoon', 'DicePoker']
         allowed_nets = ['ConvModel', 'LinearModel','ConvFrxModel'] 
         allowed_rl_modes = ['DQL', 'AC', 'parallelAC']
         
@@ -149,7 +148,7 @@ class Multiprocess_RL_Environment:
         self.move_to_cuda = torch.cuda.is_available() and move_to_cuda and self.rl_mode != 'AC'
         print(f'using CUDA: {self.move_to_cuda}')
         
-        if self.net_type in ['ConvModel', 'ConvFrxModel'] : # if we don't use conv_net there is no reason to use multichannel structure
+        if self.net_type in ['ConvModel'] : # if we don't use conv_net there is no reason to use multichannel structure
             self.n_frames = n_frames # for multichannel convolutional networks only
         else:
             self.n_frames = 1
@@ -310,29 +309,9 @@ class Multiprocess_RL_Environment:
         elif self.env_type  == 'Platoon':
             return DiscrGymStylePlatoon(n_bins_act= self.discr_env_bins, sim_length_max = self.sim_length_max, \
                                     difficulty=self.difficulty, rewards = self.rewards, options = self.env_options)
-        elif self.env_type == 'Chess':
-            self.one_vs_one = True
-            return GymstyleChess(use_NN = True,  max_n_moves = self.sim_length_max  , rewards = self.rewards, print_out = self.show_rendering)
-        elif self.env_type == 'Connect4':
-            self.one_vs_one = True
-            return GymstyleConnect4(use_NN = True, rewards = self.rewards, print_out = self.show_rendering)
         elif self.env_type == 'DicePoker':
             return GymstyleDicePoker()
-        elif self.env_type == 'Frx':
-            env = GymstyleFrx(n_frames = self.n_frames, max_n_moves = self.sim_length_max ,initial_account = 1000)
-            self.discr_env_bins = env.n_bins_act
-            return env
 
-
-        
-
-    """
-    ##################################################################################
-    def generateContnsHybActSpace_GymStyleEnv(self):
-        if self.env_type  == 'Platoon':
-            return contn_hyb_GymStyle_Platoon(action_structure = [0,0,1], sim_length_max = self.sim_length_max, \
-                                    difficulty=self.difficulty, rewards = self.rewards, options = self.env_options)
-    """
 
     ##################################################################################
     #agents attributes are updated when they have the same name as the rl environment

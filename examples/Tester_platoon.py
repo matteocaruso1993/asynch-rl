@@ -28,15 +28,15 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 
-parser.add_argument("-v", "--version", dest="net_version", type = int, default= 100 , help="training version")
+parser.add_argument("-v", "--version", dest="net_version", type = int, default= 31 , help="training version")
 
 parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= -1 , help="iteration")
 
-parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= False , help="simulate instance")
+parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= True , help="simulate instance")
 
 parser.add_argument("-d", "--difficulty"   , dest="difficulty"  , type = int, default= 1 , help="difficulty")
 
-parser.add_argument("-s", "--save-movie"   , dest="save_movie"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= True , help="save movie")
+parser.add_argument("-s", "--save-movie"   , dest="save_movie"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= False , help="save movie")
 
 parser.add_argument("-e", "--eps-format"   , dest="eps_format"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= False , help="eps_format")
 
