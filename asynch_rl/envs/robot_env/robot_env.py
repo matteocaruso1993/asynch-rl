@@ -88,12 +88,13 @@ class RobotEnv(gym.Env):
     #####################################################################################################
     def __init__(self, lidar_n_rays = 135, \
                  collision_distance = 0.7, visualization_angle_portion = 0.75, lidar_range = 10,\
-                 v_linear_max = 0.5 , v_angular_max = .6 , rewards = [1,100,2], max_v_x_delta = .25, \
-                 initial_margin = .08,    max_v_rot_delta = .3, dt = None, normalize_obs_state = True, \
-                     sim_length = 200, difficulty = 0, scan_noise = [0.005,0.002], n_chunk_sections = 18):
+                 v_linear_max = 0.6 , v_angular_max = 2 , rewards = [1,100,2], max_v_x_delta = .2, \
+                 initial_margin = .08,    max_v_rot_delta = .5, dt = 1, normalize_obs_state = True, \
+                     sim_length = 200, difficulty = 0, scan_noise = [0.005,0.002], n_chunk_sections = 18, peds_speed_mult = 1.3):
 
         self.n_chunk_sections = n_chunk_sections
-        
+        self.peds_speed_mult = peds_speed_mult #Multiplier for pedestrian max speeds
+
         self.input_difficulty = difficulty
         self.sparsity_levels = [500, 100 , 50,  40 , 30 ]
 
@@ -175,9 +176,12 @@ class RobotEnv(gym.Env):
 
     #####################################################################################################            
     def step(self,action, *args):
-        
         info = {}
         saturate_input = False
+
+        #print('Current peds speed multiplier is:\t%2.2f'%self.robot.map.peds_sim_env.peds.max_speed_multiplier)
+
+        self.robot.map.peds_sim_env.addRobot(self.robot.getCurrentPosition())
         
         # initial distance
         dist_0 = self.robot.target_rel_position(self.target_coordinates[:2])[0]
@@ -326,6 +330,10 @@ class RobotEnv(gym.Env):
         # if step time externally defined, align peds sim env
         if self.dt != self.robot.map.peds_sim_env.peds.step_width:
             self.robot.map.peds_sim_env.peds.step_width = self.dt
+
+        if self.peds_speed_mult != self.robot.map.peds_sim_env.peds.max_speed_multiplier:
+            self.robot.map.peds_sim_env.peds.max_speed_multiplier = self.peds_speed_mult
+
         
         return self._get_obs()
         
@@ -413,6 +421,10 @@ class RobotEnv(gym.Env):
             return img  , t1,t2, t3,t_ped_dist_line, trg, rbt,rbt_dir, scn, ped_dist_bar_empty, ped_dist_bar,t_target_dist_line, target_dist_bar_empty, target_dist_bar
         elif mode == 'plot':
             return plt.gcf()
+        pass
+
+    def _updateRobotOccupancy(self):
+        rob_coord = self.robot.getCurrentPosition()
         pass
             
 #%%

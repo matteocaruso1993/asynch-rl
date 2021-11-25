@@ -59,9 +59,11 @@ class Multiprocess_RL_Environment:
                  rewards = np.ones(5), env_options = {}, share_conv_layers = False, 
                  beta_PG = 1 , continuous_qv_update = False, memory_save_load = False, n_partial_outputs = 18, \
                  use_reinforce = False, normalize_layers = False, map_output= False,\
-                     dynamic_grad_weighting  = False, step_size = None):
+                     dynamic_grad_weighting  = False, step_size = None, peds_speed_mult = 1.3):
         
         self.step_size = step_size
+        self.peds_speed_mult = peds_speed_mult
+
         
         # dynamical gradient weighting      
         self.dynamic_grad_weighting = dynamic_grad_weighting
@@ -303,7 +305,7 @@ class Multiprocess_RL_Environment:
     def generateDiscrActSpace_GymStyleEnv(self):
         if self.env_type  == 'RobotEnv':
             return DiscrGymStyleRobot( n_frames = self.n_frames, n_bins_act= self.discr_env_bins , sim_length = self.sim_length_max , \
-                                      difficulty=self.difficulty, n_chunk_sections = self.n_partial_outputs, rewards= self.rewards, dt = self.step_size)
+                                      difficulty=self.difficulty, n_chunk_sections = self.n_partial_outputs, rewards= self.rewards, dt = self.step_size, peds_speed_mult = self.peds_speed_mult)
         elif self.env_type  == 'CartPole':
             return DiscrGymStyleCartPole(n_bins_act= self.discr_env_bins, sim_length_max = self.sim_length_max, difficulty=self.difficulty)
         elif self.env_type  == 'Platoon':
@@ -854,7 +856,7 @@ class Multiprocess_RL_Environment:
 
 
     ##################################################################################
-    def runA3C(self):
+    def runA3C(self, update):
         """ parallelized implementation of single iteration"""
         
         # initial weights used for checks
@@ -977,7 +979,8 @@ class Multiprocess_RL_Environment:
             print(f'simulated trajectories: {n_trajectories}')
                         
         # net parameters update
-        self.A3C_net_weights_update( n_trajectories)
+        if update:
+            self.A3C_net_weights_update( n_trajectories)
         
         # interrupt QV update if needed
         if qv_update_launched:
@@ -1417,7 +1420,7 @@ class Multiprocess_RL_Environment:
 
 
     ##################################################################################
-    def runSequence(self, n_runs = 5, display_graphs = False, reset_optimizer = False):
+    def runSequence(self, n_runs = 5, display_graphs = False, reset_optimizer = False, update = True):
         
         self.print_NN_parameters_count()
         
@@ -1428,7 +1431,7 @@ class Multiprocess_RL_Environment:
             print(f'simulating with {self.n_agents_discr} agents')
             validate_DQL = (not i % self.val_frequency) and self.rl_mode == 'DQL'
             
-            self.runEnvIterationOnce(validate_DQL, reset_optimizer)
+            self.runEnvIterationOnce(validate_DQL, reset_optimizer, update = update)
             
             print('###################################################################')
             print('###################################################################')
@@ -1598,7 +1601,7 @@ class Multiprocess_RL_Environment:
 
 
     ##################################################################################
-    def runEnvIterationOnce(self, validate_DQL = False, reset_optimizer = False):
+    def runEnvIterationOnce(self, validate_DQL = False, reset_optimizer = False, update = True):
                 
         # loading/saving of models, verifying correct model is used at all stages
         self.pre_training_routine(reset_optimizer)
@@ -1611,7 +1614,7 @@ class Multiprocess_RL_Environment:
             if self.rl_mode == 'DQL':
                 self.runQV_Parallelized(validate_DQL)
             else:
-                self.runA3C()
+                self.runA3C(update = update)
         
         # we update the name in order to save it
         self.training_session_number +=1        

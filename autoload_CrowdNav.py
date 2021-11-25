@@ -11,7 +11,7 @@ import server_config
 asynch_rl_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 remote_relaunch = True
-net_version = str(1002)
+net_version = str(500)
 difficulty = str(2)
 
 print('preparing to connect')
@@ -20,7 +20,7 @@ password = server_config.password
 c = Connection(host=host,connect_kwargs={"password":password})
 print('connection completed')
 
-result=c.run("cat /home/"+server_config.username+"/GitHub_repos/asynch-rl/Data/RobotEnv/ConvModel"+net_version+"/train_log.txt")
+result=c.run("cat /home/" + server_config.username+"/git/asynch-rl/Data/RobotEnv/ConvModel"+net_version+"/train_log.txt")
 
 print("data extracted")
 
@@ -44,17 +44,21 @@ print(f'last iteration: {last_iteration}')
 
 
 
-video_condition = False and not int(last_iteration) % 20
+#video_condition = False and not int(last_iteration) % 20
+
+video_condition = True
     
 makedir_string = "mkdir "+asynch_rl_path+"/asynch-rl/Data/RobotEnv/ConvModel"+net_version+"/"
  
-copy_string = "sshpass -p "+server_config.password+" scp "+server_config.username+"@"+server_config.ip_address+":GitHub_repos/asynch-rl/Data/RobotEnv/ConvModel"\
+copy_string = "sshpass -p "+server_config.password+" scp "+server_config.username+"@"+server_config.ip_address+":git/asynch-rl/Data/RobotEnv/ConvModel"\
     +net_version+"/\{'TrainingLog.pkl','train_params.txt','*'$iteration'*','val_history.npy','PG_training.npy'\} "+asynch_rl_path+"/asynch-rl/Data/RobotEnv/ConvModel"+net_version+"/"
+
+print(copy_string)
 
 os.system(makedir_string)
 os.system(copy_string)
 
-os.system("bash "+ asynch_rl_path +"/asynch-rl/launch_test.sh VERS='"+ net_version +"' ITER='"+last_iteration+"' DIFF='"+str(difficulty) +"' SIM='"+ str(video_condition) +"' SAVE='True' RL='AC'")
+os.system("bash "+ asynch_rl_path +"/asynch-rl/launch_test1.sh VERS='"+ net_version +"' ITER='"+last_iteration+"' DIFF='"+str(difficulty) +"' SIM='"+ str(video_condition) +"' SAVE='True' RL='AC'")
 
 time.sleep(5)
 
@@ -73,7 +77,7 @@ current_duration = round(time.time() - df.iloc[-1]['date'].timestamp())
 print(f'current duration: {current_duration}s')
 
 
-
+"""
 if current_duration > 300: #3*df[df['duration']<300]['duration'].mean():
     os.system("rm ~/Dropbox/CrowdNavigationTraining/SIMULATION_STALLED_*")
     os.system("touch ~/Dropbox/CrowdNavigationTraining/SIMULATION_STALLED_"+ last_iteration)
@@ -98,6 +102,7 @@ else:
     print('########### iteration went well. simulation advancing...###########')
     os.system("rm ~/Dropbox/CrowdNavigationTraining/last_successful*")
     os.system("touch ~/Dropbox/CrowdNavigationTraining/last_successful_"+ last_iteration +" &")
+"""
 
     
     

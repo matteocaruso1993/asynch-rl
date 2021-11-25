@@ -18,6 +18,7 @@ import os, sys
 
 from asynch_rl.rl.rl_env import Multiprocess_RL_Environment
 from asynch_rl.rl.utilities import clear_pycache, store_train_params, load_train_params
+from numba.cuda import test
 
 import psutil
 import time
@@ -34,7 +35,7 @@ parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC', 
 
 parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10 , help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=True,
                     help="ray_parallelize bool")
 
 parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default= 5, help="Number of agents to be used")
@@ -45,11 +46,11 @@ parser.add_argument("-norm", "--normalize-layers", dest="normalize_layers", type
 parser.add_argument("-mo", "--map-output", dest="map_output", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=True,
                     help="NN has intermediate output with estimated map")
 
-parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=0, help="start simulations and training from a given iteration")
+parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=1, help="start simulations and training from a given iteration")
 
 parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 4000, help="Replay Memory Size")
 
-parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=100, help="net version used")
+parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=1000, help="net version used")
 
 parser.add_argument("-ha", "--head-address", dest="head_address", type=str, default= None, help="Ray Head Address")
 
@@ -89,7 +90,7 @@ parser.add_argument("-vf", "--validation-frequency", dest="val_frequency", type=
 parser.add_argument("-ro", "--reset-optimizer", dest="reset_optimizer", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
                     help="reset optimizer")
 
-parser.add_argument("-fr", "--frames-number", dest="n_frames", type=int, default= 6, help="number of frames considered for convolutional network")
+parser.add_argument("-fr", "--frames-number", dest="n_frames", type=int, default= 10, help="number of frames considered for convolutional network")
 
 parser.add_argument("-scl", "--share-conv-layers", dest="share_conv_layers", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
                     help="Flag to share Convolutional Layers between Actor and Critic")
@@ -108,6 +109,10 @@ parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", t
 parser.add_argument("-ur", "--use-reinforce", dest="use_reinforce", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
                     help="use REINFORCE instead of AC")
 
+parser.add_argument("-psm", "--peds-speeed-multiplier",dest="peds_speed_mult", type=float,default=1.3,help="pedestrians max speed multiplier")
+
+parser.add_argument("-test", "--testing", dest="tester",type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False)
+
 
 args = parser.parse_args()
 
@@ -124,7 +129,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
             share_conv_layers = False, n_frames = 4, rl_mode = 'DQL', beta = 0.001, epsilon_min = 0.2, \
                 gamma = 0.99,  continuous_qv_update = False, tot_iterations = 400, layers_width= (100,100), \
                     ray_password = None,  head_address = None, memory_save_load = False, \
-                        use_reinforce = False, normalize_layers = False, map_output = False):
+                        use_reinforce = False, normalize_layers = False, map_output = False, peds_speed_mult = 1.3, tester = True):
 
 
     function_inputs = locals().copy()
@@ -183,7 +188,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
     rl_env = Multiprocess_RL_Environment(env_type , model_type , net_version , rl_mode = rl_mode, \
                         ray_parallelize=ray_parallelize, move_to_cuda=True, n_frames = n_frames, \
                         replay_memory_size = replay_memory_size, n_agents = agents_number,\
-                        tot_iterations = tot_iterations, discr_env_bins = 2 , \
+                        tot_iterations = tot_iterations, discr_env_bins = 4 , \
                         use_reinforce = use_reinforce,  epsilon_annealing_factor=epsilon_annealing_factor,  layers_width= layers_width,\
                         N_epochs = n_epochs, epsilon_min = epsilon_min , rewards = rewards, \
                         mini_batch_size = mini_batch_size, share_conv_layers = share_conv_layers, \
@@ -191,7 +196,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
                         memory_turnover_ratio = memory_turnover_ratio, val_frequency = val_frequency ,\
                         gamma = gamma, beta_PG = beta , continuous_qv_update = continuous_qv_update , \
                         memory_save_load = memory_save_load , normalize_layers = normalize_layers, \
-                            map_output = map_output) 
+                            map_output = map_output, peds_speed_mult = peds_speed_mult) 
 
     # always update agents params after rl_env params are changed
     rl_env.updateAgentsAttributesExcept('env')
@@ -203,7 +208,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
     else:
         store_train_params(rl_env, function_inputs)
             
-    rl_env.runSequence(n_iterations, reset_optimizer=reset_optimizer) 
+    rl_env.runSequence(n_iterations, reset_optimizer=reset_optimizer, update = not tester) 
 
     pr.disable()
     s = io.StringIO()
@@ -230,7 +235,7 @@ if __name__ == "__main__":
                tot_iterations = args.tot_iterations, head_address = args.head_address, ray_password = args.ray_password ,\
                memory_save_load = args.memory_save_load, layers_width= args.layers_list, normalize_layers = args.normalize_layers, \
                use_reinforce = args.use_reinforce,   n_frames = args.n_frames, epsilon_min = args.epsilon_min , \
-                   map_output = args.map_output)
+                   map_output = args.map_output, peds_speed_mult=args.peds_speed_mult, tester=args.tester)
 
     current_folder = os.path.abspath(os.path.dirname(__file__))
     clear_pycache(current_folder)

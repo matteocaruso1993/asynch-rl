@@ -31,15 +31,15 @@ parser.add_argument("-v", "--version", dest="net_version", type = int, default= 
 
 parser.add_argument("-i", "--iter"   , dest="iteration"  , type = int, default= -1 , help="iteration")
 
-parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= False , help="simulate instance")
+parser.add_argument("-sim", "--simulate"   , dest="simulate"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= True , help="simulate instance")
 
 parser.add_argument("-d", "--difficulty"   , dest="difficulty"  , type = int, default= 2 , help="difficulty")
 
-parser.add_argument("-s", "--save-movie"   , dest="save_movie"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= True , help="save movie")
+parser.add_argument("-s", "--save-movie"   , dest="save_movie"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= False , help="save movie")
 
 parser.add_argument("-e", "--eps-format"   , dest="eps_format"  , type=lambda x: (str(x).lower() in ['true','1', 'yes']), default= False , help="eps_format")
 
-parser.add_argument("-dt", "--step-size"   , dest="step_size"  , type = float, default= 0.4 , help="simulation step size")
+parser.add_argument("-dt", "--step-size"   , dest="step_size"  , type = float, default= 0.1 , help="simulation step size")
 
 args = parser.parse_args()
 ################
@@ -79,7 +79,7 @@ def main(net_version = 100, iteration = 2, simulate = False, difficulty = 0, sav
     
     
     rl_env = Multiprocess_RL_Environment(env_type, model_type, net_version, rl_mode=local_vars['rl_mode'] , ray_parallelize=False, \
-                                         move_to_cuda=False, n_frames = local_vars['n_frames'], show_rendering = True, discr_env_bins=2,\
+                                         move_to_cuda=False, n_frames = 10, show_rendering = True, discr_env_bins=4,\
                                         difficulty= difficulty, map_output = local_vars['map_output'], \
                                           layers_width = local_vars['layers_width'], normalize_layers = local_vars['normalize_layers'] ,\
                                               rewards=local_vars['rewards'], val_frequency=local_vars['val_frequency'], step_size = step_size) #, \

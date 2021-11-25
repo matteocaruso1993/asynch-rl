@@ -86,7 +86,7 @@ class ConvModel(nnBase):
 
         # convolutional layers
         # 4<= n_frames <= 10
-        kernel_size_3,kernel_size_5 = [None,None,None,None,[2,2],[2,3],[2,3],[2,3],[2,3],[3,3],[3,3]][self.n_frames]
+        kernel_size_3,kernel_size_5 = [None,None,None,None,[2,2],[2,3],[2,3],[2,3],[2,3],[3,3],[3,3],[3,3]][self.n_frames]
         
         self.maxpool_3 = nn.MaxPool2d(kernel_size=(kernel_size_3,3) , stride=(1,2) )
         self.maxpool_5 = nn.MaxPool2d(kernel_size=(kernel_size_5,5), stride=(1,3))

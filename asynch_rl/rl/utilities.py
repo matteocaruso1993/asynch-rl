@@ -34,7 +34,10 @@ def progress(count, total, status=''):
 """
 
 ##########################################################################   
+from cProfile import label
+import matplotlib.pyplot as plt
 import sys
+import zipfile
 
 
 def progress(count, total, status='', filled_symbol = '='):
@@ -178,3 +181,64 @@ def check_saved(filename):
         if counter >= 60:
             print(f'file not saved: {filename}')
             raise('fatal error!')
+
+
+
+
+def loadPlotPieTester(traj_stat_filename='traj_stats.txt'):
+    print('test')
+    lines = [[v for v in line.split()] for line in open(traj_stat_filename)]
+    tot_runs = 0
+    n_ped = 0
+    n_obs = 0
+    n_success = 0
+    n_timeout = 0
+
+
+    for line in lines:
+        tot_runs += len(line)
+        n_ped += line.count('pedestrian')
+        n_obs += line.count('obstacle')
+        n_timeout += line.count('timeout')
+        n_success += line.count('success')
+
+    print('Total number of simulations:\t%d'%tot_runs)
+    vals = [n_success,n_ped,n_obs,n_timeout]
+    vals_principal = [n_success,n_ped + n_obs + n_timeout]
+    vals_secondary = [n_ped,n_obs,n_timeout]
+    print(vals)
+    labels_principal_pie = ['success','failure']
+    colors_principal_pie = ['#00ff00','#ff0000']
+
+    labels_secondary_pie = ['pedestrian', 'obstacle','timeout']
+    colors_secondary_pie = ['#ff0000','#ff9933','#0000ff']
+    center = (2,2)
+    explode_principal = (0,0)
+    explode_secondary = (0,0,0)
+    wedgeprops={"edgecolor":"k",'linewidth': 1, 'linestyle': 'solid', 'antialiased': True}
+    fig,ax = plt.subplots()
+    ax.pie(vals_principal,colors=colors_principal_pie,explode = explode_principal, labels=labels_principal_pie,autopct='%1.1f%%',shadow=False,startangle=90,wedgeprops=wedgeprops)
+    ax.pie(vals_secondary,radius=0.50,center=center,colors=colors_secondary_pie,explode = explode_secondary, labels=labels_secondary_pie,autopct='%1.1f%%',shadow=False,startangle=90,wedgeprops=wedgeprops)
+
+    ax.axis('equal')
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+def zipModel(env,model_number):
+    parent = os.path.dirname(__file__)
+    pack_folder = os.path.abspath(os.path.join(parent,'..','..'))
+    model_folder = os.path.join(pack_folder,'Data',env,model_number)
+    print(model_folder)
+    relroot = os.path.abspath(os.path.join(model_folder, os.pardir))
+    tmp = zipfile.ZipFile('tmp.zip','w',zipfile.ZIP_DEFLATED)
+    for dirname, subdirs, files in os.walk(model_folder):
+        tmp.write(dirname, os.path.relpath(dirname,relroot))
+        for file in files:
+            filename = os.path.join(dirname, file)
+            arch_name = os.path.join(os.path.relpath(dirname,relroot), file)
+            tmp.write(filename,arch_name)
+
+    tmp.close()
