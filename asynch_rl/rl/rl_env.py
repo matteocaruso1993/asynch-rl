@@ -59,10 +59,11 @@ class Multiprocess_RL_Environment:
                  rewards = np.ones(5), env_options = {}, share_conv_layers = False, 
                  beta_PG = 1 , continuous_qv_update = False, memory_save_load = False, n_partial_outputs = 18, \
                  use_reinforce = False, normalize_layers = False, map_output= False,\
-                     dynamic_grad_weighting  = False, step_size = None, peds_speed_mult = 1.3):
+                     dynamic_grad_weighting  = False, step_size = None, peds_speed_mult = 1.3, downsampling_step = 1):
         
         self.step_size = step_size
         self.peds_speed_mult = peds_speed_mult
+        self.downsampling_step = downsampling_step
 
         
         # dynamical gradient weighting      
@@ -305,7 +306,7 @@ class Multiprocess_RL_Environment:
     def generateDiscrActSpace_GymStyleEnv(self):
         if self.env_type  == 'RobotEnv':
             return DiscrGymStyleRobot( n_frames = self.n_frames, n_bins_act= self.discr_env_bins , sim_length = self.sim_length_max , \
-                                      difficulty=self.difficulty, n_chunk_sections = self.n_partial_outputs, rewards= self.rewards, dt = self.step_size, peds_speed_mult = self.peds_speed_mult)
+                                      difficulty=self.difficulty, n_chunk_sections = self.n_partial_outputs, rewards= self.rewards, dt = self.step_size, peds_speed_mult = self.peds_speed_mult, downsampling_step = self.downsampling_step)
         elif self.env_type  == 'CartPole':
             return DiscrGymStyleCartPole(n_bins_act= self.discr_env_bins, sim_length_max = self.sim_length_max, difficulty=self.difficulty)
         elif self.env_type  == 'Platoon':

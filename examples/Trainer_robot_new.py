@@ -113,6 +113,8 @@ parser.add_argument("-psm", "--peds-speeed-multiplier",dest="peds_speed_mult", t
 
 parser.add_argument("-test", "--testing", dest="tester",type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False)
 
+parser.add_argument("-ds", "--dsampling", dest="downsampling_step",type=int, default=1)
+
 
 args = parser.parse_args()
 
@@ -129,7 +131,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
             share_conv_layers = False, n_frames = 4, rl_mode = 'DQL', beta = 0.001, epsilon_min = 0.2, \
                 gamma = 0.99,  continuous_qv_update = False, tot_iterations = 400, layers_width= (100,100), \
                     ray_password = None,  head_address = None, memory_save_load = False, \
-                        use_reinforce = False, normalize_layers = False, map_output = False, peds_speed_mult = 1.3, tester = True):
+                        use_reinforce = False, normalize_layers = False, map_output = False, peds_speed_mult = 1.3, tester = True, downsampling_step=1):
 
 
     function_inputs = locals().copy()
@@ -196,7 +198,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
                         memory_turnover_ratio = memory_turnover_ratio, val_frequency = val_frequency ,\
                         gamma = gamma, beta_PG = beta , continuous_qv_update = continuous_qv_update , \
                         memory_save_load = memory_save_load , normalize_layers = normalize_layers, \
-                            map_output = map_output, peds_speed_mult = peds_speed_mult) 
+                            map_output = map_output, peds_speed_mult = peds_speed_mult, downsampling_step = downsampling_step)
 
     # always update agents params after rl_env params are changed
     rl_env.updateAgentsAttributesExcept('env')
@@ -236,7 +238,7 @@ if __name__ == "__main__":
                tot_iterations = args.tot_iterations, head_address = args.head_address, ray_password = args.ray_password ,\
                memory_save_load = args.memory_save_load, layers_width= args.layers_list, normalize_layers = args.normalize_layers, \
                use_reinforce = args.use_reinforce,   n_frames = args.n_frames, epsilon_min = args.epsilon_min , \
-                   map_output = args.map_output, peds_speed_mult=args.peds_speed_mult, tester=args.tester)
+                   map_output = args.map_output, peds_speed_mult=args.peds_speed_mult, tester=args.tester, downsampling_step=args.downsampling_step)
     pr.disable()
     s = io.StringIO()
     ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
