@@ -228,28 +228,29 @@ class RobotEnv(gym.Env):
 
         info['robot_map'] = self.robot.chunk(self.n_chunk_sections)
 
+        done = True
         # if pedestrian / obstacle is hit or time expired
-        if self.robot.check_pedestrians_collision(.8) or self.robot.check_obstacle_collision() or \
-                self.robot.checkOutOfBounds(margin=0.01) or self.duration > self.sim_length:
+        if self.robot.check_pedestrians_collision(.8):
 
+            #reward = -self.rewards[1] * (0.75 + dist_1 / self.target_distance_max)
+            reward = -self.rewards[1] * (1 + dist_1 / self.target_distance_max)
+            info['termination'] = 'pedestrian'
+
+        elif self.robot.check_obstacle_collision or self.robot.checkOutOfBounds(margin=0.01):
             reward = -self.rewards[1] * (0.75 + dist_1 / self.target_distance_max)
-            done = True
-
-            if self.duration > self.sim_length:
-                info['termination'] = 'timeout'
+            if self.robot.check_obstacle_collision():
+                info['termination'] = 'obstacle'
             else:
-                if self.robot.check_pedestrians_collision(.8):
-                    info['termination'] = 'pedestrian'
-                elif self.robot.check_obstacle_collision():
-                    info['termination'] = 'obstacle'
-                else:
-                    info['termination'] = 'margin'
+                info['termination'] = 'margin'
+        elif self.duration > self.sim_length:
 
-        # if target is reached            
+            reward = -self.rewards[1] * (dist_1 / self.target_distance_max)
+            info['termination'] = 'timeout'
+
+        # if target is reached
         elif self.robot.check_target_reach(self.target_coordinates[:2], tolerance=1):
 
             reward = self.rewards[1]  # - rotations_penalty
-            done = True
             info['termination'] = 'success'
 
         else:
@@ -257,8 +258,7 @@ class RobotEnv(gym.Env):
             self.duration += self.dt
             peds_proximity_penalty = np.sum(
                 (1 - np.array(self.robot.chunk(self.n_chunk_sections, peds_only=True))) ** 3)
-            reward = self.rewards[0] * (
-                        int(dist_0 > dist_1) - int(saturate_input) - self.rewards[2] * peds_proximity_penalty)
+            reward = self.rewards[0] * ( int(dist_0 > dist_1) - int(saturate_input)) - self.rewards[2] * (peds_proximity_penalty/self.n_chunk_sections)
             done = False
 
         # if done:
