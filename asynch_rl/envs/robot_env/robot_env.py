@@ -181,7 +181,6 @@ class RobotEnv(gym.Env):
 
     #####################################################################################################            
     def step(self, action, *args):
-
         info = {}
         saturate_input = False
 
@@ -213,11 +212,11 @@ class RobotEnv(gym.Env):
         self.robot.updateRobotSpeed(dot_x, dot_orient)
         self.robot.computeOdometry(self.dt)
 
-
+        
         # new distance
         dist_1 = self.robot.target_rel_position(self.target_coordinates[:2])[0]
 
-        if self.step_counter % self.downsampling_step:
+        if self.step_counter % self.downsampling_step == 0:
             self.robot.getScan(scan_noise=self.scan_noise)
             ranges, rob_state = self._get_obs()
         else:
@@ -257,8 +256,9 @@ class RobotEnv(gym.Env):
             self.duration += self.dt
             peds_proximity_penalty = np.sum(
                 (1 - np.array(self.robot.chunk(self.n_chunk_sections, peds_only=True))) ** 3)
+            norm_factor = np.sum(np.ones_like(self.robot.chunk(self.n_chunk_sections, peds_only=True)))
             reward = self.rewards[0] * (
-                        int(dist_0 > dist_1) - int(saturate_input) - self.rewards[2] * peds_proximity_penalty)
+                        int(dist_0 > dist_1) - int(saturate_input) - self.rewards[2] * (peds_proximity_penalty/norm_factor))
             done = False
 
         # if done:
@@ -543,6 +543,7 @@ def turn(steps, dv, dtheta):
 
 def goStraight(steps, dv, orient):
     env = RobotEnv()
+    env.reset()
     env.robot.setPosition(0, -10, orient)
     for i in range(steps):
         env.step([dv, 0])
@@ -595,6 +596,8 @@ import pstats
 import io
 
 if __name__ == "__main__":
+    goStraight(20,0,0)
+    """
     pr = cProfile.Profile()
     pr.enable()
 
@@ -642,3 +645,4 @@ env.render(mode = 'plot').show()
 
 # below here try first test of RL
 # observation_size = env.observation_space.shape[0]
+"""

@@ -11,7 +11,7 @@ import server_config
 asynch_rl_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 remote_relaunch = True
-net_version = str(500)
+net_version = str(600)
 difficulty = str(2)
 
 print('preparing to connect')

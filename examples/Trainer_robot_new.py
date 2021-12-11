@@ -33,7 +33,7 @@ parser = ArgumentParser()
 
 parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC', help="RL mode (AC, DQL, parallelAC)")
 
-parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10 , help="number of training iterations")
+parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 5 , help="number of training iterations")
 
 parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
                     help="ray_parallelize bool")
@@ -50,7 +50,7 @@ parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, d
 
 parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 4000, help="Replay Memory Size")
 
-parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=2000, help="net version used")
+parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=3000, help="net version used")
 
 parser.add_argument("-ha", "--head-address", dest="head_address", type=str, default= None, help="Ray Head Address")
 
@@ -113,7 +113,7 @@ parser.add_argument("-psm", "--peds-speeed-multiplier",dest="peds_speed_mult", t
 
 parser.add_argument("-test", "--testing", dest="tester",type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False)
 
-parser.add_argument("-ds", "--dsampling", dest="downsampling_step",type=int, default=1)
+parser.add_argument("-ds", "--dsampling", dest="downsampling_step",type=int, default=5)
 
 
 args = parser.parse_args()
@@ -243,6 +243,7 @@ if __name__ == "__main__":
     s = io.StringIO()
     ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
     ps.print_stats()
+    ps.dump_stats('test.txt')
     with open('duration_trainer_robot.txt', 'w+') as f:
         f.write(s.getvalue())
     current_folder = os.path.abspath(os.path.dirname(__file__))
