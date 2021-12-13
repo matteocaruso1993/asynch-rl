@@ -236,7 +236,7 @@ class RobotEnv(gym.Env):
             reward = -self.rewards[1] * (1 + dist_1 / self.target_distance_max)
             info['termination'] = 'pedestrian'
 
-        elif self.robot.check_obstacle_collision or self.robot.checkOutOfBounds(margin=0.01):
+        elif self.robot.check_obstacle_collision() or self.robot.checkOutOfBounds(margin=0.01):
             reward = -self.rewards[1] * (0.75 + dist_1 / self.target_distance_max)
             if self.robot.check_obstacle_collision():
                 info['termination'] = 'obstacle'

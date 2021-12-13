@@ -50,7 +50,7 @@ parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, d
 
 parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 4000, help="Replay Memory Size")
 
-parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=2000, help="net version used")
+parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=700, help="net version used")
 
 parser.add_argument("-ha", "--head-address", dest="head_address", type=str, default= None, help="Ray Head Address")
 
@@ -104,7 +104,7 @@ parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_q
 
 parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=float, default=[.002, 100, .005] )
 
-parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[40, 40, 40] )
+parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[64, 64, 32] )
 
 parser.add_argument("-ur", "--use-reinforce", dest="use_reinforce", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
                     help="use REINFORCE instead of AC")
