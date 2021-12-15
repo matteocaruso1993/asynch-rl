@@ -258,7 +258,7 @@ class RobotEnv(gym.Env):
             self.duration += self.dt
             peds_proximity_penalty = np.sum(
                 (1 - np.array(self.robot.chunk(self.n_chunk_sections, peds_only=True))) ** 3)
-            reward = self.rewards[0] * ( int(dist_0 > dist_1) - int(saturate_input)) - self.rewards[2] * (peds_proximity_penalty/self.n_chunk_sections)
+            reward = self.rewards[0] * (-dist_1 / self.target_distance_max - int(saturate_input)) - self.rewards[2] * (peds_proximity_penalty/self.n_chunk_sections)
             done = False
 
         # if done:
