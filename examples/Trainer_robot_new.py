@@ -102,7 +102,7 @@ parser.add_argument("-b", "--beta", dest="beta", type=float, default= 0.05 , hel
 parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False, 
                     help="latest QV model is always used for Advanatge calculation")
 
-parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=float, default=[.002, 100, .005] )
+parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=float, default=[.005, 100, .005] )
 
 parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[64, 64, 32] )
 
