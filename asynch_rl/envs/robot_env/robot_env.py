@@ -86,9 +86,9 @@ class RobotEnv(gym.Env):
 
     #####################################################################################################
     def __init__(self, lidar_n_rays=135, \
-                 collision_distance=0.7, visualization_angle_portion=0.75, lidar_range=10, \
-                 v_linear_max=0.6, v_angular_max=2, rewards=[1, 100, 2], max_v_x_delta=.2, \
-                 initial_margin=.08, max_v_rot_delta=.5, dt=1, normalize_obs_state=True, \
+                 collision_distance=0.7, visualization_angle_portion=0.5, lidar_range=10, \
+                 v_linear_max=1, v_angular_max=1, rewards=[1, 100, 2], max_v_x_delta=.25, \
+                 initial_margin=.08, max_v_rot_delta=.3, dt=None, normalize_obs_state=True, \
                  sim_length=200, difficulty=0, scan_noise=[0.005, 0.002], n_chunk_sections=18, peds_speed_mult=1.3,
                  downsampling_step=1):
 
@@ -181,7 +181,6 @@ class RobotEnv(gym.Env):
 
     #####################################################################################################            
     def step(self, action, *args):
-
         info = {}
         saturate_input = False
 
@@ -217,7 +216,7 @@ class RobotEnv(gym.Env):
         # new distance
         dist_1 = self.robot.target_rel_position(self.target_coordinates[:2])[0]
 
-        if self.step_counter % self.downsampling_step:
+        if self.step_counter % self.downsampling_step == 0:
             self.robot.getScan(scan_noise=self.scan_noise)
             ranges, rob_state = self._get_obs()
         else:
