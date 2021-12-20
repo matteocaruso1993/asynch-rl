@@ -33,9 +33,9 @@ parser = ArgumentParser()
 
 parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC', help="RL mode (AC, DQL, parallelAC)")
 
-parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10 , help="number of training iterations")
+parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 1 , help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=True,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
                     help="ray_parallelize bool")
 
 parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default= 5, help="Number of agents to be used")
@@ -46,11 +46,11 @@ parser.add_argument("-norm", "--normalize-layers", dest="normalize_layers", type
 parser.add_argument("-mo", "--map-output", dest="map_output", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=True,
                     help="NN has intermediate output with estimated map")
 
-parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=1, help="start simulations and training from a given iteration")
+parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, default=200, help="start simulations and training from a given iteration")
 
 parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 4000, help="Replay Memory Size")
 
-parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=1000, help="net version used")
+parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=600, help="net version used")
 
 parser.add_argument("-ha", "--head-address", dest="head_address", type=str, default= None, help="Ray Head Address")
 

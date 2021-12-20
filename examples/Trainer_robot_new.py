@@ -66,7 +66,7 @@ parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int,
 
 parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default= 2, help = "task degree of difficulty. 10 = random")
 
-parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=300,
+parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=150,
                     help="Length of one successful run in seconds")
 
 parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.25,
@@ -102,9 +102,9 @@ parser.add_argument("-b", "--beta", dest="beta", type=float, default= 0.05 , hel
 parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False, 
                     help="latest QV model is always used for Advanatge calculation")
 
-parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=float, default=[.005, 100, .005] )
+parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=float, default=[.05, 100, .05] )
 
-parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[64, 64, 32] )
+parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[40, 40, 20] )
 
 parser.add_argument("-ur", "--use-reinforce", dest="use_reinforce", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
                     help="use REINFORCE instead of AC")
@@ -190,7 +190,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
     rl_env = Multiprocess_RL_Environment(env_type , model_type , net_version , rl_mode = rl_mode, \
                         ray_parallelize=ray_parallelize, move_to_cuda=True, n_frames = n_frames, \
                         replay_memory_size = replay_memory_size, n_agents = agents_number,\
-                        tot_iterations = tot_iterations, discr_env_bins = 4 , \
+                        tot_iterations = tot_iterations, discr_env_bins = 2 , \
                         use_reinforce = use_reinforce,  epsilon_annealing_factor=epsilon_annealing_factor,  layers_width= layers_width,\
                         N_epochs = n_epochs, epsilon_min = epsilon_min , rewards = rewards, \
                         mini_batch_size = mini_batch_size, share_conv_layers = share_conv_layers, \

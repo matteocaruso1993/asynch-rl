@@ -185,7 +185,7 @@ def check_saved(filename):
 
 
 
-def loadPlotPieTester(traj_stat_filename='traj_stats.txt'):
+def loadPlotPieTester(traj_stat_filename='traj_stats.txt', line_no=None):
     print('test')
     lines = [[v for v in line.split()] for line in open(traj_stat_filename)]
     tot_runs = 0
@@ -194,13 +194,21 @@ def loadPlotPieTester(traj_stat_filename='traj_stats.txt'):
     n_success = 0
     n_timeout = 0
 
+    if line_no is None:
+        for line in lines:
+            tot_runs += len(line)
+            n_ped += line.count('pedestrian')
+            n_obs += line.count('obstacle')
+            n_timeout += line.count('timeout')
+            n_success += line.count('success')
 
-    for line in lines:
-        tot_runs += len(line)
+    else:
+        line = lines[line_no]
         n_ped += line.count('pedestrian')
         n_obs += line.count('obstacle')
         n_timeout += line.count('timeout')
         n_success += line.count('success')
+        
 
     print('Total number of simulations:\t%d'%tot_runs)
     vals = [n_success,n_ped,n_obs,n_timeout]

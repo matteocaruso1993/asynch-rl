@@ -259,7 +259,7 @@ class RobotEnv(gym.Env):
                 (1 - np.array(self.robot.chunk(self.n_chunk_sections, peds_only=True))) ** 3)
             reward = self.rewards[0] * (-dist_1 / self.target_distance_max - int(saturate_input)) - self.rewards[2] * (peds_proximity_penalty/self.n_chunk_sections)
             done = False
-
+            reward += -self.rewards[0]*abs(dot_orient)/self.angular_max
         # if done:
         #    self.robot = None
 
