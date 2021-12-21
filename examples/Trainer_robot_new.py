@@ -30,8 +30,9 @@ import ray
 num_cpus = psutil.cpu_count(logical=False)
 n_agents = 2*num_cpus -2
 
-def main(configs):
+def run_training(configs):
     function_inputs = locals().copy()
+    print(function_inputs)
 
     env_type = 'RobotEnv'
     model_type = 'ConvModel'
@@ -88,9 +89,9 @@ def main(configs):
                         ray_parallelize=configs['ray_parallelize'], move_to_cuda=True, n_frames = configs['n_frames'], \
                         replay_memory_size = configs['replay_memory_size'], n_agents = configs['agents_number'],\
                         tot_iterations = configs['tot_iterations'], discr_env_bins = 2 , \
-                        use_reinforce = configs['use_reinforce'],  epsilon_annealing_factor=configs['epsilon_annealing_factor'],  layers_width= configs['layers_width'],\
-                        N_epochs = configs['n_epochs'], epsilon_min = configs['epsilon_min'] , rewards = configs['rewards'], \
-                        mini_batch_size = configs['mini_batch_size'], share_conv_layers = configs['share_conv_layers'], \
+                        use_reinforce = configs['use_reinforce'],  epsilon_annealing_factor=configs['epsilon_decay'],  layers_width= configs['layers_list'],\
+                        N_epochs = configs['n_epochs'], epsilon_min = configs['epsilon_min'] , rewards = configs['rewards_list'], \
+                        mini_batch_size = configs['minibatch_size'], share_conv_layers = configs['share_conv_layers'], \
                         difficulty = configs['difficulty'], learning_rate = configs['learning_rate'], sim_length_max = configs['sim_length_max'], \
                         memory_turnover_ratio = configs['memory_turnover_ratio'], val_frequency = configs['val_frequency'] ,\
                         gamma = configs['gamma'], beta_PG = configs['beta'] , continuous_qv_update = configs['continuous_qv_update'] , \
@@ -125,7 +126,7 @@ if __name__ == "__main__":
     pr.enable()
     with open("trainer_robot_config.yaml", 'r') as f:
         configs = yaml.safe_load(f)
-    env = main(configs)
+    env = run_training(configs)
     pr.disable()
     s = io.StringIO()
     ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
