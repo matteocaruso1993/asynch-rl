@@ -1,0 +1,34 @@
+rl_mode: AC
+n_iterations: 10
+ray_parallelize: False
+agents_number: 5
+normalize_layers: True
+map_output: True,
+load_iteration: 1
+replay_memory_size: 4000
+net_version: 700
+head_address: None
+ray_password: None
+memory_save_load: False
+tot_iterations:  500
+difficulty:  2
+sim_length_max: 150
+memory_turnover_ratio: .25
+learning_rate: [1e-4, 2e-3]
+n_epochs:  200
+minibatch_size:  256
+epsilon_min: 0.2
+epsilon_decay: 0.955
+val_frequency: 5
+reset_optimizer: False
+n_frames:  10
+share_conv_layers: False
+gamma: 0.9
+beta:  0.05
+continuous_qv_update: False
+rewards_list: [.05, 100, .05]
+layers_list: [40 40, 20]
+use_reinforce: False,
+peds_speed_mult: 1.3
+tester: False
+downsampling_step: 1
