@@ -87,7 +87,7 @@ class RobotEnv(gym.Env):
     #####################################################################################################
     def __init__(self, lidar_n_rays=135, \
                  collision_distance=0.7, visualization_angle_portion=0.5, lidar_range=10, \
-                 v_linear_max=1, v_angular_max=1, rewards=[1, 100, 2], max_v_x_delta=.25, \
+                 v_linear_max=0.5, v_angular_max=1, rewards=[1, 100, 2], max_v_x_delta=.2, \
                  initial_margin=.08, max_v_rot_delta=.3, dt=None, normalize_obs_state=True, \
                  sim_length=200, difficulty=0, scan_noise=[0.005, 0.002], n_chunk_sections=18, peds_speed_mult=1.3,
                  downsampling_step=1):
@@ -183,6 +183,8 @@ class RobotEnv(gym.Env):
     def step(self, action, *args):
         info = {}
         saturate_input = False
+
+        #print(self.dt)
 
         # print('Current peds speed multiplier is:\t%2.2f'%self.robot.map.peds_sim_env.peds.max_speed_multiplier)
 

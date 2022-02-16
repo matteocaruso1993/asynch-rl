@@ -35,7 +35,7 @@ parser.add_argument("-rl", "--rl-mode", dest="rl_mode", type=str, default='AC', 
 
 parser.add_argument("-i", "--iter", dest="n_iterations", type = int, default= 10 , help="number of training iterations")
 
-parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
+parser.add_argument("-p", "--parallelize", dest="ray_parallelize", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=True,
                     help="ray_parallelize bool")
 
 parser.add_argument("-a", "--agents-number", dest="agents_number", type=int, default= 5, help="Number of agents to be used")
@@ -50,7 +50,7 @@ parser.add_argument("-l", "--load-iteration", dest="load_iteration", type=int, d
 
 parser.add_argument("-m", "--memory-size", dest="replay_memory_size", type=int, default= 4000, help="Replay Memory Size")
 
-parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=700, help="net version used")
+parser.add_argument("-v", "--net-version", dest="net_version", type=int, default=70200, help="net version used")
 
 parser.add_argument("-ha", "--head-address", dest="head_address", type=str, default= None, help="Ray Head Address")
 
@@ -66,7 +66,7 @@ parser.add_argument("-tot", "--tot-iterations", dest="tot_iterations", type=int,
 
 parser.add_argument("-d","--difficulty", dest = "difficulty", type=int, default= 2, help = "task degree of difficulty. 10 = random")
 
-parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=150,
+parser.add_argument("-sim", "--sim-length-max", dest="sim_length_max", type=int, default=500,
                     help="Length of one successful run in seconds")
 
 parser.add_argument("-mt", "--memory-turnover-ratio", dest="memory_turnover_ratio", type=float, default=.25,
@@ -102,18 +102,22 @@ parser.add_argument("-b", "--beta", dest="beta", type=float, default= 0.05 , hel
 parser.add_argument("-cadu", "--continuous-advantage-update", dest="continuous_qv_update", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False, 
                     help="latest QV model is always used for Advanatge calculation")
 
-parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=float, default=[.05, 100, .05] )
+parser.add_argument( "-rw", "--rewards",  nargs="*",  dest = "rewards_list", type=float, default=[.05/4, 100, .05/4] )
 
-parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[40, 40, 20] )
+parser.add_argument( "-ll", "--layers-list",  nargs="*", dest = "layers_list", type=int, default=[64, 64, 32] )
 
 parser.add_argument("-ur", "--use-reinforce", dest="use_reinforce", type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False,
                     help="use REINFORCE instead of AC")
 
-parser.add_argument("-psm", "--peds-speeed-multiplier",dest="peds_speed_mult", type=float,default=1.3,help="pedestrians max speed multiplier")
+parser.add_argument("-psm", "--peds-speeed-multiplier",dest="peds_speed_mult", type=float,default=1.2,help="pedestrians max speed multiplier")
 
 parser.add_argument("-test", "--testing", dest="tester",type=lambda x: (str(x).lower() in ['true','1', 'yes']), default=False)
 
-parser.add_argument("-ds", "--dsampling", dest="downsampling_step",type=int, default=1)
+parser.add_argument("-ds", "--dsampling", dest="downsampling_step",type=int, default=5)
+
+parser.add_argument("-nb","--n-bins",dest="n_bins", type=int, default=4)
+
+parser.add_argument("-dt","--step_size",dest="step_size",type=float,default=0.1)
 
 
 args = parser.parse_args()
@@ -131,7 +135,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
             share_conv_layers = False, n_frames = 4, rl_mode = 'DQL', beta = 0.001, epsilon_min = 0.2, \
                 gamma = 0.99,  continuous_qv_update = False, tot_iterations = 400, layers_width= (100,100), \
                     ray_password = None,  head_address = None, memory_save_load = False, \
-                        use_reinforce = False, normalize_layers = False, map_output = False, peds_speed_mult = 1.3, tester = True, downsampling_step=1):
+                        use_reinforce = False, normalize_layers = False, map_output = False, peds_speed_mult = 1.3, tester = True, downsampling_step=1, step_size=None, n_bins=2):
 
 
     function_inputs = locals().copy()
@@ -190,7 +194,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
     rl_env = Multiprocess_RL_Environment(env_type , model_type , net_version , rl_mode = rl_mode, \
                         ray_parallelize=ray_parallelize, move_to_cuda=True, n_frames = n_frames, \
                         replay_memory_size = replay_memory_size, n_agents = agents_number,\
-                        tot_iterations = tot_iterations, discr_env_bins = 2 , \
+                        tot_iterations = tot_iterations, discr_env_bins = n_bins , \
                         use_reinforce = use_reinforce,  epsilon_annealing_factor=epsilon_annealing_factor,  layers_width= layers_width,\
                         N_epochs = n_epochs, epsilon_min = epsilon_min , rewards = rewards, \
                         mini_batch_size = mini_batch_size, share_conv_layers = share_conv_layers, \
@@ -198,7 +202,7 @@ def main(net_version = 0, n_iterations = 2, ray_parallelize = False,  difficulty
                         memory_turnover_ratio = memory_turnover_ratio, val_frequency = val_frequency ,\
                         gamma = gamma, beta_PG = beta , continuous_qv_update = continuous_qv_update , \
                         memory_save_load = memory_save_load , normalize_layers = normalize_layers, \
-                            map_output = map_output, peds_speed_mult = peds_speed_mult, downsampling_step = downsampling_step)
+                            map_output = map_output, peds_speed_mult = peds_speed_mult, downsampling_step = downsampling_step, step_size=step_size)
 
     # always update agents params after rl_env params are changed
     rl_env.updateAgentsAttributesExcept('env')
@@ -238,7 +242,7 @@ if __name__ == "__main__":
                tot_iterations = args.tot_iterations, head_address = args.head_address, ray_password = args.ray_password ,\
                memory_save_load = args.memory_save_load, layers_width= args.layers_list, normalize_layers = args.normalize_layers, \
                use_reinforce = args.use_reinforce,   n_frames = args.n_frames, epsilon_min = args.epsilon_min , \
-                   map_output = args.map_output, peds_speed_mult=args.peds_speed_mult, tester=args.tester, downsampling_step=args.downsampling_step)
+                   map_output = args.map_output, peds_speed_mult=args.peds_speed_mult, tester=args.tester, downsampling_step=args.downsampling_step, n_bins=args.n_bins, step_size=args.step_size)
     pr.disable()
     s = io.StringIO()
     ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
